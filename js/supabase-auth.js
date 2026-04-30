@@ -87,36 +87,18 @@ async function handleLogin() {
 
     if (loginBtn) { loginBtn.textContent = 'Logging in…'; loginBtn.disabled = true; }
 
-    // Try Supabase first, fall back to local auth
-    const reachable = await isSupabaseReachable();
-    isOfflineMode = !reachable;
+    // Clear any stale/corrupted session before attempting login.
+    // A leftover token puts the Supabase client in a broken state where
+    // new signIn calls silently fail — this is why "open new browser" fixed it.
+    await supabase.auth.signOut({ scope: 'local' });
 
     try {
-        if (isOfflineMode) {
-            // Use local auth
-            const session = await loginLocalUser(email, password);
-            state.auth.currentUser = {
-                id: session.id,
-                username: session.username,
-                role: session.role,
-                name: session.name,
-                isLocal: true
-            };
-            state.auth.isAuthenticated = true;
-            updateHeaderControls();
-            updateAdminNavVisibility();
-            closeAllModals();
-            showNotification('Logged in (offline mode)', 'info');
-            return;
-        }
-
-        // Normal Supabase login
         await api.signIn(email, password);
-
+        // Success is handled by onAuthStateChange SIGNED_IN event
     } catch (err) {
         console.error('[auth] Login error:', err);
 
-        // Try local auth as fallback
+        // Fall back to local auth (offline mode) only if Supabase is genuinely down
         try {
             const session = await loginLocalUser(email, password);
             isOfflineMode = true;
@@ -133,9 +115,7 @@ async function handleLogin() {
             closeAllModals();
             showNotification('Logged in (offline mode)', 'info');
             return;
-        } catch (localErr) {
-            // Local auth also failed
-        }
+        } catch (_) {}
 
         if (errorEl) { errorEl.textContent = err.message; errorEl.style.display = 'block'; }
         showNotification('Login failed: ' + err.message, 'error');
@@ -310,14 +290,14 @@ async function restoreSession() {
         }
     }
 
-    // Supabase session — getSession() reads from localStorage first (no network
-    // needed when the JWT hasn't expired). Only makes a network call to refresh
-    // an expired token. With a 7-day JWT expiry set in Supabase Auth settings,
-    // this almost never needs a network round-trip.
+    // getSession() reads from localStorage (no network if token is still valid).
+    // If it errors or returns nothing, clear the stale token so the Supabase
+    // client doesn't get stuck — this is what causes "can't log in after refresh".
     const { data: { session }, error } = await supabase.auth.getSession();
     if (!error && session?.user) return _applyProfileToState(session.user);
 
-    if (error) console.warn('[auth] Session restore failed:', error.message);
+    if (error) console.warn('[auth] Session restore failed, clearing stale token:', error.message);
+    await supabase.auth.signOut({ scope: 'local' });
     return false;
 }
 
