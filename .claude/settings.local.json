@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -s -o /dev/null -w \"%{http_code} %{time_total}s\" -H \"apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNobmViaXpvZWNiYXJ6YWRtY3FvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY1MzE5MjYsImV4cCI6MjA5MjEwNzkyNn0.qtI3pLM_SZkvSNK7HZs-lsty9uaEkC0C5GHM2rA5H3Q\" \"https://chnebizoecbarzadmcqo.supabase.co/auth/v1/health\")"
+    ]
+  }
+}

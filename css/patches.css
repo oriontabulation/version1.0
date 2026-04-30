@@ -1,0 +1,1545 @@
+/* ================================================================
+   patches.css  —  Orion Debate Tab
+   Load AFTER main.css and admin.css.
+
+   Theme tokens (:root --t-brand etc) now live in main.css.
+   Header/button base styles are in main.css.
+   This file contains:
+     2.  Public hero centering tweaks
+     3.  Tab hero banner (injected by JS)
+     4.  Theme picker dropdown
+     7.  Auth modal overrides
+     8.  Admin break bar + draw controls
+     9.  Admin nav accents
+    10.  Role-based visibility
+    11.  Notifications
+    12.  Scrollbar polish
+    13.  Responsive patches (non-nav — nav handled in main.css)
+     +   Portal & feedback design-system normalization
+   ================================================================ */
+
+
+/* ================================================================
+   2.  PUBLIC HERO — centred content, full-bleed bg
+   ================================================================ */
+
+/* Centre everything inside the dark hero */
+#public .section {
+  display:        flex         !important;
+  flex-direction: column       !important;
+  align-items:    center       !important;
+  text-align:     center       !important;
+}
+
+/* h1 pseudo-element centred */
+#public .section > h1::before {
+  justify-content: center !important;
+}
+
+#public .section > .section-subtitle {
+  text-align: center !important;
+}
+
+#public .stats-grid {
+  margin-left:  auto !important;
+  margin-right: auto !important;
+  width:        100% !important;
+}
+
+
+/* ================================================================
+   3.  TAB HERO BANNER
+       Injected by patches.js into every public tab.
+   ================================================================ */
+
+.tab-hero {
+  margin:   0 calc(-1 * var(--spacing-xl, 24px));
+  padding:  3.5rem 3rem 3rem;
+  position: relative;
+  overflow: hidden;
+  background:
+    radial-gradient(ellipse 70% 55% at 65% 10%, rgba(249,115,22,.14) 0%, transparent 60%),
+    radial-gradient(ellipse 45% 40% at 5%  85%, rgba(59,130,246,.07) 0%, transparent 55%),
+    linear-gradient(155deg, #0c1526 0%, #0f172a 50%, #1a2540 100%);
+  border-bottom: 1px solid rgba(255,255,255,.06);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+.tab-hero::before {
+  content: '';
+  position: absolute; inset: 0;
+  background-image:
+    linear-gradient(rgba(255,255,255,.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,.025) 1px, transparent 1px);
+  background-size: 48px 48px;
+  pointer-events: none;
+}
+.tab-hero::after {
+  content: '';
+  position: absolute;
+  top: -80px; right: -80px;
+  width: 360px; height: 360px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(249,115,22,.1);
+  box-shadow: inset 0 0 60px rgba(249,115,22,.05), 0 0 80px rgba(249,115,22,.05);
+  pointer-events: none;
+  animation: heroRing 6s ease-in-out infinite;
+}
+@keyframes heroRing {
+  0%,100% { transform:scale(1);    opacity:.6; }
+  50%      { transform:scale(1.04); opacity:1; }
+}
+
+.tab-hero-eyebrow {
+  font-size:      0.7rem;
+  font-weight:    700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color:          var(--t-brand, #f97316);
+  margin-bottom:  0.8rem;
+  opacity:        0.9;
+  position:       relative;
+  z-index:        1;
+}
+.tab-hero-title {
+  font-size:      clamp(1.9rem, 4.5vw, 2.8rem);
+  font-weight:    800;
+  letter-spacing: -0.03em;
+  line-height:    1.1;
+  margin:         0 0 0.9rem;
+  background:     linear-gradient(135deg, #ffffff 0%, #e2e8f0 40%, var(--t-brand, #f97316) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color:          transparent;
+  position:       relative;
+  z-index:        1;
+  max-width:      640px;
+}
+.tab-hero-sub {
+  font-size:   1rem;
+  color:       rgba(255,255,255,.5);
+  line-height: 1.7;
+  max-width:   520px;
+  font-weight: 400;
+  position:    relative;
+  z-index:     1;
+}
+
+.section:has(.tab-hero) > h1,
+.section:has(.tab-hero) > h2,
+.tab-content:has(.tab-hero) > h2 { display: none !important; }
+
+.tab-hero + .content-container,
+.tab-hero ~ .content-container { margin-top: 2rem; }
+
+
+/* ================================================================
+   4.  THEME PICKER — floating dropdown with color wheel
+   ================================================================ */
+
+.theme-picker-wrapper {
+  position:    relative;
+  display:     inline-flex;
+  align-items: center;
+}
+.theme-picker-btn {
+  display:     inline-flex;
+  align-items: center;
+  gap:         7px;
+  padding:     6px 13px;
+  border-radius: 20px;
+  border:      1px solid rgba(255,255,255,.22);
+  background:  rgba(255,255,255,.09);
+  color:       rgba(255,255,255,.9);
+  font-size:   12px;
+  font-weight: 700;
+  cursor:      pointer;
+  white-space: nowrap;
+  font-family: inherit;
+  line-height: 1;
+  transition:  background .18s;
+}
+.theme-picker-btn:hover { background: rgba(255,255,255,.18); }
+.theme-picker-btn .t-swatch {
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(255,255,255,.45);
+  flex-shrink: 0;
+  background: var(--t-brand, #f97316);
+  transition: background .25s;
+}
+
+.theme-dropdown {
+  display:    none;
+  position:   fixed;
+  z-index:    99999;
+  background: #1e293b;
+  border:     1px solid rgba(255,255,255,.12);
+  border-radius: 14px;
+  padding:    10px;
+  min-width:  230px;
+  box-shadow: 0 20px 60px rgba(0,0,0,.5);
+  animation:  tDropIn .16s cubic-bezier(.34,1.4,.64,1);
+}
+@keyframes tDropIn {
+  from { opacity:0; transform: translateY(-8px) scale(.97); }
+  to   { opacity:1; transform: translateY(0)    scale(1);   }
+}
+.theme-picker-wrapper.open .theme-dropdown { display: block; }
+
+.theme-dropdown-label {
+  font-size:10px; font-weight:700; text-transform:uppercase;
+  letter-spacing:.1em; color:rgba(255,255,255,.35); padding:4px 8px 6px;
+}
+
+.theme-wheel-row  { padding: 2px 2px 4px; }
+.theme-wheel-label {
+  display:     flex;
+  align-items: center;
+  gap:         10px;
+  padding:     10px 12px;
+  border-radius: 10px;
+  border:      1px solid rgba(255,255,255,.12);
+  background:  rgba(255,255,255,.06);
+  cursor:      pointer;
+  transition:  background .15s, border-color .15s;
+  position:    relative;
+  user-select: none;
+}
+.theme-wheel-label:hover { background: rgba(255,255,255,.11); border-color: rgba(255,255,255,.22); }
+.theme-wheel-swatch {
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  border: 2px solid rgba(255,255,255,.3);
+  transition: background .2s;
+  box-shadow: 0 2px 8px rgba(0,0,0,.3);
+}
+.theme-wheel-text  { flex: 1; font-size: 13px; font-weight: 600; color: rgba(255,255,255,.88); }
+.theme-wheel-icon  { font-size: 16px; flex-shrink: 0; }
+.theme-color-wheel { position: absolute; width: 0; height: 0; opacity: 0; pointer-events: none; border: none; }
+
+.theme-presets-row { display: flex; gap: 8px; padding: 4px 8px 8px; align-items: center; }
+.theme-preset {
+  width: 24px; height: 24px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer; padding: 0; flex-shrink: 0;
+  transition: transform .15s, box-shadow .15s, border-color .15s;
+  outline: none;
+}
+.theme-preset:hover        { transform: scale(1.2); box-shadow: 0 2px 10px rgba(0,0,0,.4); }
+.theme-preset.active       { border-color: white; box-shadow: 0 0 0 2px rgba(255,255,255,.5); transform: scale(1.15); }
+
+
+/* ================================================================
+   7.  AUTH MODAL  (#auth-modal specific overrides only)
+   ================================================================ */
+
+#auth-modal-overlay {
+  background:rgba(15,23,42,.82) !important;
+  backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px);
+}
+#auth-modal .modal-overlay {
+  position:static !important; background:transparent !important;
+  display:flex !important; align-items:center; justify-content:center;
+  width:100%; min-height:unset;
+}
+#auth-modal .modal-content {
+  background:white; border-radius:20px; padding:2rem 2rem 1.5rem;
+  max-width:460px; width:100%;
+  box-shadow:0 24px 80px rgba(0,0,0,.35);
+  animation:modalUp .22s cubic-bezier(.34,1.4,.64,1); position:relative;
+}
+@keyframes modalUp { from{opacity:0;transform:translateY(20px) scale(.97)} to{opacity:1;transform:translateY(0) scale(1)} }
+
+.modal-overlay:not(#auth-modal .modal-overlay) {
+  position:fixed !important; inset:0 !important;
+  background:rgba(15,23,42,.75) !important; backdrop-filter:blur(8px);
+  display:flex !important; align-items:center !important; justify-content:center !important;
+  z-index:10001 !important;
+}
+.modal-overlay:not(#auth-modal .modal-overlay) .modal {
+  background:white; border-radius:20px; padding:2rem; max-width:460px; width:90%;
+  box-shadow:0 24px 80px rgba(0,0,0,.35);
+  animation:modalUp .22s cubic-bezier(.34,1.4,.64,1);
+  position:static !important; display:block !important;
+}
+
+/* Error block */
+.error-message {
+  background:#fee2e2; color:#991b1b; padding:.65rem .9rem;
+  border-radius:8px; font-size:.85rem; margin-bottom:.9rem;
+  border-left:3px solid #dc2626;
+}
+
+/* Mobile: auth modal slides up from bottom */
+@media (max-width: 480px) {
+  #auth-modal-overlay { align-items:flex-end !important; padding:0 !important; }
+  #auth-modal {
+    border-radius:20px 20px 0 0 !important;
+    max-width:100% !important;
+    max-height:90vh !important;
+  }
+}
+
+
+/* ================================================================
+   8.  ADMIN — break controls bar + draw controls
+   ================================================================ */
+
+.adm-break-controls-bar {
+  display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+  background:var(--t-header-bg, #0f172a); color:white;
+  border-radius:14px; padding:14px 18px; margin-bottom:20px;
+  position:sticky; top:0; z-index:50;
+  box-shadow:0 4px 24px rgba(0,0,0,.25); border:1px solid rgba(255,255,255,.07);
+}
+.adm-break-controls-bar .adm-label    { color:rgba(255,255,255,.4) !important; }
+.adm-break-controls-bar .adm-select   { width:auto !important; min-width:170px !important; background:rgba(255,255,255,.1) !important; border-color:rgba(255,255,255,.2) !important; color:white !important; }
+.adm-break-controls-bar .adm-select option { background:#1e293b; color:white; }
+
+.adm-break-stat     { display:flex; flex-direction:column; align-items:center; background:rgba(255,255,255,.07); border-radius:10px; padding:8px 16px; min-width:64px; }
+.adm-break-stat-val { font-size:24px; font-weight:800; color:var(--t-brand,#f97316); line-height:1; }
+.adm-break-stat-lbl { font-size:10px; color:rgba(255,255,255,.4); text-transform:uppercase; letter-spacing:.05em; margin-top:2px; }
+.adm-bctrl-divider  { width:1px; height:36px; background:rgba(255,255,255,.15); flex-shrink:0; }
+.adm-bctrl-actions  { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+
+/* adm-btn ghost/glow variants for dark bars */
+.adm-btn.light {
+  background:rgba(255,255,255,.1); color:white; border-color:rgba(255,255,255,.25);
+  font-size:12px; padding:6px 12px;
+}
+.adm-btn.light:hover { background:rgba(255,255,255,.2); border-color:rgba(255,255,255,.45); }
+.adm-btn.glow {
+  background:var(--t-brand,#f97316); color:white; border-color:var(--t-brand,#f97316);
+  font-size:12px; padding:6px 12px; box-shadow:0 0 12px rgba(249,115,22,.4);
+}
+.adm-btn.glow:hover { background:var(--t-brand-hover,#ea580c); border-color:var(--t-brand-hover,#ea580c); box-shadow:0 0 18px rgba(249,115,22,.55); transform:translateY(-1px); }
+
+.draw-controls-bar {
+  display:flex; align-items:center; justify-content:space-between;
+  gap:10px; flex-wrap:wrap; background:white;
+  border:1px solid #e2e8f0; border-radius:12px;
+  padding:10px 14px; margin-bottom:20px;
+  box-shadow:0 1px 4px rgba(0,0,0,.04);
+}
+.draw-controls-left  { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.draw-controls-right { display:flex; align-items:center; gap:8px; flex-shrink:0; }
+/* Smaller draw control selects */
+#draw select, #round-filter {
+  width: auto !important; min-width: 100px !important; max-width: 150px !important;
+  font-size: 12px !important; padding: 4px 8px !important;
+}
+/* New Round button */
+#draw-new-btn {
+  padding: 5px 12px !important; font-size: 12px !important; font-weight: 700 !important;
+}
+
+/* ── Generic dropdown (click-toggle) ── */
+.dropdown { position: relative; display: inline-block; }
+.dropdown-menu {
+  display: none;
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.12);
+  z-index: 500;
+  min-width: 168px;
+  padding: 4px;
+  animation: fadeInDown .15s cubic-bezier(.16,1,.3,1);
+}
+.dropdown-menu.is-open { display: block; }
+.dropdown-menu .dropdown-item {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  width: 100% !important;
+  text-align: left !important;
+  padding: 8px 12px !important;
+  border: none !important;
+  background: none !important;
+  cursor: pointer !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  border-radius: 6px !important;
+  color: #334155 !important;
+  transition: background .1s !important;
+  font-family: inherit !important;
+  white-space: nowrap !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+.dropdown-menu .dropdown-item:hover {
+  background: #f8fafc !important;
+  color: var(--t-brand, #f97316) !important;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+
+/* ================================================================
+   9.  ADMIN NAV + ACCENTS — theme-aware
+   ================================================================ */
+
+.adm-nav-item.active {
+  background:          var(--t-brand-light, #fff7ed) !important;
+  color:               var(--t-brand, #f97316) !important;
+  border-left-color:   var(--t-brand, #f97316) !important;
+}
+.adm-bar-fill { background: var(--t-brand, #f97316) !important; }
+h2            { border-left-color: var(--t-brand, #f97316); }
+
+.dropdown-trigger.active,
+.dropdown-item.active { color: var(--t-brand, #f97316) !important; font-weight: 700; }
+
+input:focus, select:focus, textarea:focus {
+  outline:     none;
+  border-color: var(--t-brand, #f97316) !important;
+  box-shadow:  0 0 0 3px var(--t-brand-glow, rgba(249,115,22,.12)) !important;
+}
+
+
+/* ================================================================
+   10. ROLE-BASED VISIBILITY
+   ================================================================ */
+
+body:not(.role-admin) [data-admin-only],
+body:not(.role-admin) .admin-only { display:none !important; }
+
+
+/* ================================================================
+   11. NOTIFICATIONS
+   ================================================================ */
+
+#notification-container {
+  position:fixed; bottom:24px; right:24px;
+  display:flex; flex-direction:column; gap:8px; z-index:99999; pointer-events:none;
+}
+.notification {
+  display:flex; align-items:center; gap:10px; padding:12px 18px; border-radius:12px;
+  font-size:13px; font-weight:600; color:white; box-shadow:0 8px 32px rgba(0,0,0,.25);
+  pointer-events:auto; max-width:360px;
+  animation:nfIn .22s cubic-bezier(.34,1.4,.64,1) both;
+}
+@keyframes nfIn  { from{opacity:0;transform:translateX(16px) scale(.96)} to{opacity:1;transform:none} }
+.notification.success { background:#10b981; }
+.notification.error   { background:#dc2626; }
+.notification.warning { background:#f59e0b; }
+.notification.info    { background:#3b82f6; }
+.notification.hide { animation:nfOut .18s ease forwards; }
+@keyframes nfOut { to{opacity:0;transform:translateX(16px) scale(.96)} }
+
+
+/* ================================================================
+   12. SCROLLBAR POLISH
+   ================================================================ */
+
+::-webkit-scrollbar            { width:5px; height:5px; }
+::-webkit-scrollbar-track      { background:#f1f5f9; border-radius:3px; }
+::-webkit-scrollbar-thumb      { background:#cbd5e1; border-radius:3px; }
+::-webkit-scrollbar-thumb:hover{ background:#94a3b8; }
+
+
+/* ================================================================
+   13. RESPONSIVE PATCHES (admin-specific, non-nav items)
+   ================================================================ */
+
+@media (max-width: 768px) {
+  .tab-hero { padding:2.5rem 1.5rem 2rem; margin:0 -1rem; }
+  .adm-break-controls-bar { position:static; border-radius:10px; }
+  .adm-break-stat { display:none; }
+}
+@media (max-width: 480px) {
+  .tab-hero { margin:0 -1rem; }
+  .theme-dropdown { min-width:190px; }
+}
+
+
+/* ================================================================
+   FILTER BAR — hide count/detail from non-admins
+   ================================================================ */
+
+body.role-guest .filter-bar__count,
+body.role-team  .filter-bar__count,
+body.role-judge .filter-bar__count,
+body.role-guest .filter-bar__indicator,
+body.role-team  .filter-bar__indicator,
+body.role-judge .filter-bar__indicator { display: none !important; }
+
+
+/* ================================================================
+   PORTAL — design-system normalization (blue → orange brand)
+   ================================================================ */
+
+/* Primary action buttons */
+#portal button[style*="#1a73e8"],
+#portal button[style*="background: #1a73e8"],
+#portal button[style*="background:#1a73e8"] {
+  background: var(--t-brand, #f97316) !important;
+  border-color: transparent !important;
+  color: #fff !important;
+}
+#portal button[style*="#1a73e8"]:hover,
+#portal button[style*="background: #1a73e8"]:hover { background: var(--t-brand-hover, #ea580c) !important; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(249,115,22,0.3) !important; }
+
+/* Team portal purple → orange */
+#portal button[style*="#7c3aed"],
+#portal button[style*="background: #7c3aed"],
+#portal button[style*="background:#7c3aed"] { background: var(--t-brand, #f97316) !important; border-color: transparent !important; }
+#portal button[style*="#7c3aed"]:hover      { background: var(--t-brand-hover, #ea580c) !important; }
+
+/* Hero/banner gradients → dark cosmic */
+#portal div[style*="linear-gradient(135deg, #2e7d32"],
+#portal div[style*="linear-gradient(135deg, #7c3aed"],
+#portal div[style*="linear-gradient(135deg, #1a73e8"] {
+  background: linear-gradient(135deg, var(--cosmic-deep, #0f172a) 0%, #1a2540 100%) !important;
+  border-bottom: 3px solid var(--t-brand, #f97316) !important;
+}
+/* Active tab underline */
+#portal button[style*="border-bottom: 3px solid #1a73e8"],
+#portal button[style*="border-bottom:3px solid #1a73e8"] { border-bottom-color: var(--t-brand, #f97316) !important; color: var(--t-brand, #f97316) !important; }
+
+/* Text/number accents */
+#portal div[style*="color: #1a73e8"],
+#portal span[style*="color: #1a73e8"],
+#portal strong[style*="color: #1a73e8"] { color: var(--t-brand, #f97316) !important; }
+#portal span[style*="background: #1a73e8"],
+#portal span[style*="background:#1a73e8"] { background: var(--t-brand, #f97316) !important; }
+
+/* Proposition box */
+#portal div[style*="background: #e8f0fe"] { background: var(--t-brand-light, #fff7ed) !important; }
+#portal div[style*="border: 2px solid #1a73e8"] { border-color: var(--t-brand, #f97316) !important; }
+#portal div[style*="color: #1565c0"]       { color: var(--t-brand-hover, #ea580c) !important; }
+
+/* Keep semantic green buttons */
+#portal button[style*="background: #2e7d32"],
+#portal button[style*="background:#2e7d32"] { background: #2e7d32 !important; color: #ffffff !important; }
+
+/* Card styling */
+#portal .section { background: var(--bg-card); border-radius: var(--radius-lg); border: 1px solid var(--border); box-shadow: var(--shadow-sm); }
+#portal div[style*="background: white"],
+#portal div[style*="background:white"] { border: 1px solid var(--border) !important; }
+
+/* Portal tab bar hover */
+#portal #portalMyRoomsBtn,
+#portal #portalFullDrawBtn,
+#portal #portalFeedbackBtn,
+#portal #portalMyFeedbackBtn { transition: color .15s, border-color .15s, background .15s !important; border-radius: 6px 6px 0 0; }
+#portal #portalMyRoomsBtn:hover,
+#portal #portalFullDrawBtn:hover,
+#portal #portalFeedbackBtn:hover,
+#portal #portalMyFeedbackBtn:hover { background: var(--t-brand-light, #fff7ed) !important; color: var(--t-brand, #f97316) !important; }
+
+/* Focus accents */
+#portal select:focus, #portal textarea:focus, #portal input:focus {
+  border-color: var(--t-brand, #f97316) !important;
+  box-shadow: 0 0 0 3px rgba(249,115,22,0.15) !important;
+  outline: none !important;
+}
+
+
+/* ================================================================
+   FEEDBACK — design-system normalization
+   ================================================================ */
+
+#feedback button[style*="#1a73e8"],
+#feedback button[style*="background: #1a73e8"],
+#feedback button[style*="background:#1a73e8"] { background: var(--t-brand, #f97316) !important; border-color: transparent !important; color: #fff !important; }
+#feedback button[style*="#1a73e8"]:hover      { background: var(--t-brand-hover, #ea580c) !important; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(249,115,22,0.3) !important; }
+
+#feedback div[style*="color: #1a73e8"],
+#feedback span[style*="color: #1a73e8"],
+#feedback div[style*="color:#1a73e8"],
+#feedback span[style*="color:#1a73e8"] { color: var(--t-brand, #f97316) !important; }
+
+#feedback div[style*="font-size:36px"][style*="color:"],
+#feedback div[style*="font-size: 36px"][style*="color: #1a73e8"] { color: var(--t-brand, #f97316) !important; }
+
+#feedback div[style*="linear-gradient(135deg,#1a73e8"],
+#feedback div[style*="linear-gradient(135deg, #1a73e8"] { background: linear-gradient(135deg, var(--cosmic-deep, #0f172a) 0%, #1a2540 100%) !important; }
+
+#feedback div[style*="background:#eff6ff"],
+#feedback div[style*="background: #eff6ff"] { background: var(--t-brand-light, #fff7ed) !important; border-color: rgba(249,115,22,0.3) !important; color: var(--t-brand-hover, #ea580c) !important; }
+
+#feedback #fb-target-judge:focus { border-color: var(--t-brand, #f97316) !important; box-shadow: 0 0 0 3px rgba(249,115,22,0.15) !important; outline: none; }
+#feedback .section { background: var(--bg-card); border-radius: var(--radius-lg); border: 1px solid var(--border); box-shadow: var(--shadow-sm); }
+#feedback div[style*="background: white"],
+#feedback div[style*="background:white"] { border: 1px solid var(--border) !important; }
+#feedback select:focus, #feedback textarea:focus, #feedback input:focus {
+  border-color: var(--t-brand, #f97316) !important;
+  box-shadow: 0 0 0 3px rgba(249,115,22,0.15) !important;
+  outline: none !important;
+}
+
+
+/* ================================================================
+   CONSISTENT TYPOGRAPHY — portal & feedback
+   ================================================================ */
+#portal h2, #feedback h2 {
+  font-size: 1.4rem !important;
+  font-weight: 700 !important;
+  color: var(--cosmic-slate) !important;
+  border-left: 4px solid var(--t-brand, #f97316) !important;
+  padding-left: 1rem !important;
+  margin-bottom: 1rem !important;
+}
+#portal h3, #feedback h3 {
+  font-size: 1.05rem !important;
+  font-weight: 600 !important;
+  color: var(--text-secondary) !important;
+  border-left: none !important;
+  padding-left: 0 !important;
+}
+/* Dark-banner h overrides (keep white) */
+#portal div[style*="linear-gradient(135deg"] h1,
+#portal div[style*="linear-gradient(135deg"] h2,
+#portal div[style*="linear-gradient(135deg"] h3 { color: #ffffff !important; border-left: none !important; padding-left: 0 !important; }/* ================================================================
+   patches2.css  —  Orion Debate Tab — Comprehensive Visual Fixes
+   Load AFTER main.css, admin.css, patches.css
+   
+   Fixes:
+   1. Mobile draw layout — BP cards, content sizing
+   2. Publish section edge spacing
+   3. Theme button visibility
+   4. Auth overlay positioning
+   6. Uniform button styles
+   10. BP ballot submit/edit visibility
+   13. Outround judge zone
+   18. Hide judge role from registration
+   ================================================================ */
+
+
+/* ================================================================
+   FIX 1 — MOBILE DRAW LAYOUT
+   Fix content sizing, BP grid, card responsiveness
+   ================================================================ */
+
+/* Draw section heading */
+#draw .section { padding: 16px; }
+#draw .section > h2 { display: none; } /* title is in the controls bar */
+
+/* Draw controls bar — better mobile wrapping */
+.draw-controls-bar {
+  flex-wrap: wrap !important;
+  gap: 8px !important;
+}
+.draw-controls-left  { flex-wrap: wrap; gap: 6px; }
+.draw-controls-right { flex-shrink: 0; }
+
+/* BP team 2×2 grid — stack to single column on narrow screens */
+@media (max-width: 600px) {
+  /* Stack BP position grid to 2 col */
+  div[style*="grid-template-columns:1fr 1fr"][style*="gap:8px"] {
+    grid-template-columns: 1fr 1fr !important;
+    gap: 6px !important;
+  }
+
+  /* Draw room cards: reduce padding on mobile */
+  .draw-room {
+    padding: 10px !important;
+    margin-bottom: 8px !important;
+  }
+
+  /* BP room header — allow wrapping */
+  .draw-room > div:first-child {
+    flex-wrap: wrap !important;
+    gap: 6px !important;
+  }
+
+  /* Action buttons in draw room — smaller on mobile */
+  .draw-room button[onclick*="showEnterResults"],
+  .draw-room button[onclick*="editResults"],
+  .draw-room button[onclick*="viewDebateDetails"],
+  .draw-room button[onclick*="submitBPResults"] {
+    font-size: 11px !important;
+    padding: 5px 10px !important;
+  }
+
+  /* Judge chip wrapping */
+  .dnd-judge-zone {
+    flex-wrap: wrap !important;
+    gap: 3px !important;
+    min-height: 28px;
+  }
+
+  /* Judge add dropdown — full width on mobile */
+  .judge-add-select {
+    max-width: 100% !important;
+    width: 100% !important;
+    margin-top: 4px;
+  }
+
+  /* Modal results grid always single col on mobile */
+  .modal-results-grid {
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+  }
+
+  /* Round filter */
+  #round-filter { width: 100% !important; max-width: 100% !important; }
+  .draw-controls-left select { width: 130px !important; }
+}
+
+@media (max-width: 480px) {
+  /* Fully stack BP grid on very small screens */
+  div[style*="grid-template-columns:1fr 1fr"][style*="gap:8px"] {
+    grid-template-columns: 1fr !important;
+    gap: 5px !important;
+  }
+
+  /* Results modal full-width on small screens */
+  .modal-overlay > div { border-radius: 16px 16px 0 0 !important; }
+
+  /* BP ballot modal grid */
+  div[style*="grid-template-columns:1fr 1fr;gap:14px"] {
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
+  }
+}
+
+/* Knockout bracket — horizontal scroll on mobile */
+.knockout-bracket {
+  overflow-x: auto !important;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 16px;
+}
+.bracket-round { min-width: 220px; }
+
+/* ================================================================
+   FIX 2 — PUBLISH SECTION SPACING
+   ================================================================ */
+
+.adm-publish-list { padding: 0 4px; }
+
+.adm-pub-row {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  padding: 14px 16px !important;
+  border-radius: 10px !important;
+  border: 1px solid #f1f5f9 !important;
+  margin-bottom: 8px !important;
+  background: white !important;
+  gap: 12px !important;
+  flex-wrap: wrap !important;
+}
+
+.adm-pub-info {
+  display: flex !important;
+  align-items: center !important;
+  gap: 12px !important;
+  flex: 1 !important;
+  min-width: 0 !important;
+}
+
+.adm-pub-right {
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+  flex-shrink: 0 !important;
+}
+
+.adm-pub-label {
+  font-weight: 700 !important;
+  color: #1e293b !important;
+  font-size: 14px !important;
+}
+
+.adm-pub-desc {
+  font-size: 12px !important;
+  color: #64748b !important;
+  margin-top: 2px !important;
+}
+
+.adm-pub-state.on  { color: #10b981 !important; font-weight: 700 !important; font-size: 12px !important; }
+.adm-pub-state.off { color: #94a3b8 !important; font-weight: 700 !important; font-size: 12px !important; }
+
+/* Toggle switch */
+.adm-toggle {
+  position: relative;
+  width: 40px; height: 22px;
+  background: #e2e8f0;
+  border: none;
+  border-radius: 11px;
+  cursor: pointer;
+  transition: background .2s;
+  flex-shrink: 0;
+}
+.adm-toggle.on { background: var(--t-brand, #f97316); }
+.adm-toggle-knob {
+  position: absolute;
+  top: 2px; left: 2px;
+  width: 18px; height: 18px;
+  background: white;
+  border-radius: 50%;
+  transition: transform .2s;
+  box-shadow: 0 1px 3px rgba(0,0,0,.2);
+  display: block;
+}
+.adm-toggle.on .adm-toggle-knob { transform: translateX(18px); }
+
+/* Publish card actions full-width separation */
+.adm-card-actions-bordered {
+  display: flex !important;
+  gap: 10px !important;
+  padding: 16px !important;
+  border-top: 1px solid #f1f5f9 !important;
+  margin-top: 8px !important;
+  flex-wrap: wrap !important;
+}
+
+/* ================================================================
+   FIX 3 — THEME BUTTON VISIBILITY
+   ================================================================ */
+
+#orion-header-picker {
+  display: inline-flex !important;
+  align-items: center !important;
+  flex-shrink: 0 !important;
+}
+
+/* Make sure theme picker is visible and not cut off */
+.theme-picker-wrapper {
+  z-index: 1001;
+}
+
+.header-controls .theme-picker-btn,
+.header-controls button[onclick*="theme"],
+.header-controls #orion-header-picker button {
+  display: inline-flex !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+}
+
+/* ================================================================
+   FIX 4 — AUTH OVERLAY POSITIONING
+   Modal is fully responsive and always above page content
+   ================================================================ */
+
+#auth-modal-overlay {
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  z-index: 10001 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  background: rgba(15, 23, 42, 0.88) !important;
+  backdrop-filter: blur(8px) !important;
+  -webkit-backdrop-filter: blur(8px) !important;
+  padding: 16px !important;
+  box-sizing: border-box !important;
+}
+
+#auth-modal {
+  position: relative !important;
+  inset: unset !important;
+  width: 100% !important;
+  max-width: 440px !important;
+  height: auto !important;
+  max-height: calc(100vh - 40px) !important;
+  background: #0f172a !important;
+  border-radius: 20px !important;
+  overflow-y: auto !important;
+  box-shadow: 0 24px 64px rgba(0,0,0,.55) !important;
+  display: block !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* Hidden state */
+#auth-modal-overlay[style*="display: none"],
+#auth-modal[style*="display: none"],
+#auth-modal-overlay[style*="display:none"],
+#auth-modal[style*="display:none"] {
+  display: none !important;
+}
+
+/* Auth modal content box (only applies when a .modal-content child exists inside auth overlay — not the auth card itself) */
+#auth-modal-overlay .modal-content {
+  position: relative !important;
+  background: #0f172a !important;
+  border-radius: 20px !important;
+  padding: 2rem !important;
+  max-width: 460px !important;
+  width: calc(100% - 32px) !important;
+  max-height: calc(100vh - 40px) !important;
+  overflow-y: auto !important;
+  box-shadow: 0 24px 80px rgba(0,0,0,.5) !important;
+  animation: modalUp .22s cubic-bezier(.34,1.4,.64,1) !important;
+}
+
+@media (max-width: 480px) {
+  #auth-modal-overlay {
+    align-items: flex-end !important;
+    padding: 0 !important;
+  }
+  #auth-modal {
+    border-radius: 20px 20px 0 0 !important;
+    max-width: 100% !important;
+    width: 100% !important;
+    max-height: 90vh !important;
+  }
+}
+
+/* ================================================================
+   FIX 6 — UNIFORM BUTTONS
+   Normalize all button class variants throughout the app
+   ================================================================ */
+
+/* Allow shorthand classes without "btn-" prefix (used throughout draw.js) */
+button.primary,
+[class~="primary"]:not(.adm-nav-item):not(.dropdown-trigger):not(.brk-tab) {
+  background: var(--t-brand, #f97316) !important;
+  color: white !important;
+  border: 1px solid transparent !important;
+  padding: 8px 16px !important;
+  border-radius: 8px !important;
+  font-weight: 700 !important;
+  font-size: 13px !important;
+  cursor: pointer !important;
+  transition: all .15s !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 5px !important;
+  white-space: nowrap !important;
+}
+button.primary:hover,
+[class~="primary"]:not(.adm-nav-item):not(.dropdown-trigger):not(.brk-tab):hover {
+  background: var(--t-brand-hover, #ea580c) !important;
+  transform: translateY(-1px) !important;
+  box-shadow: 0 4px 12px rgba(249,115,22,.35) !important;
+}
+button.primary:disabled { opacity: .5 !important; cursor: not-allowed !important; transform: none !important; box-shadow: none !important; }
+
+button.secondary,
+[class~="secondary"]:not(.adm-nav-item):not(.dropdown-trigger):not(.brk-tab) {
+  background: #f1f5f9 !important;
+  color: #374151 !important;
+  border: 1px solid #e2e8f0 !important;
+  padding: 8px 14px !important;
+  border-radius: 8px !important;
+  font-weight: 600 !important;
+  font-size: 13px !important;
+  cursor: pointer !important;
+  transition: all .15s !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 5px !important;
+  white-space: nowrap !important;
+}
+button.secondary:hover,
+[class~="secondary"]:not(.adm-nav-item):not(.dropdown-trigger):not(.brk-tab):hover {
+  background: #e2e8f0 !important;
+  border-color: var(--t-brand, #f97316) !important;
+}
+button.secondary:disabled { opacity: .5 !important; cursor: not-allowed !important; }
+
+button.danger {
+  background: #dc2626 !important;
+  color: white !important;
+  border: 1px solid transparent !important;
+  padding: 8px 14px !important;
+  border-radius: 8px !important;
+  font-weight: 700 !important;
+  font-size: 13px !important;
+  cursor: pointer !important;
+  transition: all .15s !important;
+}
+button.danger:hover { background: #b91c1c !important; }
+
+button.warning {
+  background: #f59e0b !important;
+  color: white !important;
+  border: none !important;
+  padding: 8px 14px !important;
+  border-radius: 8px !important;
+  font-weight: 700 !important;
+  cursor: pointer !important;
+}
+
+/* Admin buttons — keep their own class system, just ensure xs/sm sizing */
+.adm-btn.xs { padding: 4px 10px !important; font-size: 11px !important; }
+.adm-btn.sm { padding: 6px 14px !important; font-size: 12px !important; }
+
+/* Ensure all buttons share font */
+button { font-family: inherit !important; }
+
+/* ================================================================
+   FIX 10 — BP BALLOT BUTTON VISIBILITY (submit/edit ballot)
+   ================================================================ */
+
+/* Make Enter Results / Submit Ballot more prominent in draw rooms */
+.draw-room button[onclick*="showEnterResults"],
+.draw-room button[onclick*="submitBPResults"],
+.draw-room button[onclick*="showSpeechEnterResults"] {
+  background: var(--t-brand, #f97316) !important;
+  color: white !important;
+  font-weight: 700 !important;
+  font-size: 13px !important;
+  padding: 7px 16px !important;
+  border-radius: 8px !important;
+  border: none !important;
+  box-shadow: 0 2px 8px rgba(249,115,22,.35) !important;
+}
+
+/* Edit ballot — distinct secondary colour */
+.draw-room button[onclick*="editResults"],
+.draw-room button[onclick*="Override Ballot"] {
+  background: #7c3aed !important;
+  color: white !important;
+  font-weight: 700 !important;
+  font-size: 12px !important;
+  padding: 5px 12px !important;
+  border-radius: 8px !important;
+  border: none !important;
+}
+
+/* Judge submit ballot portal button */
+.draw-room button[onclick*="showEnterResults"][style*="7c3aed"] {
+  background: #7c3aed !important;
+  box-shadow: 0 2px 8px rgba(124,58,237,.35) !important;
+}
+
+/* Details button */
+.draw-room button[onclick*="viewDebateDetails"] {
+  background: #0ea5e9 !important;
+  color: white !important;
+  font-weight: 600 !important;
+  font-size: 12px !important;
+  border: none !important;
+}
+
+/* BP panel button (added by patches2.js) */
+[data-bp-judge-btn] {
+  transition: all .15s !important;
+}
+[data-bp-judge-btn]:hover {
+  background: #6d28d9 !important;
+  transform: translateY(-1px) !important;
+}
+
+/* ================================================================
+   FIX 13 — OUTROUND JUDGE ZONE
+   Show judge info on bracket match cards
+   ================================================================ */
+
+.bracket-match .judge-zone {
+  margin-top: 8px;
+  padding: 6px 8px;
+  background: #f8fafc;
+  border-radius: 6px;
+  font-size: 11px;
+  color: #64748b;
+}
+
+/* ================================================================
+   FIX 18 — HIDE JUDGE ROLE FROM REGISTRATION
+   ================================================================ */
+
+/* Hide role selector in registration form for non-admins */
+body.hide-judge-role-reg #registerForm select[id*="oles"],
+body.hide-judge-role-reg #registerForm [id*="roleSection"],
+body.hide-judge-role-reg #registerForm [data-field="role"],
+body.hide-judge-role-reg #registerForm .judge-role-field {
+  display: none !important;
+}
+
+/* ================================================================
+   BODY SCROLL LOCK — handled purely by JS (MutationObserver)
+   No CSS pointer-events rules here — those broke non-modal scrolling
+   ================================================================ */
+
+/* ================================================================
+   JUDGE AVAILABILITY BADGE
+   ================================================================ */
+
+.judge-unavailable-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  background: #fee2e2;
+  color: #dc2626;
+  border-radius: 10px;
+  font-size: 10px;
+  font-weight: 700;
+  margin-left: 6px;
+}
+
+.judge-available-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  background: #dcfce7;
+  color: #10b981;
+  border-radius: 10px;
+  font-size: 10px;
+  font-weight: 700;
+  margin-left: 6px;
+}
+
+/* ================================================================
+   BP DRAW DRAG HINT STYLING
+   ================================================================ */
+
+.bp-drag-hint {
+  font-size: 9px !important;
+  color: #94a3b8 !important;
+  text-align: center !important;
+  margin-top: 3px !important;
+  user-select: none !important;
+}
+
+.draw-room [data-dnd-bp]:hover {
+  outline: 2px dashed var(--t-brand, #f97316) !important;
+  outline-offset: 2px !important;
+  cursor: grab !important;
+}
+
+/* ================================================================
+   GENERAL DRAW REFINEMENTS
+   ================================================================ */
+
+/* Round card container */
+#rounds-list > div {
+  border-radius: 12px !important;
+  overflow: hidden !important;
+}
+
+/* BP room: minimum readable text */
+.draw-room [style*="font-size:10px"] { font-size: 11px !important; }
+
+/* Make "Panel:" label bold and consistent */
+.draw-room .dnd-judge-zone strong { font-weight: 700 !important; }
+
+/* Standardize draw-room header */
+.draw-room > div:first-child {
+  align-items: flex-start !important;
+}
+
+/* ================================================================
+   ADMIN BREAK SECTION IMPROVEMENTS
+   ================================================================ */
+
+/* Break size dropdown — full options visible */
+#adm-break-size {
+  min-width: 220px !important;
+}
+
+/* Break controls stat values */
+.adm-break-controls-stat-val { 
+  font-size: 22px !important;
+  font-weight: 800 !important;
+  line-height: 1 !important;
+}
+
+/* ================================================================
+   MOBILE — ADMIN PANEL FIX
+   ================================================================ */
+
+@media (max-width: 768px) {
+  /* Admin sidebar */
+  .adm-sidebar {
+    transform: translateX(-100%);
+    transition: transform .25s ease;
+  }
+  .adm-sidebar.adm-sidebar--open {
+    transform: translateX(0) !important;
+  }
+
+  /* Admin rounds split: stack vertically */
+  .adm-rounds-split {
+    flex-direction: column !important;
+  }
+  .adm-rounds-create-col { 
+    width: 100% !important; 
+    max-width: 100% !important;
+  }
+
+  /* Publish row responsive */
+  .adm-pub-row { padding: 12px !important; }
+  .adm-pub-info { gap: 8px !important; }
+  .adm-pub-icon { font-size: 18px !important; }
+
+  /* BP ballot modal */
+  div[id="bp-results-error"] ~ div .modal-results-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* ================================================================
+   SPEAKER RANGE SETTINGS WIDGET
+   ================================================================ */
+#speaker-range-settings {
+  animation: slideDown .2s ease;
+}
+
+/* ================================================================
+   SCORE TOTALS BAR — always visible at bottom of ballot
+   ================================================================ */
+#ballot-totals-bar {
+  position: sticky !important;
+  bottom: 0 !important;
+  z-index: 5 !important;
+  background: #f1f5f9 !important;
+}
+
+/* ================================================================
+   FIX: HOME PAGE — stats cards stack vertically on mobile
+   (main.css forces 3-col at all widths — override it here)
+   ================================================================ */
+@media (max-width: 640px) {
+  #public .stats-grid {
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+    max-width: 360px !important;
+    margin: 0 auto !important;
+  }
+  #public .stat-card {
+    display: flex !important;
+    align-items: center !important;
+    gap: 18px !important;
+    text-align: left !important;
+    padding: 16px 20px !important;
+    border-radius: 14px !important;
+  }
+  #public .stat-icon {
+    font-size: 2rem !important;
+    margin-bottom: 0 !important;
+    flex-shrink: 0 !important;
+  }
+  #public .stat-card h3 {
+    font-size: 0.75rem !important;
+    margin-bottom: 2px !important;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    color: var(--text-muted);
+  }
+  #public .stat-card .stat-value {
+    font-size: 2rem !important;
+    font-weight: 800 !important;
+    line-height: 1 !important;
+  }
+}
+
+/* ================================================================
+   FIX: MOBILE NAV — collapsible section arrows
+   ================================================================ */
+.mobile-nav-section {
+  cursor: pointer;
+  transition: background .15s;
+}
+.mobile-nav-section:hover {
+  background: rgba(255,255,255,.05);
+  border-radius: 6px;
+}
+.nav-arrow {
+  display: inline-block;
+  transition: transform .2s ease;
+  font-size: 11px;
+  color: rgba(255,255,255,.45);
+  flex-shrink: 0;
+}
+
+/* Sub-items slide animation */
+.mobile-nav-item,
+.mobile-nav-sub {
+  animation: none;
+}
+@keyframes navItemIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ================================================================
+   FIX: BP JUDGE ZONE
+   ================================================================ */
+.bp-judge-zone {
+  background: #f8fafc !important;
+  border-radius: 8px !important;
+  padding: 8px 10px !important;
+  margin-top: 8px !important;
+  border: 1px solid #f1f5f9 !important;
+  display: flex !important;
+  flex-wrap: wrap !important;
+  align-items: center !important;
+  gap: 4px !important;
+  min-height: 38px !important;
+}
+
+/* Judge chips inherit WSDC styling via dnd-judge-chip class already in draw.js CSS */
+
+/* ================================================================
+   FIX: MOBILE NAV DRAWER — user info section always visible
+   ================================================================ */
+.mobile-nav-drawer .drawer-footer,
+.mobile-nav-drawer > div:last-child {
+  position: sticky !important;
+  bottom: 0 !important;
+  z-index: 2 !important;
+}
+
+
+/* ================================================================
+   GLOBAL LAYOUT — content centring + subtitle utilities
+   ================================================================ */
+
+/* Tab content sections: cap width and centre */
+.tab-content > .section,
+.tab-content > .content-container,
+#main-content > .section {
+  max-width: var(--max-width, 1400px);
+  margin-left: auto;
+  margin-right: auto;
+  box-sizing: border-box;
+}
+
+/* Admin section head: title left, action buttons right */
+.adm-section-head {
+  display: flex !important;
+  align-items: flex-start !important;
+  justify-content: space-between !important;
+  gap: 16px !important;
+  flex-wrap: wrap !important;
+  margin-bottom: 20px !important;
+}
+.adm-section-head > div:last-child:not(:first-child) {
+  flex-shrink: 0;
+}
+
+/* Generic section header row utility */
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+}
+.section-header h2,
+.section-header h3 { margin: 0; }
+
+/* Subtitle / description row with inline actions */
+.section-subtitle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+}
+.section-subtitle-row p { margin: 0; color: var(--text-muted, #64748b); font-size: 14px; }
+
+/* Shared tab subtitles: consistent size, spacing, and readable line length */
+.tab-content:not(#public) .section-subtitle,
+.section > .u-text-muted,
+.tab-content .u-text-muted {
+  color: var(--text-muted, #64748b) !important;
+  font-size: 14px !important;
+  line-height: 1.55 !important;
+  font-weight: 500 !important;
+  max-width: 760px;
+}
+.section-subtitle.compact {
+  margin: 4px 0 0 !important;
+}
+
+/* Standings header + subtitle controls */
+.standings-header {
+  display: flex !important;
+  align-items: flex-start !important;
+  justify-content: space-between !important;
+  gap: 16px !important;
+  flex-wrap: wrap !important;
+  margin-bottom: 16px !important;
+}
+.standings-title-group {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 4px !important;
+  flex: 1 1 360px !important;
+  min-width: 0 !important;
+}
+.standings-title-row {
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+  flex-wrap: wrap !important;
+}
+.standings-title-row h2 {
+  margin: 0 !important;
+}
+.standings-category-pill {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 5px !important;
+  padding: 4px 11px !important;
+  border: 1.5px solid currentColor !important;
+  border-radius: 999px !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  line-height: 1.2 !important;
+  white-space: nowrap !important;
+}
+.standings-filter-bar {
+  display: flex !important;
+  align-items: flex-end !important;
+  gap: 12px !important;
+  flex-wrap: wrap !important;
+  padding: 12px !important;
+  margin-bottom: 18px !important;
+  border: 1px solid var(--border, #e2e8f0) !important;
+  border-radius: 10px !important;
+  background: #f8fafc !important;
+}
+.standings-filter-group {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 5px !important;
+  min-width: 0 !important;
+}
+.standings-filter-group--fixed {
+  flex: 0 1 190px !important;
+}
+.standings-filter-group--flex {
+  flex: 1 1 260px !important;
+}
+.standings-filter-label {
+  color: var(--text-muted, #64748b) !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  letter-spacing: .04em !important;
+  text-transform: uppercase !important;
+}
+.standings-filter-select,
+.standings-filter-input {
+  width: 100% !important;
+  min-height: 36px !important;
+  padding: 7px 10px !important;
+  border: 1px solid var(--border, #e2e8f0) !important;
+  border-radius: 8px !important;
+  background: #ffffff !important;
+  color: var(--text-primary, #0f172a) !important;
+  font: inherit !important;
+  font-size: 13px !important;
+}
+
+@media (max-width: 640px) {
+  .standings-header,
+  .standings-filter-bar {
+    align-items: stretch !important;
+  }
+  .standings-header > .btn,
+  .standings-filter-bar > .btn {
+    width: 100% !important;
+  }
+}
+
+/* Draw "new round" create panel — hidden until .open is toggled */
+.draw-create-panel {
+  display: none !important;
+  border-radius: 14px !important;
+  border: 1px solid #e2e8f0 !important;
+  background: #ffffff !important;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.06) !important;
+}
+.draw-create-panel.open {
+  display: block !important;
+  animation: fadeInDown 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Round card header — tighter, more readable */
+.round-card-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+}
+
+/* Mini draw table: responsive scroll on mobile */
+@media (max-width: 640px) {
+  .round-mini-summary { padding: 0; }
+  .round-mini-table thead th,
+  .round-mini-table tbody td { padding: 4px 8px; font-size: 11px; }
+  .rmt-trainee { display: none; }
+}
+
+/* Ballot overlay: keep the whole ballot visible on desktop/tablet */
+.ballot-modal-overlay {
+  padding: 10px !important;
+  align-items: center !important;
+}
+.ballot-modal-overlay > div {
+  width: min(1180px, calc(100vw - 20px)) !important;
+  max-width: min(1180px, calc(100vw - 20px)) !important;
+  max-height: calc(100dvh - 20px) !important;
+  border-radius: 12px !important;
+}
+.ballot-modal-overlay > div > div:first-child {
+  padding: 10px 14px !important;
+}
+.ballot-modal-overlay > div > div:nth-child(2) {
+  padding: 10px 14px !important;
+  overflow-y: auto !important;
+}
+.ballot-modal-overlay .modal-results-grid {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important;
+  gap: 12px !important;
+  margin-bottom: 8px !important;
+}
+.ballot-modal-overlay .modal-results-grid > div {
+  padding: 10px !important;
+  border-radius: 10px !important;
+}
+.ballot-modal-overlay .modal-results-grid h3 {
+  font-size: 13px !important;
+  margin-bottom: 8px !important;
+  line-height: 1.25 !important;
+}
+.ballot-modal-overlay label {
+  margin-bottom: 2px !important;
+}
+.ballot-modal-overlay select,
+.ballot-modal-overlay input {
+  min-height: 30px !important;
+  padding: 5px 7px !important;
+  font-size: 12px !important;
+}
+.ballot-modal-overlay #ballot-totals-bar {
+  position: sticky !important;
+  bottom: 52px !important;
+  z-index: 8 !important;
+  margin-top: 8px !important;
+  padding: 8px 12px !important;
+}
+.ballot-modal-overlay > div > div:last-child {
+  position: sticky !important;
+  bottom: 0 !important;
+  z-index: 9 !important;
+  padding: 8px 14px !important;
+}
+
+@media (max-width: 620px) {
+  .ballot-modal-overlay {
+    padding: 0 !important;
+    align-items: flex-end !important;
+  }
+  .ballot-modal-overlay > div {
+    width: 100% !important;
+    max-width: 100% !important;
+    max-height: 96dvh !important;
+    border-radius: 14px 14px 0 0 !important;
+  }
+  .ballot-modal-overlay .modal-results-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .ballot-modal-overlay #ballot-totals-bar {
+    bottom: 50px !important;
+  }
+}

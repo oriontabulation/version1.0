@@ -1,0 +1,608 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Orion Debate Tab</title>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="css/main.css" />
+    <link rel="stylesheet" href="css/admin.css" />
+    <link rel="stylesheet" href="css/patches.css" />
+    <link rel="icon" href="favicon.ico" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self' https://*.supabase.co https://browser.sentry-cdn.com https://esm.sh; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://browser.sentry-cdn.com https://esm.sh; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:;"
+    />
+    <script type="importmap">
+      {
+        "imports": {
+          "@sentry/browser": "https://esm.sh/@sentry/browser@7.110.0",
+          "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2.48.1"
+        }
+      }
+    </script>
+    <script type="module" src="js/main.js"></script>
+  </head>
+
+  <body>
+    <!-- ═══════════════════════════════════════════════
+         HEADER
+         ═══════════════════════════════════════════════ -->
+    <header>
+      <div class="header-container">
+        <!-- Hamburger: first child, left side -->
+        <button
+          class="mobile-menu-btn"
+          id="mobile-hamburger"
+          aria-label="Open navigation"
+        >
+          <span></span><span></span><span></span>
+        </button>
+
+        <!-- Logo -->
+        <div class="header-logo" onclick="switchTab('public')">
+          <img src="IMG/logo.png" alt="Orion logo" class="logo-image" />
+          <span class="header-logo-text">ORION</span>
+        </div>
+
+        <!-- Global search -->
+        <div class="header-search">
+          <input
+            type="text"
+            placeholder="Search teams, judges, rounds…"
+            id="global-search"
+          />
+        </div>
+
+        <div class="header-controls" id="header-controls">
+          <div
+            class="header-user"
+            id="header-user-info"
+            style="display: none"
+            onclick="switchTab('profile')"
+            title="View profile"
+          >
+            <span id="header-user-name">User</span>
+          </div>
+          <button
+            id="header-login-btn"
+            class="btn-primary"
+            data-action="showLoginModal"
+          >
+            Login
+          </button>
+          <button
+            id="header-logout-btn"
+            class="btn-secondary"
+            style="display: none"
+            data-action="logout"
+          >
+            Logout
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <!-- ═══════════════════════════════════════════════
+         DESKTOP DROPDOWN NAVIGATION
+         ═══════════════════════════════════════════════ -->
+    <nav
+      class="dropdown-menu-container"
+      id="main-nav"
+      aria-label="Primary navigation"
+    >
+      <div class="dropdown-group">
+        <button
+          class="dropdown-trigger active"
+          data-tab="public"
+          onclick="switchTab('public')"
+        >
+          🏠 Home
+        </button>
+      </div>
+      <div class="dropdown-group">
+        <button
+          class="dropdown-trigger"
+          data-tab="standings"
+          onclick="switchTab('standings')"
+        >
+          📊 Standings
+        </button>
+      </div>
+      <div class="dropdown-group">
+        <button
+          class="dropdown-trigger"
+          data-tab="speakers"
+          onclick="switchTab('speakers')"
+        >
+          🎤 Speakers
+        </button>
+      </div>
+      <div class="dropdown-group">
+        <button
+          class="dropdown-trigger"
+          data-tab="draw"
+          onclick="switchTab('draw')"
+        >
+          🎲 Draw
+        </button>
+      </div>
+
+      <!-- Outrounds dropdown -->
+      <div class="dropdown-group">
+        <button class="dropdown-trigger" data-tab-group="outrounds">
+          ⚔️ Outrounds ▾
+        </button>
+        <div class="dropdown-content">
+          <button
+            class="dropdown-item"
+            data-tab="break"
+            onclick="switchTab('break')"
+          >
+            🏆 Break
+          </button>
+          <button
+            class="dropdown-item"
+            data-tab="knockout"
+            onclick="switchTab('knockout')"
+          >
+            ⚔️ Outrounds
+          </button>
+        </div>
+      </div>
+
+      <!-- Results dropdown -->
+      <div class="dropdown-group">
+        <button class="dropdown-trigger" data-tab-group="results-group">
+          📋 Results ▾
+        </button>
+        <div class="dropdown-content">
+          <button
+            class="dropdown-item"
+            data-tab="results"
+            onclick="switchTab('results')"
+          >
+            ✅ Results
+          </button>
+          <button
+            class="dropdown-item"
+            data-tab="motions"
+            onclick="switchTab('motions')"
+          >
+            📜 Motions
+          </button>
+        </div>
+      </div>
+
+      <!-- More dropdown -->
+      <div class="dropdown-group">
+        <button class="dropdown-trigger" data-tab-group="more">
+          ☰ More ▾
+        </button>
+        <div class="dropdown-content">
+          <button
+            class="dropdown-item"
+            data-tab="teams"
+            onclick="switchTab('teams')"
+          >
+            👥 Teams
+          </button>
+          <button
+            class="dropdown-item"
+            data-tab="judges"
+            onclick="switchTab('judges')"
+          >
+            ⚖️ Judges
+          </button>
+          <button
+            class="dropdown-item"
+            data-tab="portal"
+            onclick="switchTab('portal')"
+          >
+            🚪 Portal
+          </button>
+          <button
+            class="dropdown-item"
+            data-tab="profile"
+            onclick="switchTab('profile')"
+          >
+            👤 Profile
+          </button>
+          <button
+            class="dropdown-item"
+            data-tab="feedback"
+            onclick="switchTab('feedback')"
+          >
+            💬 Feedback
+          </button>
+          <button
+            class="dropdown-item"
+            data-tab="import"
+            onclick="switchTab('import')"
+          >
+            📤 Import
+          </button>
+        </div>
+      </div>
+
+      <div class="dropdown-group">
+        <button
+          class="dropdown-item"
+          data-tab="admin-dashboard"
+          onclick="switchTab('admin-dashboard')"
+        >
+          ⚙️ Admin
+        </button>
+      </div>
+    </nav>
+    <!-- MAIN CONTENT -->
+    <main>
+      <!-- PUBLIC TAB -->
+      <div id="public" class="tab-content active">
+        <div class="section">
+          <h1>Welcome to Orion Debate Tab</h1>
+          <p class="section-subtitle">
+            Professional debate tournament tabulation system from Mindcraft
+            Africa
+          </p>
+
+          <div class="stats-grid">
+            <div class="stat-card">
+              <div class="stat-icon">👥</div>
+              <h3>Teams</h3>
+              <div class="stat-value" id="public-team-count">0</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-icon">⚖️</div>
+              <h3>Judges</h3>
+              <div class="stat-value" id="public-judge-count">0</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-icon">🎯</div>
+              <h3>Rounds</h3>
+              <div class="stat-value" id="public-round-count">0</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- STANDINGS TAB -->
+      <div id="standings" class="tab-content">
+        <div class="section">
+          <h1>📊 Tournament Standings</h1>
+          <div id="standings-container" class="content-container"></div>
+        </div>
+      </div>
+
+      <!-- PROFILE TAB -->
+      <div id="profile" class="tab-content">
+        <div class="section">
+          <h1>👤 User Profile</h1>
+          <div id="profile-content" class="content-container"></div>
+        </div>
+      </div>
+
+      <!-- MOTIONS TAB -->
+      <div id="motions" class="tab-content">
+        <div class="section">
+          <h1>📜 Motions</h1>
+          <div id="motions-container" class="content-container"></div>
+        </div>
+      </div>
+
+      <!-- RESULTS TAB -->
+      <div id="results" class="tab-content">
+        <div class="section">
+          <h1>✅ Results</h1>
+          <div id="results-container" class="content-container"></div>
+        </div>
+      </div>
+
+      <!-- TEAMS TAB -->
+      <div id="teams" class="tab-content">
+        <div class="section">
+          <h1>👥 Teams</h1>
+          <div id="teams-container" class="content-container"></div>
+        </div>
+      </div>
+
+      <!-- JUDGES TAB -->
+      <div id="judges" class="tab-content">
+        <div class="section">
+          <h1>⚖️ Judges</h1>
+          <div id="judges-container" class="content-container"></div>
+        </div>
+      </div>
+
+      <!-- DRAW TAB -->
+      <div id="draw" class="tab-content">
+        <div class="section">
+          <h1>🎲 Draw</h1>
+          <div id="draw-container" class="content-container"></div>
+        </div>
+      </div>
+
+      <!-- BREAK TAB -->
+      <div id="break" class="tab-content">
+        <div class="section">
+          <div id="break-container" class="content-container"></div>
+        </div>
+      </div>
+
+      <!-- KNOCKOUT TAB -->
+      <div id="knockout" class="tab-content">
+        <div class="section">
+          <h1>⚔️ Outrounds</h1>
+          <div id="knockout-container" class="content-container"></div>
+        </div>
+      </div>
+
+      <!-- IMPORT TAB -->
+      <div id="import" class="tab-content">
+        <h2>📤 Import Data</h2>
+        <div id="import-container" class="content-container"></div>
+      </div>
+
+      <!-- FEEDBACK TAB -->
+      <div id="feedback" class="tab-content">
+        <h2>💬 Feedback</h2>
+        <div id="feedback-container" class="content-container"></div>
+      </div>
+
+      <!-- PORTAL TAB -->
+      <div id="portal" class="tab-content">
+        <h2>🚪 Portal</h2>
+        <div id="portal-container" class="content-container"></div>
+      </div>
+
+      <!-- SPEAKERS TAB -->
+      <div id="speakers" class="tab-content">
+        <div id="speaker-rankings" class="content-container"></div>
+      </div>
+
+      <!-- ADMIN DASHBOARD TAB -->
+      <div id="admin-dashboard" class="tab-content">
+        <div class="section">
+          <h1>⚙️ Admin</h1>
+          <div id="admin-dashboard-container" class="content-container"></div>
+        </div>
+      </div>
+    </main>
+
+    <!-- ═══════════════════════════════════════════════
+         MOBILE NAV — slide-in drawer
+         ═══════════════════════════════════════════════ -->
+    <div class="mobile-nav-drawer" id="mobile-nav-drawer">
+      <!-- Drawer header -->
+      <div class="mobile-nav-head">
+        <div class="mobile-nav-logo">
+          <img src="IMG/logo.png" alt="Orion logo" class="logo-image" />
+          <span>Orion</span>
+        </div>
+        <button
+          class="mobile-nav-close"
+          id="mobile-nav-close"
+          onclick="window.closeMobileNav?.()"
+          aria-label="Close navigation"
+        >
+          ✕
+        </button>
+      </div>
+
+      <!-- Drawer body (scrollable) -->
+      <div class="mobile-nav-body">
+        <div class="mobile-nav-section">Main</div>
+        <button
+          class="mobile-nav-item"
+          data-tab="public"
+          onclick="switchTab('public')"
+        >
+          🏠 Home
+        </button>
+        <button
+          class="mobile-nav-item"
+          data-tab="standings"
+          onclick="switchTab('standings')"
+        >
+          📊 Standings
+        </button>
+        <button
+          class="mobile-nav-item"
+          data-tab="speakers"
+          onclick="switchTab('speakers')"
+        >
+          🎤 Speakers
+        </button>
+        <button
+          class="mobile-nav-item"
+          data-tab="draw"
+          onclick="switchTab('draw')"
+        >
+          🎲 Draw
+        </button>
+
+        <div class="mobile-nav-section">Outrounds</div>
+        <button
+          class="mobile-nav-item mobile-nav-sub"
+          data-tab="break"
+          onclick="switchTab('break')"
+        >
+          🏆 Break
+        </button>
+        <button
+          class="mobile-nav-item mobile-nav-sub"
+          data-tab="knockout"
+          onclick="switchTab('knockout')"
+        >
+          ⚔️ Outrounds
+        </button>
+
+        <div class="mobile-nav-section">Results</div>
+        <button
+          class="mobile-nav-item mobile-nav-sub"
+          data-tab="results"
+          onclick="switchTab('results')"
+        >
+          ✅ Results
+        </button>
+        <button
+          class="mobile-nav-item mobile-nav-sub"
+          data-tab="motions"
+          onclick="switchTab('motions')"
+        >
+          📜 Motions
+        </button>
+
+        <div class="mobile-nav-section">More</div>
+        <button
+          class="mobile-nav-item mobile-nav-sub"
+          data-tab="teams"
+          onclick="switchTab('teams')"
+        >
+          👥 Teams
+        </button>
+        <button
+          class="mobile-nav-item mobile-nav-sub"
+          data-tab="judges"
+          onclick="switchTab('judges')"
+        >
+          ⚖️ Judges
+        </button>
+        <button
+          class="mobile-nav-item mobile-nav-sub"
+          data-tab="portal"
+          onclick="switchTab('portal')"
+        >
+          🚪 Portal
+        </button>
+        <button
+          class="mobile-nav-item mobile-nav-sub"
+          data-tab="profile"
+          onclick="switchTab('profile')"
+        >
+          👤 Profile
+        </button>
+        <button
+          class="mobile-nav-item mobile-nav-sub"
+          data-tab="feedback"
+          onclick="switchTab('feedback')"
+        >
+          💬 Feedback
+        </button>
+        <button
+          class="mobile-nav-item mobile-nav-sub"
+          data-tab="import"
+          onclick="switchTab('import')"
+        >
+          📤 Import
+        </button>
+        <button
+          class="mobile-nav-item mobile-nav-sub"
+          data-tab="admin-dashboard"
+          onclick="switchTab('admin-dashboard')"
+        >
+          ⚙️ Admin
+        </button>
+      </div>
+
+      <!-- Drawer footer: user info + auth buttons -->
+      <div
+        style="
+          padding: 14px 18px;
+          border-top: 1px solid var(--border, #e2e8f0);
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+          background: var(--bg-page, #f8fafc);
+          flex-shrink: 0;
+        "
+      >
+        <div
+          id="drawer-user-info"
+          style="
+            font-size: 13px;
+            color: var(--text-muted, #64748b);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+          "
+        >
+          👤 <span id="drawer-user-name">Guest</span>
+        </div>
+        <button
+          id="drawer-login-btn"
+          class="btn-primary btn-sm"
+          data-action="showLoginModal"
+        >
+          Login
+        </button>
+        <button
+          id="drawer-logout-btn"
+          class="btn-secondary btn-sm"
+          style="display: none"
+          data-action="logout"
+        >
+          Logout
+        </button>
+      </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════
+         FOOTER
+         ═══════════════════════════════════════════════ -->
+    <footer>
+      <div class="footer-container">
+        <div class="footer-section">
+          <h3>About Orion</h3>
+          <p>
+            Professional tournament tabulation system with enhanced features
+            from Mindcraft Africa.
+          </p>
+        </div>
+        <div class="footer-section">
+          <h3>Pages</h3>
+          <p><a href="#" onclick="switchTab('publice')">Home</a></p>
+          <p><a href="#" onclick="switchTab('draw')">Draw</a></p>
+          <p><a href="#" onclick="switchTab('teams')">Team Standings</a></p>
+        </div>
+        <div class="footer-section">
+          <h3>Features</h3>
+          <p><a href="#" onclick="switchTab('import')">Auto Imports</a></p>
+          <p><a href="#" onclick="switchTab('profile')">User Profile</a></p>
+          <p>
+            <a href="#" onclick="switchTab('admin-dashboard')"
+              >Admin Dashboard</a
+            >
+          </p>
+        </div>
+        <div class="footer-section">
+          <h3>Contact</h3>
+          <p>
+            📧 <a href="mailto:info@oriondebate.com">info@oriondebate.com</a>
+          </p>
+          <p>𝕏 @oriondebate</p>
+          <p>📱 (+256) 776 268 432</p>
+        </div>
+        <div class="footer-section">
+          <h3>Resources</h3>
+          <p><a href="#">📚 Documentation</a></p>
+          <p><a href="#">❓ FAQ</a></p>
+          <p><a href="#">🆘 Support</a></p>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        © 2026 Orion Debate Tabulation System. All rights reserved. |
+        <a href="#">Privacy Policy</a> |
+        <a href="#">Terms of Service</a>
+      </div>
+    </footer>
+
+    <!-- ═══════════════════════════════════════════════
+         PATCHES — load AFTER modules
+         ═══════════════════════════════════════════════ -->
+    <script src="js/patches.js" defer></script>
+  </body>
+</html>
