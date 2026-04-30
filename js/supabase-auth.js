@@ -518,12 +518,14 @@ async function signInWithApple() {
 
 // ── SHOW LOGIN MODAL ─────────────────────────────────────────────────────────
 function showLoginModal() {
+    console.log('[auth] showLoginModal called');
     closeAllModals();
 
     const overlay     = document.createElement('div');
     overlay.id        = 'auth-modal-overlay';
     overlay.className = 'modal-overlay';
-    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;';
+    // Use CSS class for styling, remove inline background to allow backdrop-filter to work
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;';
     overlay.addEventListener('click', e => { if (e.target === overlay) closeAllModals(); });
 
     const modal = document.createElement('div');

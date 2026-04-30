@@ -1481,9 +1481,13 @@ tbody tr:hover td {
 .modal-overlay {
     position: fixed;
     inset: 0;
-    background: rgba(8, 14, 30, 0.82);
+    background: rgba(8, 14, 30, 0.88);
     backdrop-filter: blur(12px) saturate(1.4);
     -webkit-backdrop-filter: blur(12px) saturate(1.4);
+    /* Fallback for browsers that don't support backdrop-filter */
+    @supports not (backdrop-filter: blur(12px)) {
+        background: rgba(8, 14, 30, 0.95);
+    }
     display: flex;
     align-items: center;
     justify-content: center;

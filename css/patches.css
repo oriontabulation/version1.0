@@ -239,8 +239,13 @@
    ================================================================ */
 
 #auth-modal-overlay {
-  background:rgba(15,23,42,.82) !important;
-  backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px);
+  background: rgba(15, 23, 42, 0.88) !important;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  /* Fallback for browsers that don't support backdrop-filter */
+  @supports not (backdrop-filter: blur(8px)) {
+    background: rgba(15, 23, 42, 0.95) !important;
+  }
 }
 #auth-modal .modal-overlay {
   position:static !important; background:transparent !important;
@@ -256,10 +261,16 @@
 @keyframes modalUp { from{opacity:0;transform:translateY(20px) scale(.97)} to{opacity:1;transform:translateY(0) scale(1)} }
 
 .modal-overlay:not(#auth-modal .modal-overlay) {
-  position:fixed !important; inset:0 !important;
-  background:rgba(15,23,42,.75) !important; backdrop-filter:blur(8px);
-  display:flex !important; align-items:center !important; justify-content:center !important;
-  z-index:10001 !important;
+  position: fixed !important; inset: 0 !important;
+  background: rgba(15, 23, 42, 0.88) !important;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  /* Fallback for browsers that don't support backdrop-filter */
+  @supports not (backdrop-filter: blur(8px)) {
+    background: rgba(15, 23, 42, 0.95) !important;
+  }
+  display: flex !important; align-items: center !important; justify-content: center !important;
+  z-index: 10001 !important;
 }
 .modal-overlay:not(#auth-modal .modal-overlay) .modal {
   background:white; border-radius:20px; padding:2rem; max-width:460px; width:90%;
