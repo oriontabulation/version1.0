@@ -310,13 +310,14 @@ async function restoreSession() {
         }
     }
 
-    // Supabase session — try up to 3 times with short back-off
-    for (let attempt = 0; attempt < 3; attempt++) {
-        if (attempt > 0) await new Promise(r => setTimeout(r, 300 * attempt));
-        const { data: { session }, error } = await supabase.auth.getSession();
-        if (error) { console.error('[auth] Session restore error:', error.message); continue; }
-        if (session?.user) return _applyProfileToState(session.user);
-    }
+    // Supabase session — getSession() reads from localStorage first (no network
+    // needed when the JWT hasn't expired). Only makes a network call to refresh
+    // an expired token. With a 7-day JWT expiry set in Supabase Auth settings,
+    // this almost never needs a network round-trip.
+    const { data: { session }, error } = await supabase.auth.getSession();
+    if (!error && session?.user) return _applyProfileToState(session.user);
+
+    if (error) console.warn('[auth] Session restore failed:', error.message);
     return false;
 }
 

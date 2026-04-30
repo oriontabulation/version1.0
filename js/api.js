@@ -18,25 +18,12 @@ export const api = {
         return user;
     },
     async signIn(email, password) {
-        if (!supabase) {
-            throw new Error('Supabase client is not initialized.');
-        }
-
-        // Simple connectivity check
-        try {
-            const response = await fetch(SUPABASE_URL + '/rest/v1/', {
-                method: 'HEAD',
-                mode: 'cors'
-            });
-        } catch (e) {
-            throw new Error('Cannot reach Supabase. Check internet or if project is paused. Error: ' + e.message);
-        }
-
         const timeout = new Promise((_, reject) =>
-            setTimeout(() => reject(new Error('Connection timed out after 30s. Check internet or Supabase status.')), 30000)
+            setTimeout(() => reject(new Error('Connection timed out. Check your internet or try again.')), 10000)
         );
         const request = supabase.auth.signInWithPassword({ email, password });
-        const { data, error } = await Promise.race([request, timeout]);
+        const result = await Promise.race([request, timeout]);
+        const { data, error } = result;
         if (error) throw new Error(error.message);
         return data;
     },
