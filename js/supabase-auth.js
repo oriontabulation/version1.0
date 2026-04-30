@@ -83,9 +83,6 @@ async function handleLogin() {
 
     if (loginBtn) { loginBtn.textContent = 'Logging in…'; loginBtn.disabled = true; }
 
-    // Clear any stale/corrupted session before attempting login.
-    // A leftover token puts the Supabase client in a broken state where
-    // new signIn calls silently fail — this is why "open new browser" fixed it.
     await supabase.auth.signOut({ scope: 'local' });
 
     try {
@@ -187,8 +184,6 @@ async function registerUser() {
                 status:       'active',
             });
 
-            // Role is set server-side via Edge Function — never client-side
-            // (public/judge/team are the only self-assignable roles)
             if (safeRole !== 'public') {
                 try {
                     // This will fail with 403 if caller is not an admin,
@@ -286,9 +281,6 @@ async function restoreSession() {
         }
     }
 
-    // getSession() reads from localStorage (no network if token is still valid).
-    // If it errors or returns nothing, clear the stale token so the Supabase
-    // client doesn't get stuck — this is what causes "can't log in after refresh".
     const { data: { session }, error } = await supabase.auth.getSession();
     if (!error && session?.user) return _applyProfileToState(session.user);
 
@@ -314,7 +306,6 @@ supabase.auth.onAuthStateChange(async (event, session) => {
     }
 
     if (event === 'SIGNED_OUT') {
-        // Only clear if we were actually authenticated to begin with
         // (Avoids clearing display state during a slow refresh)
         if (state.auth?.isAuthenticated) {
             state.auth.currentUser     = null;
@@ -328,7 +319,6 @@ supabase.auth.onAuthStateChange(async (event, session) => {
         }
     }
 
-    // PASSWORD_RECOVERY, TOKEN_REFRESHED handled automatically by Supabase SDK
 });
 
 // ── HEADER CONTROLS ─────────────────────────────────────────────────────────
@@ -484,7 +474,7 @@ function _showProfileCompletion(supabaseUser) {
 }
 
 // ── INACTIVITY TIMEOUT (1 hour) ──────────────────────────────────────────────
-const INACTIVITY_LIMIT = 60 * 60 * 1000; // 1 hour
+const INACTIVITY_LIMIT = 60 * 60 * 10000; // 1 hour
 let _lastActivity = Date.now();
 let _inactivityTimer = null;
 
@@ -637,29 +627,18 @@ function showLoginModal() {
                         <input type="radio" name="regRole" value="judge">
                         <span class="role-card-icon">⚖️</span>
                         <span class="role-card-label">Judge</span>
-                        <span class="role-card-desc">Submit ballots &amp; give feedback</span>
                     </label>
                     <label class="role-card">
                         <input type="radio" name="regRole" value="team" checked>
                         <span class="role-card-icon">🗣️</span>
-                        <span class="role-card-label">Speaker</span>
-                        <span class="role-card-desc">Rate your judges</span>
+                        <span class="role-card-label">Speaker</span>                     
                     </label>
                     <label class="role-card">
                         <input type="radio" name="regRole" value="public">
                         <span class="role-card-icon">👁️</span>
-                        <span class="role-card-label">Observer</span>
-                        <span class="role-card-desc">View draws &amp; results</span>
+                        <span class="role-card-label">Observer</span>                      
                     </label>
                 </div>
-            </div>
-            <div id="associationGroup" style="display:none;" class="auth-field">
-                <label id="assocLabel">Link to your profile</label>
-                <select id="registerAssociation">
-                    <option value="">— Select —</option>
-                    <optgroup label="Judges" id="assocJudgeGroup">${judgeOptions}</optgroup>
-                    <optgroup label="Teams / Speakers" id="assocTeamGroup">${teamOptions}</optgroup>
-                </select>
             </div>
             <button class="auth-submit" id="modalRegisterBtn">Create Account</button>
             <p style="font-size:11px;color:#c4c9d4;text-align:center;margin:12px 0 0;line-height:1.5;">
