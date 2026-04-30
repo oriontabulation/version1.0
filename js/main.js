@@ -309,7 +309,6 @@ window.syncGlobalSearchForActiveTab = syncGlobalSearchForActiveTab;
 
 // ── Supabase real-time subscription ──────────────────────────────────────────
 function _setupRealtimeSync(tournamentId) {
-    // Listen for ballot inserts — update draw view without full re-render
     supabase
         .channel(`debates:${tournamentId}`)
         .on('postgres_changes', {
@@ -321,9 +320,23 @@ function _setupRealtimeSync(tournamentId) {
             const debate = payload.new;
             const roundId = debate.round_id;
             patchDebate(roundId, debate.id, debate);
-            // Update draw room status badge without full re-render
             const { updateRoomStatus } = window._drawDomHelpers || {};
             if (updateRoomStatus) updateRoomStatus(debate.id, debate.entered);
+        })
+        .subscribe();
+
+    supabase
+        .channel(`publish:${tournamentId}`)
+        .on('postgres_changes', {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'tournament_publish',
+            filter: `tournament_id=eq.${tournamentId}`
+        }, payload => {
+            const { tournament_id, ...flags } = payload.new;
+            state.publish = flags;
+            updateTabsForRole();
+            updateNavDropdowns();
         })
         .subscribe();
 }
