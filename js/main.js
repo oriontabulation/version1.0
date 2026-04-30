@@ -440,12 +440,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Ensure the header login button works even if delegated listener fails
     const headerLoginBtn = document.getElementById('header-login-btn');
+    console.log('[main] headerLoginBtn found:', !!headerLoginBtn);
     if (headerLoginBtn) {
         headerLoginBtn.addEventListener('click', e => {
-            console.log('Login button clicked');
+            console.log('[main] Login button CLICKED!');
+            alert('LOGIN CLICKED - opening modal');
             e.preventDefault();
             showLoginModal();
         });
+    } else {
+        alert('ERROR: header-login-btn NOT FOUND in DOM!');
     }
 
     // Auth modal — Enter key on inputs

@@ -518,19 +518,46 @@ async function signInWithApple() {
 
 // ── SHOW LOGIN MODAL ─────────────────────────────────────────────────────────
 function showLoginModal() {
-    console.log('[auth] showLoginModal called');
+    console.log('[auth] showLoginModal called - START');
     closeAllModals();
+    console.log('[auth] Modals closed');
 
-    const overlay     = document.createElement('div');
-    overlay.id        = 'auth-modal-overlay';
-    overlay.className = 'modal-overlay';
-    // Use CSS class for styling, remove inline background to allow backdrop-filter to work
-    overlay.style.cssText = 'position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;';
+    // Create overlay with explicit inline styles that override everything
+    const overlay = document.createElement('div');
+    overlay.id = 'auth-modal-overlay';
+    // Force all styles inline to ensure it works in all browsers
+    overlay.style.cssText = `
+        position: fixed !important;
+        top: 0 !important;
+        left: 0 !important;
+        right: 0 !important;
+        bottom: 0 !important;
+        width: 100vw !important;
+        height: 100vh !important;
+        background: #000 !important;
+        background-color: rgba(0,0,0,0.75) !important;
+        z-index: 99999 !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        padding: 20px !important;
+        box-sizing: border-box !important;
+    `;
     overlay.addEventListener('click', e => { if (e.target === overlay) closeAllModals(); });
+    console.log('[auth] Overlay created');
 
+    // Create modal with explicit styles
     const modal = document.createElement('div');
-    modal.id    = 'auth-modal';
-    modal.style.cssText = 'background:#fff;border-radius:20px;width:100%;max-width:440px;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.25);';
+    modal.id = 'auth-modal';
+    modal.style.cssText = `
+        background: #fff !important;
+        border-radius: 20px !important;
+        padding: 30px !important;
+        width: 100% !important;
+        max-width: 420px !important;
+        box-shadow: 0 25px 80px rgba(0,0,0,0.4) !important;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
+    `;
 
     const judgeOptions = (state.judges || []).map(j =>
         `<option value="${escapeHTML(String(j.id))}">${escapeHTML(j.name)}</option>`
@@ -539,7 +566,9 @@ function showLoginModal() {
         `<option value="${escapeHTML(String(t.id))}">${escapeHTML(t.name)}</option>`
     ).join('');
 
-    const oauthLinks = ''; /* OAuth providers hidden — under development */
+    const oauthLinks = ''; 
+
+    modal.innerHTML = `
 
     modal.innerHTML = `
     <style>
@@ -652,6 +681,14 @@ function showLoginModal() {
 
     overlay.appendChild(modal);
     document.body.appendChild(overlay);
+    console.log('[auth] Modal appended to body');
+    console.log('[auth] Modal element:', document.getElementById('auth-modal-overlay'));
+    
+    // Force a reflow and ensure visibility
+    overlay.offsetHeight; // trigger reflow
+    overlay.style.visibility = 'visible';
+    overlay.style.opacity = '1';
+    console.log('[auth] Modal should be visible now');
 
     // Wire events
     document.getElementById('loginTabBtn')    ?.addEventListener('click', () => switchAuthTab('login'));
