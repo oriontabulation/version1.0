@@ -435,9 +435,18 @@ document.addEventListener('DOMContentLoaded', () => {
         applyGlobalSearch();
     });
 
-    // Install the delegated click listener immediately so modal buttons work
-    // even if the user opens the modal before the async init() chain finishes.
+    // Install the delegated click listener to handle data-action attributes
     installDelegatedListener();
+
+    // Ensure the header login button works even if delegated listener fails
+    const headerLoginBtn = document.getElementById('header-login-btn');
+    if (headerLoginBtn) {
+        headerLoginBtn.addEventListener('click', e => {
+            console.log('Login button clicked');
+            e.preventDefault();
+            showLoginModal();
+        });
+    }
 
     // Auth modal — Enter key on inputs
     document.addEventListener('keydown', e => {

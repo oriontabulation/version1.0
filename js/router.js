@@ -56,6 +56,7 @@ function _handleClick(e) {
     if (!target) return;
 
     const action = target.dataset.action;
+    console.log('router click detected action:', action);
     if (!action) return;
 
     let args = [];

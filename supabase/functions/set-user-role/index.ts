@@ -2,10 +2,23 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const ALLOWED_ROLES = ['admin', 'judge', 'team', 'public'];
-const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type' };
+// CORS: restrict origins and allow credentials
+const ALLOWED_ORIGINS = (Deno.env.get('ALLOWED_ORIGINS') ?? 'https://oriontabulation.com,https://www.oriontabulation.com').split(',').map(s => s.trim()).filter(Boolean);
+function corsHeaders(origin?: string | null) {
+  const originToUse = origin && ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0] ?? '';
+  const h: Record<string, string> = {
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+    'Access-Control-Allow-Credentials': 'true',
+    'Vary': 'Origin',
+  };
+  if (originToUse) h['Access-Control-Allow-Origin'] = originToUse;
+  return h;
+}
 
 serve(async (req: Request) => {
-    if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
+    const origin = req.headers.get('Origin');
+    const headers = corsHeaders(origin);
+    if (req.method === 'OPTIONS') return new Response('ok', { headers });
 
     try {
         const auth = req.headers.get('Authorization');
@@ -28,10 +41,10 @@ serve(async (req: Request) => {
 
         await adminSb.from('token_audit_log').insert({ action: `role_change:${newRole}`, ip_address: req.headers.get('cf-connecting-ip'), user_agent: req.headers.get('user-agent') });
 
-        return new Response(JSON.stringify({ ok: true, targetUserId, newRole }), { status: 200, headers: { ...CORS, 'Content-Type': 'application/json' } });
+        return new Response(JSON.stringify({ ok: true, targetUserId, newRole }), { status: 200, headers: { ...headers, 'Content-Type': 'application/json' } });
 
     } catch (err) {
         console.error('[set-user-role]', err);
-        return new Response(JSON.stringify({ error: 'Internal error' }), { status: 500, headers: { ...CORS, 'Content-Type': 'application/json' } });
+        return new Response(JSON.stringify({ error: 'Internal error' }), { status: 500, headers: { ...headers, 'Content-Type': 'application/json' } });
     }
 });
