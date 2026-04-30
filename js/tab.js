@@ -129,14 +129,14 @@ function _renderLockedPage(containerId, reason) {
         sub        = `The admin hasn't published <strong>${meta.label}</strong> yet. Check back later.`;
         btnHtml    = isAuth
             ? `<button onclick="window.switchTab('public')" class="btn btn-secondary btn-sm">← Back to Home</button>`
-            : `<button onclick="window.showLoginModal()" class="btn btn-primary btn-sm">Login</button>
+            : `<button data-action="showLoginModal" class="btn btn-primary btn-sm">Login</button>
                <button onclick="window.switchTab('public')" class="btn btn-secondary btn-sm">← Back to Home</button>`;
     } else {
         headline   = 'Login to View';
         badgeClass = 'locked-badge locked-badge--info';
         badgeText  = '🔑 Login Required';
         sub        = `You need to be logged in to view <strong>${meta.label}</strong>. ${meta.blurb}`;
-        btnHtml    = `<button onclick="window.showLoginModal()" class="btn btn-primary btn-sm">🔑 Login</button>
+        btnHtml    = `<button data-action="showLoginModal" class="btn btn-primary btn-sm">🔑 Login</button>
                       <button onclick="window.switchTab('public')" class="btn btn-secondary btn-sm">← Back to Home</button>`;
     }
 
