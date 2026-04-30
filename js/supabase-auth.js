@@ -1,8 +1,4 @@
 // js/supabase-auth.js — Secure auth using JWT app_metadata for roles
-// KEY CHANGE: role is read from user.app_metadata (JWT-signed by Supabase).
-//             It is NEVER stored in state, localStorage, or the DB user_profiles row.
-//             Modifying localStorage cannot escalate privileges.
-
 import { supabase }   from './supabase.js';
 import { api }        from './api.js';
 import { state, save } from './state.js';
