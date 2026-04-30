@@ -379,13 +379,12 @@ async function init() {
     // 5. Load active tournament data (BYPASS CACHE for diagnostics)
     console.log('[main] Active Tournament ID:', activeId);
 
-    const [teams, judges, rounds] = await Promise.all([
+    const [teams, judges, rounds, publish] = await Promise.all([
         api.getTeams(activeId),
         api.getJudges(activeId),
-        api.getRounds(activeId)
+        api.getRounds(activeId),
+        api.getPublishState(activeId).catch(() => ({}))
     ]);
-
-    const publish = tournaments.find(t => t.id === activeId)?.tournament_publish || {};
 
     // 6. Hydrate in-memory state cache
     hydrateState({ activeTournamentId: activeId, tournaments, teams, judges, rounds, publish });
