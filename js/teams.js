@@ -220,24 +220,31 @@ function _buildTeamCard(team, isAdmin, cats = []) {
     // Speakers
     const speakers = team.speakers || [];
     if (speakers.length > 0) {
-        const spkEl = el('div', { class: 'team-speakers', style: 'margin-top:12px;' },
+        const spkEl = el('div', { class: 'team-speakers' },
             ...speakers.map(s => {
                 const name = s.name || s;
                 const email = s.email;
                 const content = email ? `${name} (${email})` : name;
-                return el('span', { style: 'background:var(--bg-light);padding:4px 10px;border-radius:14px;font-size:12px;margin-right:6px;display:inline-block;margin-bottom:4px;' }, content);
+                return el('span', {}, content);
             })
         );
         card.appendChild(spkEl);
     }
 
-    // Actions
+    // Actions - always show for now to debug
+    const actions = el('div', { 
+        style: 'display:flex;gap:10px;margin-top:16px;padding-top:12px;border-top:1px solid var(--color-border);'
+    });
+    // Check if admin - show edit/delete only if admin
     if (isAdmin) {
-        const actions = el('div', { class: 'team-actions', style: 'margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;' });
-        actions.appendChild(el('button', { class: 'btn btn-secondary btn-sm', 'data-action': 'showEditTeam', 'data-args': JSON.stringify([team.id]) }, '✏️ Edit'));
-        actions.appendChild(el('button', { class: 'btn btn-danger btn-sm', 'data-action': 'deleteTeam', 'data-args': JSON.stringify([team.id]) }, '🗑 Delete'));
-        card.appendChild(actions);
+        actions.innerHTML = `
+            <button class="btn btn-secondary" style="padding:8px 16px;font-size:13px;border-radius:8px;cursor:pointer;" data-action="showEditTeam" data-args='["${team.id}"]'>✏️ Edit</button>
+            <button style="padding:8px 16px;font-size:13px;border-radius:8px;background:#ef4444;color:white;border:none;cursor:pointer;" data-action="deleteTeam" data-args='["${team.id}"]'>🗑 Delete</button>
+        `;
+    } else {
+        actions.innerHTML = `<span style="color:#94a3b8;font-size:12px;">Admin only</span>`;
     }
+    card.appendChild(actions);
 
     return card;
 }

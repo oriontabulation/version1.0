@@ -205,11 +205,10 @@ function displayJudges() {
 function _buildJudgeCard(judge, isAdmin) {
     const card = el('div', {
         class: 'judge-card',
-        id: `judge-${judge.id}`,
-        style: 'background:white;border:1px solid #e2e8f0;border-radius:10px;padding:14px;margin-bottom:10px;'
+        id: `judge-${judge.id}`
     });
 
-    const header = el('div', { class: 'judge-header', style: 'display:flex;align-items:center;gap:10px;' });
+    const header = el('div', { class: 'judge-header' });
     const avatar = el('div', { class: 'judge-avatar' }, (judge.name || '?')[0].toUpperCase());
     const info = el('div', { class: 'judge-info' });
     info.appendChild(el('strong', {}, judge.name));
@@ -217,9 +216,17 @@ function _buildJudgeCard(judge, isAdmin) {
     header.appendChild(info);
 
     if (isAdmin) {
-        const actions = el('div', { style: 'margin-left:auto;display:flex;gap:6px;' });
-        actions.appendChild(el('button', { class: 'btn btn-secondary btn-sm', 'data-action': 'showEditJudge', 'data-args': JSON.stringify([judge.id]) }, '✏️'));
-        actions.appendChild(el('button', { class: 'btn btn-danger btn-sm', 'data-action': 'deleteJudge', 'data-args': JSON.stringify([judge.id]) }, '🗑'));
+        const actions = el('div', { style: 'margin-left:auto;display:flex;gap:8px;' });
+        actions.appendChild(el('button', { 
+            class: 'btn btn-secondary btn-sm', 
+            'data-action': 'showEditJudge', 
+            'data-args': JSON.stringify([judge.id]) 
+        }, '✏️ Edit'));
+        actions.appendChild(el('button', { 
+            class: 'btn btn-danger btn-sm',
+            'data-action': 'deleteJudge', 
+            'data-args': JSON.stringify([judge.id]) 
+        }, '🗑 Delete'));
         header.appendChild(actions);
     }
 
