@@ -474,6 +474,7 @@ async function init() {
 
 // Start the app
 console.log('[main] About to call init()');
+window.mainLoaded = true;
 init().catch(err => {
     console.error('[main] Init failed:', err);
 });

@@ -23,7 +23,7 @@
         }
       }
     </script>
-    <script type="module" src="js/main.js"></script>
+    <script type="module" src="js/main.js" onerror="console.error('Failed to load main.js:', this.src); document.getElementById('init-error').style.display='block'; document.getElementById('init-error').innerHTML='Failed to load main.js. Check Console (F12).';"></script>
     <script>
       // Fallback check - if main.js doesn't load in 3 seconds
       setTimeout(() => {
@@ -31,11 +31,14 @@
               const errDiv = document.getElementById('init-error');
               if (errDiv) {
                   errDiv.style.display = 'block';
-                  errDiv.textContent = 'App failed to load. Please refresh (Ctrl+Shift+R) or try Chrome/Edge.';
+                  errDiv.innerHTML = 'App failed to load. <br>Please refresh (Ctrl+Shift+R) or try Chrome/Edge.<br><small>Debug: __orionStep=' + (window.__orionStep || 'undefined') + ', main.js loaded=' + (typeof window.mainLoaded || 'unknown') + '</small>';
               }
               console.error('[index.html] main.js failed to load or init() was not called');
           }
       }, 3000);
+      
+      // Check if main.js loads
+      window.mainLoaded = false;
     </script>
     <!-- Fallback - try loading main.js without module -->
     <script>console.log('Inline script running');</script>
