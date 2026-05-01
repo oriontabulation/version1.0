@@ -746,6 +746,18 @@ function renderResults() {
 
                 const govWin = (debate.govResults?.total || 0) > (debate.oppResults?.total || 0);
 
+                // Get room info
+                const room = debate.room || debate.roomName || null;
+                
+                // Get judge/panel info
+                const judgePanel = debate.judges || [];
+                const judgeNames = judgePanel.length > 0 
+                    ? judgePanel.map(j => {
+                        const judge = (state.judges || []).find(jdg => jdg && jdg.id === j);
+                        return judge?.name || 'Judge';
+                      }).filter(Boolean).join(', ')
+                    : null;
+
                 html += `
                     <div class="result-debate">
                         <div class="result-debate__sides">
@@ -763,6 +775,12 @@ function renderResults() {
                                 </div>
                             </div>
                         </div>
+                        ${room || judgeNames ? `
+                        <div class="result-debate__meta">
+                            ${room ? `<span class="result-meta__room">📍 ${escapeHTML(room)}</span>` : ''}
+                            ${judgeNames ? `<span class="result-meta__judges">👤 ${escapeHTML(judgeNames)}</span>` : ''}
+                        </div>
+                        ` : ''}
                     </div>
                 `;
             });

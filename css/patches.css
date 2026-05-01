@@ -1697,7 +1697,24 @@ body.hide-judge-role-reg #registerForm .judge-role-field {
 }
 
 .result-debate__score--winner {
-    color: #10b981;
+    color: var(--color-success) !important;
+}
+
+.result-debate__meta {
+    display: flex;
+    gap: 16px;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--color-border);
+    font-size: 13px;
+    color: var(--color-muted);
+}
+
+.result-meta__room,
+.result-meta__judges {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
 }
 
 .u-fw-700 {
