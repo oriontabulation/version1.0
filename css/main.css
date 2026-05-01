@@ -3599,6 +3599,20 @@ footer {
     color: var(--color-muted);
 }
 
+.td-wins,
+.td-total {
+    text-align: center;
+    font-weight: 600;
+}
+
+.td-wins {
+    color: var(--color-primary);
+}
+
+.td-total {
+    color: var(--color-primary);
+}
+
 .td-muted {
     text-align: center;
     color: var(--color-subtle);

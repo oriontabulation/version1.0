@@ -592,10 +592,10 @@ function buildStandingsTable(ranked, allRounds) {
     });
 
     html += `
-                        <th class="th-center th-accent">Wins</th>
-                        <th class="th-center th-accent">Total</th>
-                        <th class="th-center">Avg</th>
-                        <th class="th-center">Status</th>
+                        <th class="th-center th-accent" style="min-width:50px;">Wins</th>
+                        <th class="th-center th-accent" style="min-width:60px;">Total</th>
+                        <th class="th-center" style="min-width:50px;">Avg</th>
+                        <th class="th-center" style="min-width:80px;">Status</th>
                     </tr>
                 </thead>
                 <tbody>
