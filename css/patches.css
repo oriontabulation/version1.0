@@ -1528,7 +1528,7 @@ body.hide-judge-role-reg #registerForm .judge-role-field {
   position: sticky !important;
   bottom: 52px !important;
   z-index: 8 !important;
-  margin-top: 10px !important;
+  margin-top: 24px !important;
   padding: 10px 12px !important;
   border-radius: 10px !important;
 }
