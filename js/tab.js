@@ -413,13 +413,11 @@ function renderMotions() {
     if (!container) return;
 
     const allRounds = [...(state.rounds || [])].sort((a, b) => (b.id || 0) - (a.id || 0));
-    const isAdmin   = state.auth?.currentUser?.role === 'admin';
 
     let html = `
         <div class="section">
             <div class="standings-header">
                 <h2 class="u-mt-0">Round Motions</h2>
-                ${isAdmin ? `<button onclick="window.showAddMotionModal?.()" class="btn btn-primary btn-sm">Add Motion</button>` : ''}
             </div>
             <p class="u-text-muted u-mb-xl">All motions from the tournament</p>
     `;
@@ -460,11 +458,6 @@ function renderMotions() {
                         ${round.infoslide ? `
                             <div class="motion-card__infoslide">
                                 <strong class="u-text-primary">📌 Info Slide:</strong> ${escapeHTML(round.infoslide)}
-                            </div>
-                        ` : ''}
-                        ${isAdmin ? `
-                            <div class="u-mt-lg">
-                                <button onclick="window.showEditMotionModal?.(${state.rounds.indexOf(round)})" class="btn btn-secondary btn-xs">✏️ Edit Motion</button>
                             </div>
                         ` : ''}
                     </div>
