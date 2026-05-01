@@ -487,52 +487,9 @@ async function init() {
     }
 }
 
-// ── DOMContentLoaded ──────────────────────────────────────────────────────────
-document.addEventListener('DOMContentLoaded', () => {
-    // Logo/profile nav
-    document.querySelector('.header-logo')
-        ?.addEventListener('click', () => navigate('public'));
-    document.querySelector('.header-user')
-        ?.addEventListener('click', () => navigate('profile'));
 
-    document.getElementById('global-search')?.addEventListener('input', () => {
-        syncGlobalSearchForActiveTab();
-        applyGlobalSearch();
-    });
 
-    // Install the delegated click listener to handle data-action attributes
-    installDelegatedListener();
-
-    // Ensure the header login button works even if delegated listener fails
-    const headerLoginBtn = document.getElementById('header-login-btn');
-    if (headerLoginBtn) {
-        headerLoginBtn.addEventListener('click', e => {
-            e.preventDefault();
-            showLoginModal();
-        });
-    }
-
-    // Auth modal — Enter key on inputs
-    document.addEventListener('keydown', e => {
-        if (e.key === 'Enter' && document.getElementById('loginPassword') === document.activeElement) {
-            handleLogin();
-        }
-    });
-
-    // Start the app
-    init().catch(err => {
-        console.error('[main] Init failed:', err);
-        showNotification('Failed to connect to the server. Check your internet connection.', 'error');
-        // Force navigate to public tab on any error
-        localStorage.setItem('orion_active_tab', 'public');
-        navigate('public');
-    });
+// Start the app
+init().catch(err => {
+    console.error('[main] Init failed:', err);
 });
-
-// ── Legacy shim: exposeOnWindow ───────────────────────────────────────────────
-// Needed while any onclick="window.X()" attributes remain in HTML or JS templates.
-// DELETE this block once all templates use data-action.
-// The router's registerActions() already sets window.switchTab as a shim.
-import { exposeOnWindow } from './registry.js';
-exposeOnWindow();
-
