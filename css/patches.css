@@ -1500,7 +1500,7 @@ body.hide-judge-role-reg #registerForm .judge-role-field {
 }
 .ballot-modal-overlay .modal-results-grid {
   display: grid !important;
-  grid-template-columns: minmax(0, 1fr) !important;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important;
   gap: 12px !important;
   margin-bottom: 8px !important;
 }
@@ -1546,9 +1546,6 @@ body.hide-judge-role-reg #registerForm .judge-role-field {
     max-width: 100% !important;
     max-height: 96dvh !important;
     border-radius: 14px 14px 0 0 !important;
-  }
-  .ballot-modal-overlay .modal-results-grid {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important;
   }
   .ballot-modal-overlay #ballot-totals-bar {
     bottom: 50px !important;
