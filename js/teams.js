@@ -66,11 +66,16 @@ function _renderAdminScaffold(container) {
     formSection.className = 'section';
     formSection.innerHTML = `
         <h2 style="margin:0 0 16px;">Add New Team</h2>
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:12px;">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:12px;">
             <input type="text"  id="team-name"     placeholder="Team Name *"                          style="padding:12px;">
             <input type="text"  id="team-code"     placeholder="Code (e.g. SEN)"                      style="padding:12px;">
-            <input type="email" id="team-email"    placeholder="Email (optional)"                      style="padding:12px;">
-            <input type="text"  id="team-speakers" placeholder="Speakers (comma-separated, optional)"  style="padding:12px;">
+            <input type="email" id="team-email"    placeholder="Team Email (optional)"              style="padding:12px;">
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:16px;">
+            <input type="text"  id="speaker1-name" placeholder="Speaker 1 Name (optional)"          style="padding:12px;">
+            <input type="email" id="speaker1-email" placeholder="Speaker 1 Email (optional)"        style="padding:12px;">
+            <input type="text"  id="speaker2-name" placeholder="Speaker 2 Name (optional)"          style="padding:12px;">
+            <input type="email" id="speaker2-email" placeholder="Speaker 2 Email (optional)"        style="padding:12px;">
         </div>
         <button class="btn btn-primary" style="padding:12px;" data-action="addTeam">Add Team</button>`;
 
@@ -216,7 +221,12 @@ function _buildTeamCard(team, isAdmin, cats = []) {
     const speakers = team.speakers || [];
     if (speakers.length > 0) {
         const spkEl = el('div', { class: 'team-speakers', style: 'margin-top:12px;' },
-            ...speakers.map(s => el('span', { style: 'background:var(--bg-light);padding:4px 10px;border-radius:14px;font-size:12px;margin-right:6px;' }, s.name || s, ' '))
+            ...speakers.map(s => {
+                const name = s.name || s;
+                const email = s.email;
+                const content = email ? `${name} (${email})` : name;
+                return el('span', { style: 'background:var(--bg-light);padding:4px 10px;border-radius:14px;font-size:12px;margin-right:6px;display:inline-block;margin-bottom:4px;' }, content);
+            })
         );
         card.appendChild(spkEl);
     }
@@ -239,8 +249,16 @@ export async function addTeam() {
     const name = document.getElementById('team-name')?.value.trim();
     const code = document.getElementById('team-code')?.value.trim().toUpperCase();
     const email = document.getElementById('team-email')?.value.trim();
-    const spkRaw = document.getElementById('team-speakers')?.value.trim();
-    const speakers = spkRaw ? spkRaw.split(',').map(s => s.trim()).filter(Boolean) : [];
+    
+    const spk1Name = document.getElementById('speaker1-name')?.value.trim();
+    const spk1Email = document.getElementById('speaker1-email')?.value.trim();
+    const spk2Name = document.getElementById('speaker2-name')?.value.trim();
+    const spk2Email = document.getElementById('speaker2-email')?.value.trim();
+    
+    const speakers = [];
+    if (spk1Name) speakers.push({ name: spk1Name, email: spk1Email || null, position: 1 });
+    if (spk2Name) speakers.push({ name: spk2Name, email: spk2Email || null, position: 2 });
+    
     const catId = document.getElementById('add-team-category')?.value || null;
     const tournId = state.activeTournamentId;
 
@@ -254,12 +272,12 @@ export async function addTeam() {
             categories: catId ? [catId] : []
         });
 
-        addTeamToCache({ ...team, speakers: speakers.map((n, i) => ({ name: n, position: i + 1 })) });
+        addTeamToCache({ ...team, speakers });
         displayTeams();
         showNotification(`Team "${name}" added`, 'success');
 
         // Clear form
-        ['team-name', 'team-code', 'team-email', 'team-speakers'].forEach(id => {
+        ['team-name', 'team-code', 'team-email', 'speaker1-name', 'speaker1-email', 'speaker2-name', 'speaker2-email'].forEach(id => {
             const el = document.getElementById(id); if (el) el.value = '';
         });
         window.updateNavDropdowns?.();
@@ -292,7 +310,9 @@ export function showEditTeam(teamId) {
     const card = document.getElementById(`team-${teamId}`);
     if (!card) return;
 
-    const spkNames = (team.speakers || []).map(s => s.name || s).join(', ');
+    const speakers = team.speakers || [];
+    const spk1 = speakers[0] || {};
+    const spk2 = speakers[1] || {};
 
     // Build edit form safely
     card.innerHTML = '';
@@ -307,7 +327,6 @@ export function showEditTeam(teamId) {
         ['edit-team-name-' + teamId, 'text', 'Team Name', team.name],
         ['edit-team-code-' + teamId, 'text', 'Code', team.code || ''],
         ['edit-team-email-' + teamId, 'email', 'Email', team.email || ''],
-        ['edit-team-speakers-' + teamId, 'text', 'Speakers (comma-sep)', spkNames],
     ];
 
     for (const [id, type, placeholder, value] of fields) {
@@ -319,6 +338,24 @@ export function showEditTeam(teamId) {
         group.appendChild(inp);
         grid.appendChild(group);
     }
+
+    // Speaker fields
+    const speakerFields = [
+        ['edit-spk1-name-' + teamId, 'edit-spk1-email-' + teamId, 'Speaker 1', spk1.name || '', spk1.email || ''],
+        ['edit-spk2-name-' + teamId, 'edit-spk2-email-' + teamId, 'Speaker 2', spk2.name || '', spk2.email || ''],
+    ];
+
+    for (const [nameId, emailId, label, nameVal, emailVal] of speakerFields) {
+        const group = el('div', { style: 'display:flex;gap:8px;' });
+        const nameInp = el('input', { type: 'text', id: nameId, placeholder: label + ' Name', style: 'flex:1;padding:8px;border-radius:6px;border:1px solid #e2e8f0;' });
+        nameInp.value = nameVal;
+        const emailInp = el('input', { type: 'email', id: emailId, placeholder: label + ' Email', style: 'flex:1;padding:8px;border-radius:6px;border:1px solid #e2e8f0;' });
+        emailInp.value = emailVal;
+        group.appendChild(nameInp);
+        group.appendChild(emailInp);
+        grid.appendChild(group);
+    }
+
     form.appendChild(grid);
 
     const btns = el('div', { style: 'display:flex;gap:10px;' });
@@ -337,14 +374,21 @@ export async function saveEditTeam(teamId) {
     const name = document.getElementById(`edit-team-name-${teamId}`)?.value.trim();
     const code = document.getElementById(`edit-team-code-${teamId}`)?.value.trim().toUpperCase();
     const email = document.getElementById(`edit-team-email-${teamId}`)?.value.trim();
-    const spkRaw = document.getElementById(`edit-team-speakers-${teamId}`)?.value.trim();
-    const speakers = spkRaw ? spkRaw.split(',').map(s => s.trim()).filter(Boolean) : [];
+
+    const spk1Name = document.getElementById(`edit-spk1-name-${teamId}`)?.value.trim();
+    const spk1Email = document.getElementById(`edit-spk1-email-${teamId}`)?.value.trim();
+    const spk2Name = document.getElementById(`edit-spk2-name-${teamId}`)?.value.trim();
+    const spk2Email = document.getElementById(`edit-spk2-email-${teamId}`)?.value.trim();
+
+    const speakers = [];
+    if (spk1Name) speakers.push({ name: spk1Name, email: spk1Email || null, position: 1 });
+    if (spk2Name) speakers.push({ name: spk2Name, email: spk2Email || null, position: 2 });
 
     if (!name) { showNotification('Team name required', 'error'); return; }
 
     try {
         await api.updateTeam(teamId, { name, code, email, speakers });
-        patchTeam(teamId, { name, code, email, speakers: speakers.map((n, i) => ({ name: n, position: i + 1 })) });
+        patchTeam(teamId, { name, code, email, speakers });
         displayTeams();
         showNotification('Team updated', 'success');
     } catch (e) {
