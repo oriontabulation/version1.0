@@ -1526,7 +1526,7 @@ body.hide-judge-role-reg #registerForm .judge-role-field {
 }
 .ballot-modal-overlay #ballot-totals-bar {
   position: sticky !important;
-  bottom: 52px !important;
+  bottom: 32px !important;
   z-index: 8 !important;
   margin-top: 24px !important;
   padding: 10px 12px !important;
