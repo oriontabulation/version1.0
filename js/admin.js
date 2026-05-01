@@ -535,12 +535,55 @@ async function adminDeleteTournament(id) {
 }
 window.adminDeleteTournament = adminDeleteTournament;
 
+// Helper to get team name by ID
+function _getTeamName(teamId) {
+    if (!teamId) return 'TBD';
+    const team = (state.teams || []).find(t => String(t.id) === String(teamId));
+    return team?.name || 'Unknown';
+}
+
 // ============================================================================
 // SECTION: OVERVIEW
 // ============================================================================
 function _sectionOverview() {
     const s = _getStats();
-    const rounds = [...(state.rounds||[])].reverse().slice(0,5);
+    const rounds = state.rounds || [];
+    const currentRound = rounds.filter(r => r.debates?.length > 0).pop();
+    
+    let roomBallotsHtml = '';
+    if (!currentRound) {
+        roomBallotsHtml = `<div class="adm-empty">No rounds yet — go to Rounds &amp; Draw to create one.</div>`;
+    } else {
+        const debates = currentRound.debates || [];
+        const rooms = currentRound.rooms || [];
+        
+        const submitted = debates.filter(d => d.entered).length;
+        const pending = debates.length - submitted;
+        
+        let rows = debates.map((d, i) => {
+            const roomName = rooms[i] || `Room ${i + 1}`;
+            const isEntered = d.entered;
+            const govTeam = _getTeamName(d.gov);
+            const oppTeam = _getTeamName(d.opp);
+            
+            return `<div class="adm-room-row" style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid #e2e8f0;">
+                <div style="flex:1;">
+                    <strong style="color:#1e293b;">${escapeHTML(roomName)}</strong>
+                    <div style="font-size:12px;color:#64748b;">${escapeHTML(govTeam)} vs ${escapeHTML(oppTeam)}</div>
+                </div>
+                <span class="${isEntered ? 'adm-badge green' : 'adm-badge amber'}">${isEntered ? '✅ Submitted' : '⏳ Pending'}</span>
+            </div>`;
+        }).join('');
+        
+        roomBallotsHtml = `
+            <div style="margin-bottom:12px;font-size:13px;color:#64748b;">
+                <strong>Round ${currentRound.id}</strong> — ${submitted} submitted, ${pending} pending
+            </div>
+            ${rows}
+            <div class="adm-card-action">
+                <button class="adm-btn secondary sm" onclick="window.adminSwitchSection('rounds')">Manage ballots →</button>
+            </div>`;
+    }
 
     return `
     <div class="adm-section-head">
@@ -551,33 +594,6 @@ function _sectionOverview() {
     <!-- Key stats     -->
     <script>setTimeout(()=>{ if(typeof window.renderThemePicker==='function') window.renderThemePicker('theme-picker-container'); },50)</script>
     <div class="adm-overview-grid">
-        <div class="adm-card">
-            <div class="adm-card-title">📈 Progress</div>
-            ${_progressBar('Ballot Completion', s.debates.entered, s.debates.total, '#f97316')}
-            ${_progressBar('Rounds Completed',  s.rounds.completed, Math.max(s.rounds.total,1), '#3b82f6')}            
-            ${_progressBar('Teams Breaking',    s.teams.breaking, Math.max(s.teams.total,1), '#8b5cf6')}
-        </div>
-        <div class="adm-card">
-            <div class="adm-card-title">🕐 Recent Rounds</div>
-            ${rounds.length === 0
-                ? `<div class="adm-empty">No rounds yet — go to Rounds &amp; Draw to create one.</div>`
-                : rounds.map(r => {
-                    const done = (r.debates||[]).filter(d=>d.entered).length;
-                    const tot  = (r.debates||[]).length;
-                    return `<div class="adm-round-row">
-                        <div class="adm-round-info">
-                            <strong>Round ${r.id}</strong>
-                            ${r.type==='knockout'?'<span class="adm-badge red">KO</span>':''}
-                            ${r.blinded?'<span class="adm-badge grey">Blind</span>':''}
-                            <small>${r.motion ? escapeHTML(r.motion.substring(0,50))+'…' : 'No motion'}</small>
-                        </div>
-                        <div class="adm-round-pct">${tot?Math.round(done/tot*100):0}%</div>
-                    </div>`;
-                }).join('')}
-            <div class="adm-card-action">
-                <button class="adm-btn secondary sm" onclick="window.adminSwitchSection('rounds')">All rounds →</button>
-            </div>
-        </div>
         <div class="adm-card">
             <div class="adm-card-title">⚡ Quick Access</div>
             <div class="adm-quick-grid">
@@ -614,6 +630,16 @@ function _sectionOverview() {
                     <span class="adm-quick-label">Feedback</span>
                 </button>
             </div>
+        </div>
+        <div class="adm-card">
+            <div class="adm-card-title">📈 Progress</div>
+            ${_progressBar('Ballot Completion', s.debates.entered, s.debates.total, '#f97316')}
+            ${_progressBar('Rounds Completed',  s.rounds.completed, Math.max(s.rounds.total,1), '#3b82f6')}            
+            ${_progressBar('Teams Breaking',    s.teams.breaking, Math.max(s.teams.total,1), '#8b5cf6')}
+        </div>
+        <div class="adm-card">
+            <div class="adm-card-title">🚪 Ballot Submission per Room</div>
+            ${roomBallotsHtml}
         </div>
     </div>`;
 }
