@@ -634,8 +634,17 @@ function _sectionOverview() {
         <div class="adm-card">
             <div class="adm-card-title">📈 Progress</div>
             ${_progressBar('Ballot Completion', s.debates.entered, s.debates.total, '#f97316')}
-            ${_progressBar('Rounds Completed',  s.rounds.completed, Math.max(s.rounds.total,1), '#3b82f6')}            
+            ${_progressBar('Rounds Completed',  s.rounds.completed, Math.max(s.rounds.total,1), '#3b82f6')}
             ${_progressBar('Teams Breaking',    s.teams.breaking, Math.max(s.teams.total,1), '#8b5cf6')}
+            <div style="margin-top:12px;padding-top:12px;border-top:1px solid #e2e8f0;">
+                <div style="font-size:12px;font-weight:700;color:#1e293b;margin-bottom:8px;">Feedback & Participants</div>
+                ${_statRow('Feedback Submitted', s.feedback.total)}
+                ${_statRow('Judges', s.judges.total)}
+                ${_statRow('  - Chairs', s.judges.chair)}
+                ${_statRow('  - Panelists', s.judges.panellist)}
+                ${_statRow('  - Trainees', s.judges.trainee)}
+                ${_statRow('Teams', s.teams.total)}
+            </div>
         </div>
         <div class="adm-card">
             <div class="adm-card-title">🚪 Ballot Submission per Room</div>
@@ -1648,14 +1657,29 @@ function _progressBar(label, val, max, color) {
     </div>`;
 }
 
+function _statRow(label, value) {
+    return `<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #e2e8f0;">
+        <span style="color:#64748b;font-size:13px;">${label}</span>
+        <strong style="color:#1e293b;">${value}</strong>
+    </div>`;
+}
+
 function _getStats() {
     const teams      = state.teams  || [];
     const judges     = state.judges || [];
     const rounds     = state.rounds || [];
     const allDebates = rounds.flatMap(r => r.debates || []);
+    const feedback   = state.feedback || [];
+    
     return {
         teams:   { total: teams.length,   breaking: teams.filter(t=>t.broke).length },
-        judges:  { total: judges.length,  chair: judges.filter(j=>j.role==='chair').length },
+        judges:  { 
+            total: judges.length,  
+            chair: judges.filter(j=>j.role==='chair').length,
+            panellist: judges.filter(j=>j.role==='panellist').length,
+            trainee: judges.filter(j=>j.role==='trainee').length
+        },
+        feedback: { total: feedback.length },
         rounds:  { total: rounds.length,  completed: rounds.filter(r=>(r.debates||[]).every(d=>d.entered)&&r.debates?.length>0).length },
         debates: { total: allDebates.length, entered: allDebates.filter(d=>d.entered).length },
     };
