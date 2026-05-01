@@ -1,5 +1,7 @@
 import * as Sentry from '@sentry/browser';
 
+console.log('[main.js] Module loading...');
+
 const env = (typeof import.meta !== 'undefined' && import.meta.env) ? import.meta.env : (window.ENV || {});
 
 if (env.VITE_SENTRY_DSN && env.VITE_SENTRY_DSN !== 'YOUR_SENTRY_DSN') {
@@ -21,6 +23,12 @@ window.addEventListener('error', (e) => {
     const env = (typeof import.meta !== 'undefined' && import.meta.env) ? import.meta.env : (window.ENV || {});
     if (env.VITE_SENTRY_DSN) Sentry.captureException(e.error);
     localStorage.setItem('orion_active_tab', 'public');
+    // Show visible error to user
+    const errDiv = document.getElementById('init-error');
+    if (errDiv) {
+        errDiv.style.display = 'block';
+        errDiv.textContent = 'Error: ' + (e.error?.message || e.message);
+    }
 });
 
 window.addEventListener('unhandledrejection', (e) => {
@@ -219,6 +227,10 @@ window.showNotification = showNotification;
 window.updatePublicCounts = updatePublicCounts;
 window.updateHeaderTournamentName = updateHeaderTournamentName;
 window.navigate = navigate;
+window.showLoginModal = showLoginModal;
+window.renderAdminDashboard = renderAdminDashboard;
+window.adminPublishAll = adminPublishAll;
+window.adminHideAll = adminHideAll;
 
 function activeTabId() {
     return document.querySelector('.tab-content.active')?.id || 'public';
@@ -440,16 +452,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Ensure the header login button works even if delegated listener fails
     const headerLoginBtn = document.getElementById('header-login-btn');
-    console.log('[main] headerLoginBtn found:', !!headerLoginBtn);
     if (headerLoginBtn) {
         headerLoginBtn.addEventListener('click', e => {
-            console.log('[main] Login button CLICKED!');
-            alert('LOGIN CLICKED - opening modal');
             e.preventDefault();
             showLoginModal();
         });
-    } else {
-        alert('ERROR: header-login-btn NOT FOUND in DOM!');
     }
 
     // Auth modal — Enter key on inputs

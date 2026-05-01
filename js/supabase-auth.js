@@ -88,6 +88,8 @@ async function handleLogin() {
     try {
         await api.signIn(email, password);
         // Success is handled by onAuthStateChange SIGNED_IN event
+        // But close modal as fallback in case that fails
+        setTimeout(() => closeAllModals(), 500);
     } catch (err) {
         console.error('[auth] Login error:', err);
 
@@ -518,13 +520,12 @@ async function signInWithApple() {
 
 // ── SHOW LOGIN MODAL ─────────────────────────────────────────────────────────
 function showLoginModal() {
-    console.log('[auth] showLoginModal called - START');
     closeAllModals();
-    console.log('[auth] Modals closed');
 
     // Create overlay with explicit inline styles that override everything
     const overlay = document.createElement('div');
     overlay.id = 'auth-modal-overlay';
+    overlay.className = 'modal-overlay';
     // Force all styles inline to ensure it works in all browsers
     overlay.style.cssText = `
         position: fixed !important;
@@ -544,7 +545,6 @@ function showLoginModal() {
         box-sizing: border-box !important;
     `;
     overlay.addEventListener('click', e => { if (e.target === overlay) closeAllModals(); });
-    console.log('[auth] Overlay created');
 
     // Create modal with explicit styles
     const modal = document.createElement('div');
@@ -567,8 +567,6 @@ function showLoginModal() {
     ).join('');
 
     const oauthLinks = ''; 
-
-    modal.innerHTML = `
 
     modal.innerHTML = `
     <style>
@@ -606,6 +604,7 @@ function showLoginModal() {
     .auth-divider hr{flex:1;border:none;border-top:1px solid #1e293b;}
     .auth-divider span{font-size:11px;color:#334155;white-space:nowrap;letter-spacing:.04em;}
     </style>
+    <button onclick="closeAllModals()" style="position:absolute;top:12px;right:12px;background:none;border:none;font-size:24px;cursor:pointer;color:#64748b;z-index:10;">&times;</button>
     <div class="auth-inner">
         <div class="auth-logo-wrap">
             <img src="IMG/logo.png" alt="Orion logo" class="auth-logo">
@@ -681,14 +680,11 @@ function showLoginModal() {
 
     overlay.appendChild(modal);
     document.body.appendChild(overlay);
-    console.log('[auth] Modal appended to body');
-    console.log('[auth] Modal element:', document.getElementById('auth-modal-overlay'));
     
     // Force a reflow and ensure visibility
     overlay.offsetHeight; // trigger reflow
     overlay.style.visibility = 'visible';
     overlay.style.opacity = '1';
-    console.log('[auth] Modal should be visible now');
 
     // Wire events
     document.getElementById('loginTabBtn')    ?.addEventListener('click', () => switchAuthTab('login'));

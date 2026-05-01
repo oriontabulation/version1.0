@@ -4,8 +4,6 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Orion Debate Tab</title>
-    <!-- Immediate debug script to verify JS loads -->
-    <script>alert('JS LOADED - ' + navigator.userAgent);</script>
     <link
       href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
       rel="stylesheet"
@@ -76,7 +74,7 @@
             id="header-login-btn"
             class="btn-primary"
             data-action="showLoginModal"
-            onclick="alert('BUTTON CLICKED'); if(window.showLoginModal){ window.showLoginModal(); } else { alert('showLoginModal not found!'); }"
+            onclick="showLoginModal()"
           >
             Login
           </button>

@@ -1922,7 +1922,7 @@ export function adminConfirmBreak() {
 export function adminCalculateBreak() { adminConfirmBreak(); }
 
 export function adminTogglePublish(tabId) {
-    if (!state.publish) state.publish = {};
+    if (!state?.publish) return;
     state.publish[tabId] = !state.publish[tabId];
     save();
     adminSwitchSection('publish');
@@ -1930,13 +1930,14 @@ export function adminTogglePublish(tabId) {
 }
 
 export function adminPublishAll() {
-    if (!state.publish) state.publish = {};
+    if (!state?.publish) return;
     ['draw','standings','speakers','break','knockout','motions','results'].forEach(t=>state.publish[t]=true);
     save(); adminSwitchSection('publish');
     showNotification('All tabs published','success');
 }
 
 export function adminHideAll() {
+    if (!state) return;
     state.publish = {};
     save(); adminSwitchSection('publish');
     showNotification('All tabs hidden','info');

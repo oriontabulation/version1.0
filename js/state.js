@@ -20,6 +20,8 @@
 import { showNotification } from './utils.js';
 import { buildTeamMap, getJudgeAssignments } from './maps.js';
 
+console.log('[state.js] Module loading...');
+
 // ── Private internal store ────────────────────────────────────────────────────
 let _state = {
     activeTournamentId: null,
