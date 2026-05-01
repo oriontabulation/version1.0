@@ -257,6 +257,18 @@ window.previewJudges = previewJudges;
 window.clearTeamImport = clearTeamImport;
 window.clearJudgeImport = clearJudgeImport;
 
+// Drag and Drop
+window.dndJudgeDragStart = dndJudgeDragStart;
+window.dndJudgeDragOver = dndJudgeDragOver;
+window.dndJudgeDrop = dndJudgeDrop;
+window.dndTeamDragStart = dndTeamDragStart;
+window.dndTeamDragOver = dndTeamDragOver;
+window.dndTeamDrop = dndTeamDrop;
+window.dndDragEnd = dndDragEnd;
+window.dndDragLeave = dndDragLeave;
+window.executeMoveTeam = executeMoveTeam;
+window.moveJudgeToPanel = moveJudgeToPanel;
+
 function activeTabId() {
     return document.querySelector('.tab-content.active')?.id || 'public';
 }
