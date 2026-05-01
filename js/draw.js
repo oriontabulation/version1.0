@@ -4710,7 +4710,7 @@ export function displayRounds() {
 }
 
 
-export function renderRoundCard(round, actualRoundIdx, previousMeetings) {
+export export function renderRoundCard(round, actualRoundIdx, previousMeetings) {
     const debates = round.debates || [];
     const entered = debates.filter(d => d.entered).length;
     const total   = debates.length;
@@ -4804,6 +4804,64 @@ export function renderRoundCard(round, actualRoundIdx, previousMeetings) {
                 ${debates.map((debate, i) => renderDebateCard(round, debate, actualRoundIdx, i, previousMeetings)).join('')}
             </div>
         </div>
+    </div>`;
+}
+
+export function renderRoundMiniTable(round) {
+    const debates = round.debates || [];
+    const rooms = round.rooms || [];
+    
+    const rows = debates.map((debate, i) => {
+        const room = rooms[i] || `Room ${i+1}`;
+        let teamsHtml = '';
+        if (debate.format === 'bp') {
+            const og = (state.teams||[]).find(t=>t.id==debate.og);
+            const oo = (state.teams||[]).find(t=>t.id==debate.oo);
+            const cg = (state.teams||[]).find(t=>t.id==debate.cg);
+            const co = (state.teams||[]).find(t=>t.id==debate.co);
+            teamsHtml = `${escapeHTML(og?.name||'?')}/${escapeHTML(oo?.name||'?')} vs ${escapeHTML(cg?.name||'?')}/${escapeHTML(co?.name||'?')}`;
+        } else if (debate.format === 'speech') {
+            teamsHtml = `${(debate.roomSpeakers||[]).length} speakers`;
+        } else {
+            const gov = (state.teams||[]).find(t=>t.id==debate.gov);
+            const opp = (state.teams||[]).find(t=>t.id==debate.opp);
+            teamsHtml = `${escapeHTML(gov?.name||'TBD')} vs ${escapeHTML(opp?.name||'TBD')}`;
+        }
+        const panel = debate.panel || [];
+        const chairEntry     = panel.find(p => p.role === 'chair');
+        const wingEntries    = panel.filter(p => p.role !== 'chair' && p.role !== 'trainee');
+        const traineeEntries = panel.filter(p => p.role === 'trainee');
+        const chairJudge     = chairEntry ? (state.judges||[]).find(j=>j.id==chairEntry.id) : null;
+        const wingNames      = wingEntries.map(p=>(state.judges||[]).find(j=>j.id==p.id)?.name||'').filter(Boolean);
+        const traineeNames   = traineeEntries.map(p=>(state.judges||[]).find(j=>j.id==p.id)?.name||'').filter(Boolean);
+        const status = debate.entered ? '✅' : panel.length ? '⏳' : '⚠️';
+        const chairHtml = chairJudge
+            ? `${escapeHTML(chairJudge.name)}<span class="rmt-c">(c)</span>`
+            : `<span style="color:#94a3b8">—</span>`;
+        return `<tr>
+            <td class="rmt-room">${escapeHTML(room)}</td>
+            <td class="rmt-teams">${teamsHtml}</td>
+            <td class="rmt-chair">${chairHtml}</td>
+            <td class="rmt-wings">${wingNames.length ? escapeHTML(wingNames.join(', ')) : '<span style="color:#94a3b8">—</span>'}</td>
+            <td class="rmt-trainee">${traineeNames.length ? escapeHTML(traineeNames.join(', ')) : '<span style="color:#94a3b8">—</span>'}</td>
+            <td class="rmt-status">${status}</td>
+        </tr>`;
+    }).join('');
+
+    return `
+    <div style="margin-bottom:16px;">
+        <div style="background:#f8fafc;padding:8px 12px;border-radius:6px 6px 0 0;border:1px solid #e2e8f0;border-bottom:none;">
+            <strong style="font-size:14px;color:#1e293b;">Round ${round.id}</strong>
+            ${round.type==='knockout'?'<span style="background:#fee2e2;color:#991b1b;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;margin-left:8px;">🏆 KO</span>':''}
+            ${round.blinded?'<span style="background:#f1f5f9;color:#475569;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;margin-left:8px;">🔒 Blind</span>':''}
+            <span style="font-size:12px;color:#64748b;margin-left:12px;">${debates.filter(d=>d.entered).length}/${debates.length} results</span>
+        </div>
+        <table class="round-mini-table" style="border-radius:0 0 6px 6px;border-top:none;">
+            <thead><tr>
+                <th>Room</th><th>Teams</th><th>Chair</th><th>Wings</th><th>T</th><th></th>
+            </tr></thead>
+            <tbody>${rows}</tbody>
+        </table>
     </div>`;
 }
 
