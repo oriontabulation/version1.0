@@ -1490,18 +1490,19 @@ body.hide-judge-role-reg #registerForm .judge-role-field {
   max-width: min(800px, calc(100vw - 20px)) !important;
   max-height: calc(100dvh - 20px) !important;
   border-radius: 12px !important;
+  padding: 8px 12px !important;
 }
 .ballot-modal-overlay > div > div:first-child {
-  padding: 10px 14px !important;
+  padding: 8px 10px !important;
 }
 .ballot-modal-overlay > div > div:nth-child(2) {
-  padding: 10px 14px !important;
+  padding: 8px 10px !important;
   overflow-y: auto !important;
 }
 .ballot-modal-overlay .modal-results-grid {
   display: grid !important;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important;
-  gap: 12px !important;
+  gap: 8px !important;
   margin-bottom: 8px !important;
 }
 .ballot-modal-overlay .modal-results-grid > div {
