@@ -503,10 +503,12 @@
 .adm-bar-fill { height: 100%; background: var(--orange-primary, #f97316); border-radius: 4px; transition: width 0.5s; min-width: 2px; }
 
 /* ── Publish ── */
-.adm-publish-list { display: flex; flex-direction: column; }
+.adm-publish-list { display: flex; flex-direction: column; gap: 4px; }
 .adm-pub-row {
     display: flex; justify-content: space-between; align-items: center;
-    padding: 14px 0; border-bottom: 1px solid var(--border-light, #f1f5f9);
+    padding: 12px; border-bottom: 1px solid var(--border-light, #f1f5f9);
+    background: var(--bg-card, #fff);
+    border-radius: 8px;
 }
 .adm-pub-row:last-child { border-bottom: none; }
 .adm-pub-info  { display: flex; align-items: center; gap: 12px; flex: 1; }
@@ -523,8 +525,15 @@
     background: #cbd5e1; border: 1.5px solid var(--border, #e2e8f0);
     border-radius: 12px;
     cursor: pointer; transition: background 0.2s; padding: 0; flex-shrink: 0;
+    touch-action: manipulation;
 }
 .adm-toggle.on { background: var(--success, #10b981); }
+
+@media (max-width: 480px) {
+    .adm-toggle { width: 48px; height: 28px; }
+    .adm-toggle-knob { width: 20px; height: 20px; top: 3px; left: 3px; }
+    .adm-toggle.on .adm-toggle-knob { left: 25px; }
+}
 .adm-toggle-knob {
     position: absolute; top: 3px; left: 3px;
     width: 18px; height: 18px; background: white; border-radius: 50%;
@@ -832,10 +841,13 @@
 
     /* ── Misc ── */
     .adm-ballot-header              { flex-direction: column; align-items: flex-start; gap: 8px; }
-    .adm-pub-row                    { flex-wrap: wrap; gap: 8px; }
-    .adm-pub-right                  { width: 100%; justify-content: flex-end; }
+    .adm-pub-row                    { flex-wrap: wrap; gap: 10px; padding: 10px; }
+    .adm-pub-info                   { min-width: 60%; }
+    .adm-pub-right                  { width: 100%; justify-content: space-between; }
     .adm-break-controls-actions     { flex-wrap: wrap; gap: 4px; }
-    .adm-section-head h2            { font-size: 18px; }
+    .adm-section-head h2           { font-size: 18px; }
+    .adm-card-actions-bordered      { gap: 8px; }
+    .adm-card-actions-bordered button { flex: 1; min-width: 120px; }
 }
 
 @media (max-width: 480px) {
