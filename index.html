@@ -25,6 +25,19 @@
       }
     </script>
     <script type="module" src="js/main.js"></script>
+    <script>
+      // Fallback check - if main.js doesn't load in 3 seconds
+      setTimeout(() => {
+          if (typeof window.__orionStep === 'undefined') {
+              const errDiv = document.getElementById('init-error');
+              if (errDiv) {
+                  errDiv.style.display = 'block';
+                  errDiv.textContent = 'App failed to load. Please refresh (Ctrl+Shift+R) or try Chrome/Edge.';
+              }
+              console.error('[index.html] main.js failed to load or init() was not called');
+          }
+      }, 3000);
+    </script>
     <!-- Fallback - try loading main.js without module -->
     <script>console.log('Inline script running');</script>
   </head>
