@@ -255,7 +255,7 @@ export async function addTeam() {
     const tournId = state.activeTournamentId;
 
     if (!name) { showNotification('Team name is required', 'error'); return; }
-    if (!tournId) { showNotification('No active tournament', 'error'); return; }
+    if (!tournId) { showNotification('No active tournament. State: ' + JSON.stringify(state), 'error'); return; }
 
     try {
         const team = await api.createTeam({

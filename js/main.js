@@ -232,6 +232,11 @@ window.renderAdminDashboard = renderAdminDashboard;
 window.adminPublishAll = adminPublishAll;
 window.adminHideAll = adminHideAll;
 
+// Expose state for debugging (REMOVE AFTER FIXING)
+import { state } from './state.js';
+window.state = state;
+window.getState = () => state;
+
 // Teams
 window.addTeam = addTeam;
 window.deleteTeam = deleteTeam;
@@ -392,6 +397,17 @@ function _setupRealtimeSync(tournamentId) {
 
 // ── App initialization ────────────────────────────────────────────────────────
 async function init() {
+    window.__orionReady = false;
+    window.__orionStep = 'starting';
+    console.log('[main] init() started');
+    
+    try {
+        window.__orionStep = 'init-router';
+        console.log('[main] Step 1: Init router...');
+        // 0. Init router immediately
+        initRouter();
+        window.__orionStep = 'restore-session';
+        console.log('[main] Step 2: Restore session...');
     // 0. Init router immediately
     initRouter();
 
@@ -519,3 +535,4 @@ document.addEventListener('DOMContentLoaded', () => {
 // The router's registerActions() already sets window.switchTab as a shim.
 import { exposeOnWindow } from './registry.js';
 exposeOnWindow();
+
