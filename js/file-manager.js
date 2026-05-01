@@ -33,7 +33,13 @@ export function renderImport() {
         <div class="section">
             <h2>Import Teams</h2>
             <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:16px;margin-bottom:16px;font-size:13px;color:#1e40af;">
-                <strong>Format:</strong> Team Name, CODE (optional), Speaker 1, Speaker 2, Speaker 3
+                <strong>Flexible Format:</strong> Team Name (optional: CODE), Speaker 1, Speaker 2, ...<br>
+                <em style="color:#64748b;margin-top:8px;display:block;">
+                Examples:<br>
+                • Harvard Debate, John Smith, Emma Wilson, Michael Chen<br>
+                • Oxford Union, OXF, Sarah Jones, David Brown, James Wilson<br>
+                • Sydney United, SYD, Alex Brown
+                </em>
             </div>
             <div style="background:#f8fafc;padding:20px;border-radius:12px;margin-bottom:20px;">
                 <input type="file" id="teamFileInput" accept=".txt,.csv"
@@ -172,13 +178,76 @@ export function previewJudges() {
 
 // ── Parse lines ────────────────────────────────────────────────────
 function _parseTeamLine(raw) {
-    const parts = raw.split(',').map(s => s.trim()).filter(Boolean);
-    if (parts.length < 2) return null;
-    const [name, code, ...speakerParts] = parts;
-    const speakers = speakerParts.length
-        ? speakerParts
-        : name.split(/\s+/).slice(1); // fallback: treat words after first as speakers
-    return { name: parts[0], code: code || '', speakers: speakers.map((s, i) => ({ name: s, position: i + 1 })) };
+    // Handle flexible formats:
+    // - "Team Name, Speaker 1, Speaker 2" (no code)
+    // - "Team Name, CODE, Speaker 1, Speaker 2" (with code)
+    // - "Team Name, Institution, Speaker 1" (institution becomes part of team name)
+    // - Quoted strings: "Team, Name", "Speaker, One"
+    
+    raw = raw.trim();
+    if (!raw) return null;
+    
+    // Try to parse as CSV with proper quote handling
+    const parts = [];
+    let current = '';
+    let inQuotes = false;
+    
+    for (let i = 0; i < raw.length; i++) {
+        const char = raw[i];
+        if (char === '"') {
+            inQuotes = !inQuotes;
+        } else if (char === ',' && !inQuotes) {
+            parts.push(current.trim());
+            current = '';
+        } else {
+            current += char;
+        }
+    }
+    parts.push(current.trim());
+    
+    // Filter empty parts
+    const tokens = parts.filter(p => p.length > 0);
+    if (tokens.length === 0) return null;
+    
+    // Heuristic: if first token looks like a code (2-4 uppercase letters), treat as code
+    // Otherwise, treat first token as team name
+    let name, code, speakers;
+    
+    if (tokens.length >= 2 && /^[A-Z]{2,5}$/.test(tokens[1])) {
+        // Second token looks like a code (e.g., "OXF", "Harvard, OXF")
+        name = tokens[0];
+        code = tokens[1];
+        speakers = tokens.slice(2);
+    } else {
+        // No clear code - first token is name, rest are speakers/institutions
+        name = tokens[0];
+        code = '';
+        // Everything after name could be speakers - group them intelligently
+        const remaining = tokens.slice(1);
+        // If remaining has many short words, they're likely speakers
+        // If they have longer phrases, could be institution name + speakers
+        speakers = remaining.length > 0 ? remaining : [];
+    }
+    
+    // Validate we have at least a name
+    if (!name || name.length === 0) return null;
+    
+    // Clean up name (remove extra whitespace)
+    name = name.replace(/\s+/g, ' ').trim();
+    
+    // Build speakers array
+    const speakerList = speakers
+        .filter(s => s.length > 0)
+        .map((s, i) => ({
+            name: s.replace(/\s+/g, ' ').trim(),
+            position: i + 1
+        }));
+    
+    return {
+        name: name,
+        code: code || '',
+        speakers: speakerList
+    };
 }
 
 function _parseJudgeLine(raw) {
