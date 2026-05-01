@@ -57,15 +57,155 @@
   padding:  3.5rem 3rem 3rem;
   position: relative;
   overflow: hidden;
-  background:
-    radial-gradient(ellipse 70% 55% at 65% 10%, rgba(249,115,22,.14) 0%, transparent 60%),
-    radial-gradient(ellipse 45% 40% at 5%  85%, rgba(59,130,246,.07) 0%, transparent 55%),
-    linear-gradient(155deg, #0c1526 0%, #0f172a 50%, #1a2540 100%);
   border-bottom: 1px solid rgba(255,255,255,.06);
   display: flex;
   flex-direction: column;
   align-items: center;
   text-align: center;
+}
+
+/* ================================================================
+   HEADER & FOOTER - Consistent styling across all pages
+   ================================================================ */
+
+/* Force header background on all pages */
+header,
+#header,
+.site-header,
+.nav-header {
+    background: var(--t-header-bg, #0f172a) !important;
+    border-bottom: 3px solid var(--t-header-bdr, rgba(249, 115, 22, 0.6)) !important;
+}
+
+/* Force footer background on all pages */
+footer,
+#footer,
+.site-footer {
+    background: #080e1c !important;
+    color: #94a3b8 !important;
+    border-top: 1px solid rgba(255, 255, 255, 0.06) !important;
+}
+
+/* ================================================================
+   DEFAULT DARK BLUE THEME FOR ALL PAGES
+   ================================================================ */
+
+/* Only apply dark theme when body has theme-dark class (set by theme picker) */
+body.theme-dark {
+    background: #0f172a !important;
+    color: #f1f5f9 !important;
+}
+
+body.theme-dark h1,
+body.theme-dark h2,
+body.theme-dark h3,
+body.theme-dark h4,
+body.theme-dark h5,
+body.theme-dark h6 {
+    color: #f8fafc !important;
+}
+
+body.theme-dark p,
+body.theme-dark span,
+body.theme-dark div {
+    color: #cbd5e1 !important;
+}
+
+body.theme-dark a {
+    color: #60a5fa !important;
+}
+
+body.theme-dark .section,
+body.theme-dark main > .tab-content > div,
+body.theme-dark .adm-card,
+body.theme-dark .draw-room {
+    background: #1e293b !important;
+    border-color: #334155 !important;
+    color: #f1f5f9 !important;
+}
+
+body.theme-dark input,
+body.theme-dark select,
+body.theme-dark textarea {
+    background: #1e293b !important;
+    color: #f1f5f9 !important;
+    border-color: #475569 !important;
+}
+
+body.theme-dark header,
+body.theme-dark .dropdown-menu-container {
+    background: #0f172a !important;
+}
+
+body.theme-dark .btn-primary {
+    background: #f97316 !important;
+    color: white !important;
+}
+
+body.theme-dark .btn-secondary {
+    background: #475569 !important;
+    color: white !important;
+}
+
+body.theme-dark .stat-value,
+body.theme-dark .stat-icon {
+    color: #f1f5f9 !important;
+}
+
+body.theme-dark .team-card,
+body.theme-dark .judge-card,
+body.theme-dark .motion-card {
+    background: #1e293b !important;
+    border-color: #334155 !important;
+}
+
+body.theme-dark .team-name,
+body.theme-dark .judge-name,
+body.theme-dark .motion-card__text {
+    color: #f1f5f9 !important;
+}
+
+/* Remove grid and sphere from public/home tab */
+#public .tab-hero,
+#public .tab-hero::before,
+#public .tab-hero::after {
+  display: none !important;
+  background-image: none !important;
+  background: transparent !important;
+}
+
+/* Remove grid and sphere from public/home tab */
+#public .tab-hero::before,
+#public .tab-hero::after {
+  display: none !important;
+}
+
+/* Also target the section in public tab when dark theme */
+body.theme-dark #public .section {
+  background: transparent !important;
+  background-image: none !important;
+}
+
+body.theme-dark #public h1 {
+  color: #f8fafc !important;
+  margin-top: 0 !important;
+  padding-top: 0 !important;
+}
+
+body.theme-dark #public .section > p {
+  color: #94a3b8 !important;
+}
+
+body.theme-dark #public .stats-grid {
+  background: #1e293b !important;
+  padding: 20px !important;
+  border-radius: 12px !important;
+}
+
+body.theme-dark #public .stat-card {
+  background: #334155 !important;
+  padding: 16px !important;
+  border-radius: 8px !important;
 }
 .tab-hero::before {
   content: '';
@@ -653,12 +793,13 @@ body.role-judge .filter-bar__indicator { display: none !important; }
 
   /* Draw room cards: reduce padding on mobile */
   .draw-room {
-    padding: 10px !important;
+    padding: 20px 10px 10px 10px !important;
     margin-bottom: 8px !important;
   }
 
   /* BP room header — allow wrapping */
   .draw-room > div:first-child {
+    padding-top: 4px !important;
     flex-wrap: wrap !important;
     gap: 6px !important;
   }
@@ -1586,11 +1727,11 @@ font-style: italic;
 .draw-create-panel {
   display: none !important;
   border-radius: 14px !important;
-  border: 1px solid #e2e8f0 !important;
-  background: #ffffff !important;
+  border: 1px solid var(--t-border, #e2e8f0) !important;
+  background: var(--t-bg, white) !important;
   box-shadow: 0 4px 20px rgba(0,0,0,0.06) !important;
   margin-bottom: 16px !important;
-  padding: 16px 20px !important;
+  padding: 20px 20px 16px 20px !important;
 }
 .draw-create-panel.open {
   display: block !important;
@@ -1599,6 +1740,7 @@ font-style: italic;
 
 /* Draw controls bar spacing */
 .draw-controls-bar {
+  margin-top: 24px !important;
   margin-bottom: 24px !important;
 }
 
@@ -1934,10 +2076,14 @@ font-style: italic;
     width: 100% !important;
     box-sizing: border-box !important;
     display: block !important;
+    position: relative !important;
+    z-index: 1 !important;
     transition: none !important;
     visibility: visible !important;
     opacity: 1 !important;
     min-height: 50px !important;
+    clear: both !important;
+    float: none !important;
 }
 
 .team-card:hover {
@@ -2088,18 +2234,36 @@ font-style: italic;
 
 /* Judge Cards - match motion-card style */
 .judge-card {
-    background: #fff;
-    border: 1px solid #e2e8f0;
-    border-radius: 12px;
-    padding: 20px;
-    margin-bottom: 16px;
-    width: 100%;
+    background: #fff !important;
+    border: 1px solid #e2e8f0 !important;
+    border-radius: 12px !important;
+    padding: 20px !important;
+    margin-bottom: 16px !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+    display: block !important;
+    position: relative !important;
+    z-index: 1 !important;
     transition: none !important;
 }
 
 .judge-card:hover {
     transform: none !important;
     box-shadow: none !important;
+}
+
+/* Force buttons to be above any overlapping elements */
+.judge-card button,
+.judge-card .btn {
+    position: relative !important;
+    z-index: 10 !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+}
+
+.judge-header button {
+    position: relative !important;
+    z-index: 10 !important;
 }
 
 .judge-header {
@@ -2164,4 +2328,1203 @@ font-style: italic;
 
 .judge-info {
     padding: 8px 0 !important;
+}
+
+/* ================================================================
+   UNIFIED HEADER - Admin mode
+   ================================================================ */
+
+.header-admin-center {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 16px;
+    border-left: 1px solid var(--t-border, #e2e8f0);
+    border-right: 1px solid var(--t-border, #e2e8f0);
+    margin: 0 12px;
+}
+
+.header-tournament-name {
+    font-weight: 600;
+    font-size: 14px;
+    color: var(--t-text, #1e293b);
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.header-admin-tag {
+    background: #f97316;
+    color: white;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 4px;
+    text-transform: uppercase;
+}
+
+.header-admin-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-right: 12px;
+}
+
+.header-admin-controls .adm-pill {
+    background: #475569;
+    color: white;
+    border: none;
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 13px;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.header-admin-controls .adm-pill:hover {
+    background: #334155;
+}
+
+/* Dark theme support for admin header */
+body.theme-dark .header-admin-center {
+    border-color: #334155;
+}
+
+body.theme-dark .header-tournament-name {
+    color: #f1f5f9;
+}
+
+body.theme-dark .header-admin-controls .adm-pill {
+    background: #475569;
+}
+
+body.theme-dark .header-admin-controls .adm-pill:hover {
+    background: #64748b;
+}
+
+/* Logo: extreme left - force order */
+.header-logo {
+    order: 1 !important;
+    flex-shrink: 0 !important;
+}
+
+/* Hamburger: second */
+#mobile-hamburger {
+    order: 2 !important;
+}
+
+/* Tournament: third - fully visible */
+.header-tournament {
+    order: 3 !important;
+    flex: 1 !important;
+    min-width: 0 !important;
+}
+
+.header-tournament-name {
+    max-width: none !important;
+    overflow: visible !important;
+    text-overflow: none !important;
+    white-space: nowrap !important;
+}
+
+/* Spacer */
+.header-spacer {
+    order: 4 !important;
+    flex: 1 !important;
+}
+
+/* Search bar: fifth */
+.header-center {
+    order: 5 !important;
+    flex-shrink: 0 !important;
+    display: flex !important;
+    justify-content: flex-end !important;
+    padding-right: 8px !important;
+}
+
+.header-search {
+    width: 180px !important;
+    max-width: 180px !important;
+}
+
+/* Right: last - settings/login */
+.header-right {
+    order: 6 !important;
+    flex-shrink: 0 !important;
+}
+
+body.theme-large-font {
+    font-size: 115% !important;
+}
+
+body.theme-large-font * {
+    font-size: inherit !important;
+}
+
+/* Draw - Judge section styling */
+.dnd-judge-zone {
+    background: var(--t-bg-hover, #f8fafc) !important;
+    border-radius: 6px !important;
+    padding: 8px 10px !important;
+    display: flex !important;
+    flex-wrap: wrap !important;
+    align-items: center !important;
+    gap: 6px !important;
+    min-height: 34px !important;
+    border: 1px dashed var(--t-border, #e2e8f0) !important;
+}
+
+.draw-panel-label {
+    font-size: 12px !important;
+    font-weight: 800 !important;
+    color: var(--t-text, #1e293b) !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.05em !important;
+    margin-right: 6px !important;
+}
+
+.dnd-judge-chip {
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 6px !important;
+    background: var(--t-bg, white) !important;
+    border: 1px solid var(--t-border, #e2e8f0) !important;
+    padding: 2px 6px 2px 8px !important;
+    border-radius: 4px !important;
+    font-size: 12px !important;
+    color: var(--t-text, #1e293b) !important;
+    font-weight: 600 !important;
+    cursor: grab !important;
+    transition: all 0.2s !important;
+}
+
+/* Close/X button on judge chip */
+.dnd-judge-chip .chip-remove {
+    font-size: 12px !important;
+    line-height: 1 !important;
+    padding: 2px !important;
+    cursor: pointer !important;
+    color: var(--t-text-light, #94a3b8) !important;
+    background: none !important;
+    border: none !important;
+    opacity: 0.6 !important;
+    transition: all 0.15s !important;
+}
+
+.dnd-judge-chip .chip-remove:hover {
+    color: #ef4444 !important;
+    opacity: 1 !important;
+}
+
+.dnd-judge-chip:hover {
+    transform: translateY(-1px) !important;
+    background: var(--t-brand-light, #f0f9ff) !important;
+    border-color: var(--t-brand, #3b82f6) !important;
+    color: var(--t-brand, #0369a1) !important;
+}
+
+.dnd-judge-chip .chip-role {
+    font-size: 9px !important;
+    font-weight: 800 !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.05em !important;
+    color: var(--t-text-light, #64748b) !important;
+    background: transparent !important;
+    padding: 2px 4px !important;
+    border: none !important;
+    cursor: pointer !important;
+}
+
+.dnd-judge-chip .chip-role.chair {
+    color: var(--t-brand, #3b82f6) !important;
+    border-color: var(--t-brand, #bfdbfe) !important;
+    background: var(--t-brand-light, #eff6ff) !important;
+}
+
+.judge-add-select {
+    font-size: 11px !important;
+    font-weight: 700 !important;
+    border: 1px dashed var(--t-border, #cbd5e1) !important;
+    border-radius: 0 !important;
+    padding: 4px 8px !important;
+    color: var(--t-brand, #3b82f6) !important;
+    background: transparent !important;
+    cursor: pointer !important;
+    max-width: 140px !important;
+}
+
+.judge-add-select:hover {
+    border-color: var(--t-brand, #3b82f6) !important;
+    background: var(--t-brand-light, #eff6ff) !important;
+}
+
+/* Dark theme for draw judge section */
+body.theme-dark .dnd-judge-zone {
+    background: #1e293b !important;
+    border-color: #334155 !important;
+}
+
+body.theme-dark .draw-panel-label {
+    color: #f1f5f9 !important;
+}
+
+body.theme-dark .dnd-judge-chip {
+    background: #334155 !important;
+    border-color: #475569 !important;
+    color: #f1f5f9 !important;
+}
+
+body.theme-dark .dnd-judge-chip:hover {
+    background: #475569 !important;
+    border-color: #f97316 !important;
+    color: #fb923c !important;
+}
+
+body.theme-dark .dnd-judge-chip .chip-role {
+    background: transparent !important;
+    border: none !important;
+    color: #94a3b8 !important;
+}
+
+body.theme-dark .dnd-judge-chip .chip-remove {
+    color: #64748b !important;
+}
+
+body.theme-dark .dnd-judge-chip .chip-remove:hover {
+    color: #ef4444 !important;
+}
+
+body.theme-dark .judge-add-select {
+    background: transparent !important;
+    border-color: #475569 !important;
+    color: #f97316 !important;
+}
+
+/* No judges assigned text */
+.dnd-no-judges {
+    font-size: 12px !important;
+    color: var(--t-text-light, #ef4444) !important;
+    font-style: italic !important;
+}
+
+/* Repeat meeting badge */
+.repeat-meeting-badge {
+    background: var(--t-brand, #f97316) !important;
+    color: white !important;
+    padding: 3px 8px !important;
+    font-size: 11px !important;
+    font-weight: 700 !important;
+    border: none !important;
+    border-radius: 4px !important;
+}
+
+/* Spacer: takes remaining space */
+.header-spacer {
+    order: 4 !important;
+    flex: 1 !important;
+}
+
+/* Right: last */
+.header-right {
+    order: 5 !important;
+}
+
+/* Tournament name with bar separator - same size as logo, theme color */
+.header-tournament {
+    display: flex !important;
+    align-items: center !important;
+    gap: 8px !important;
+    flex-shrink: 1 !important;
+    min-width: 0 !important;
+}
+
+.header-tournament-bar {
+    color: var(--t-text-light, #94a3b8) !important;
+    font-weight: 300 !important;
+    font-size: 1.5rem !important;
+    line-height: 1 !important;
+}
+
+.header-tournament-name {
+    font-weight: 800 !important;
+    font-size: 1.5rem !important;
+    color: var(--t-brand, #f97316) !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    line-height: 1 !important;
+}
+
+/* Spacer */
+.header-spacer {
+    flex: 1 !important;
+}
+
+/* Right section: user + settings */
+.header-right {
+    display: flex !important;
+    align-items: center !important;
+    gap: 4px !important;
+    flex-shrink: 0 !important;
+}
+
+.header-right .header-user {
+    padding: 6px 10px !important;
+    font-size: 13px !important;
+    border-radius: 6px !important;
+    cursor: pointer !important;
+}
+
+.header-right .btn-secondary {
+    padding: 6px 12px !important;
+    font-size: 13px !important;
+    border-radius: 6px !important;
+}
+
+.header-right .btn-primary {
+    padding: 6px 12px !important;
+    font-size: 13px !important;
+    border-radius: 6px !important;
+}
+
+/* Settings button */
+.header-settings-btn {
+    background: none !important;
+    border: none !important;
+    font-size: 18px !important;
+    cursor: pointer !important;
+    padding: 6px !important;
+    border-radius: 6px !important;
+    transition: background 0.2s !important;
+}
+
+.header-settings-btn:hover {
+    background: var(--t-bg-hover, #f1f5f9) !important;
+}
+
+/* Settings dropdown */
+.header-settings-dropdown {
+    display: none !important;
+    position: absolute !important;
+    top: 100% !important;
+    right: 0 !important;
+    background: var(--t-bg, white) !important;
+    border: 1px solid var(--t-border, #e2e8f0) !important;
+    border-radius: 8px !important;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1) !important;
+    min-width: 180px !important;
+    padding: 8px 0 !important;
+    z-index: 1000 !important;
+    margin-top: 4px !important;
+}
+
+.header-settings-dropdown.open {
+    display: block !important;
+}
+
+.header-settings-section {
+    padding: 8px 12px !important;
+}
+
+/* Theme picker in settings dropdown */
+#theme-picker-container {
+    display: flex !important;
+    align-items: center !important;
+    gap: 8px !important;
+    flex-wrap: wrap !important;
+}
+
+.theme-picker-inner {
+    display: flex !important;
+    align-items: center !important;
+    gap: 8px !important;
+    flex-wrap: wrap !important;
+}
+
+.theme-color-input {
+    width: 16px !important;
+    height: 16px !important;
+    padding: 0 !important;
+    border: none !important;
+    cursor: pointer !important;
+    background: transparent !important;
+}
+
+.theme-presets {
+    display: flex !important;
+    gap: 4px !important;
+}
+
+.theme-color-btn {
+    transition: transform 0.15s !important;
+}
+
+.theme-color-btn:hover {
+    transform: scale(1.2) !important;
+}
+
+/* Theme color input - larger and draggable */
+.theme-color-input {
+    cursor: grab !important;
+    -webkit-appearance: none !important;
+    appearance: none !important;
+}
+
+.theme-color-input:active {
+    cursor: grabbing !important;
+}
+
+.theme-color-label {
+    transition: background 0.2s !important;
+}
+
+.theme-color-label:hover {
+    background: var(--t-bg-hover, #f1f5f9) !important;
+}
+
+/* Theme mode toggle button */
+.theme-mode-btn {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 28px !important;
+    height: 28px !important;
+    border: 1px solid var(--t-border, #e2e8f0) !important;
+    border-radius: 6px !important;
+    background: var(--t-bg, white) !important;
+    cursor: pointer !important;
+    font-size: 14px !important;
+    transition: all 0.2s !important;
+}
+
+.theme-mode-btn:hover {
+    background: var(--t-bg-hover, #f1f5f9) !important;
+    transform: scale(1.1) !important;
+}
+
+/* Theme toggle buttons - unified styling */
+.theme-toggle-btn {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 28px !important;
+    height: 28px !important;
+    border: 1px solid var(--t-border, #e2e8f0) !important;
+    border-radius: 6px !important;
+    background: var(--t-bg, white) !important;
+    cursor: pointer !important;
+    font-size: 14px !important;
+    transition: all 0.2s !important;
+}
+
+.theme-toggle-btn:hover {
+    background: var(--t-bg-hover, #f1f5f9) !important;
+    transform: scale(1.1) !important;
+}
+
+.header-settings-divider {
+    height: 1px !important;
+    background: var(--t-border, #e2e8f0) !important;
+    margin: 4px 0 !important;
+}
+
+.header-settings-item {
+    display: block !important;
+    width: 100% !important;
+    text-align: left !important;
+    padding: 8px 12px !important;
+    background: none !important;
+    border: none !important;
+    cursor: pointer !important;
+    font-size: 14px !important;
+    color: var(--t-text, #1e293b) !important;
+}
+
+.header-settings-item:hover {
+    background: var(--t-bg-hover, #f1f5f9) !important;
+}
+
+/* Hide header controls in new layout */
+#header-controls {
+    display: none !important;
+}
+
+/* Move settings dropdown relative to header-right */
+.header-right {
+    position: relative !important;
+}
+
+/* Dark theme */
+body.theme-dark .header-tournament-bar {
+    color: #64748b !important;
+}
+
+body.theme-dark .header-tournament-name {
+    color: var(--t-brand, #f97316) !important;
+}
+
+body.theme-dark .header-search input {
+    background: #1e293b !important;
+    border-color: #334155 !important;
+    color: #f1f5f9 !important;
+}
+
+body.theme-dark .header-search input::placeholder {
+    color: #64748b !important;
+}
+
+body.theme-dark .header-search input:focus {
+    border-color: var(--t-brand, #f97316) !important;
+    box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.15) !important;
+}
+
+body.theme-dark .header-settings-btn:hover {
+    background: #334155 !important;
+}
+
+body.theme-dark .header-settings-dropdown {
+    background: #1e293b !important;
+    border-color: #334155 !important;
+}
+
+body.theme-dark .header-settings-divider {
+    background: #334155 !important;
+}
+
+body.theme-dark .header-settings-item {
+    color: #f1f5f9 !important;
+}
+
+body.theme-dark .header-settings-item:hover {
+    background: #334155 !important;
+}
+
+/* Admin floating top bar */
+.adm-top-bar {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    padding: 10px 20px !important;
+    background: var(--t-bg, white) !important;
+    border-bottom: 1px solid var(--t-border, #e2e8f0) !important;
+    position: sticky !important;
+    top: 0 !important;
+    z-index: 200 !important;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.05) !important;
+}
+
+.adm-top-bar-left {
+    display: flex !important;
+    align-items: center !important;
+    gap: 12px !important;
+}
+
+.adm-top-bar-tournament {
+    font-weight: 700 !important;
+    font-size: 16px !important;
+    color: var(--t-brand, #f97316) !important;
+}
+
+.adm-top-bar-user {
+    color: var(--t-text-light, #64748b) !important;
+    font-size: 14px !important;
+}
+
+.adm-top-bar-center {
+    display: flex !important;
+    align-items: center !important;
+}
+
+.adm-top-bar-right {
+    display: flex !important;
+    align-items: center !important;
+    gap: 8px !important;
+}
+
+.adm-top-bar-btn {
+    background: var(--t-bg-hover, #f1f5f9) !important;
+    border: 1px solid var(--t-border, #e2e8f0) !important;
+    padding: 6px 12px !important;
+    border-radius: 6px !important;
+    font-size: 13px !important;
+    cursor: pointer !important;
+    color: var(--t-text, #1e293b) !important;
+    transition: all 0.2s !important;
+}
+
+.adm-top-bar-btn:hover {
+    background: var(--t-brand-light, #fff7ed) !important;
+    border-color: var(--t-brand, #f97316) !important;
+}
+
+.adm-top-bar-settings {
+    background: none !important;
+    border: 1px solid var(--t-border, #e2e8f0) !important;
+    padding: 6px 12px !important;
+    border-radius: 6px !important;
+    font-size: 16px !important;
+    cursor: pointer !important;
+    transition: all 0.2s !important;
+}
+
+.adm-top-bar-settings:hover {
+    background: var(--t-bg-hover, #f1f5f9) !important;
+}
+
+.adm-top-settings-dropdown {
+    display: none !important;
+    position: absolute !important;
+    top: 100% !important;
+    right: 0 !important;
+    background: var(--t-bg, white) !important;
+    border: 1px solid var(--t-border, #e2e8f0) !important;
+    border-radius: 8px !important;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1) !important;
+    min-width: 180px !important;
+    padding: 4px 0 !important;
+    z-index: 300 !important;
+    margin-top: 4px !important;
+}
+
+.adm-top-settings-dropdown.open {
+    display: block !important;
+}
+
+.adm-top-settings-theme {
+    padding: 8px 12px !important;
+}
+
+.adm-top-settings-divider {
+    height: 1px !important;
+    background: var(--t-border, #e2e8f0) !important;
+    margin: 4px 0 !important;
+}
+
+.adm-top-settings-item {
+    display: block !important;
+    width: 100% !important;
+    text-align: left !important;
+    padding: 8px 12px !important;
+    background: none !important;
+    border: none !important;
+    cursor: pointer !important;
+    font-size: 13px !important;
+    color: var(--t-text, #1e293b) !important;
+}
+
+.adm-top-settings-item:hover {
+    background: var(--t-bg-hover, #f1f5f9) !important;
+}
+
+/* Dark theme for admin top bar */
+body.theme-dark .adm-top-bar {
+    background: #1e293b !important;
+    border-color: #334155 !important;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2) !important;
+}
+
+body.theme-dark .adm-top-bar-user {
+    color: #94a3b8 !important;
+}
+
+body.theme-dark .adm-top-bar-btn {
+    background: #334155 !important;
+    border-color: #475569 !important;
+    color: #f1f5f9 !important;
+}
+
+body.theme-dark .adm-top-bar-btn:hover {
+    background: #475569 !important;
+    border-color: var(--t-brand, #f97316) !important;
+}
+
+body.theme-dark .adm-top-bar-settings:hover {
+    background: #334155 !important;
+}
+
+body.theme-dark .adm-top-settings-dropdown {
+    background: #1e293b !important;
+    border-color: #334155 !important;
+}
+
+body.theme-dark .adm-top-settings-item {
+    color: #f1f5f9 !important;
+}
+
+body.theme-dark .adm-top-settings-item:hover {
+    background: #334155 !important;
+}
+
+/* Admin cards theme support */
+.adm-card {
+    background: var(--t-bg, white) !important;
+    border-color: var(--t-border, #e2e8f0) !important;
+    color: var(--t-text, #1e293b) !important;
+}
+
+.adm-card-title {
+    color: var(--t-text, #1e293b) !important;
+}
+
+.adm-card-desc {
+    color: var(--t-text-light, #64748b) !important;
+}
+
+.adm-room-card {
+    background: var(--t-bg, white) !important;
+    border-color: var(--t-border, #e2e8f0) !important;
+}
+
+.adm-room-top strong {
+    color: var(--t-text, #1e293b) !important;
+}
+
+.adm-room-status {
+    color: var(--t-text-light, #64748b) !important;
+}
+
+.adm-room-teams {
+    color: var(--t-text, #1e293b) !important;
+}
+
+.adm-room-teams em {
+    color: var(--t-text-light, #94a3b8) !important;
+}
+
+.adm-room-judges {
+    color: var(--t-text-light, #64748b) !important;
+}
+
+.adm-room-scores {
+    color: var(--t-brand, #f97316) !important;
+    font-weight: 600 !important;
+}
+
+.adm-section-head h2 {
+    color: var(--t-text, #1e293b) !important;
+}
+
+.adm-section-head p {
+    color: var(--t-text-light, #64748b) !important;
+}
+
+.adm-strong {
+    color: var(--t-text, #1e293b) !important;
+}
+
+.adm-badge {
+    background: var(--t-bg-hover, #f1f5f9) !important;
+    color: var(--t-text, #1e293b) !important;
+}
+
+/* Dark theme for admin */
+body.theme-dark .adm-card {
+    background: #1e293b !important;
+    border-color: #334155 !important;
+}
+
+body.theme-dark .adm-card-title {
+    color: #f1f5f9 !important;
+}
+
+body.theme-dark .adm-card-desc {
+    color: #94a3b8 !important;
+}
+
+body.theme-dark .adm-room-card {
+    background: #1e293b !important;
+    border-color: #334155 !important;
+}
+
+body.theme-dark .adm-room-top strong {
+    color: #f1f5f9 !important;
+}
+
+body.theme-dark .adm-room-status {
+    color: #94a3b8 !important;
+}
+
+body.theme-dark .adm-room-teams {
+    color: #f1f5f9 !important;
+}
+
+body.theme-dark .adm-room-teams em {
+    color: #64748b !important;
+}
+
+body.theme-dark .adm-room-judges {
+    color: #94a3b8 !important;
+}
+
+body.theme-dark .adm-room-scores {
+    color: #f97316 !important;
+}
+
+body.theme-dark .adm-section-head h2 {
+    color: #f1f5f9 !important;
+}
+
+body.theme-dark .adm-section-head p {
+    color: #94a3b8 !important;
+}
+
+body.theme-dark .adm-strong {
+    color: #f1f5f9 !important;
+}
+
+body.theme-dark .adm-badge {
+    background: #334155 !important;
+    color: #f1f5f9 !important;
+}
+
+/* Admin form elements */
+.adm-select,
+.adm-input,
+.adm-textarea {
+    background: var(--t-bg, white) !important;
+    border-color: var(--t-border, #e2e8f0) !important;
+    color: var(--t-text, #1e293b) !important;
+}
+
+.adm-label {
+    color: var(--t-text, #1e293b) !important;
+}
+
+body.theme-dark .adm-select,
+body.theme-dark .adm-input,
+body.theme-dark .adm-textarea {
+    background: #1e293b !important;
+    border-color: #334155 !important;
+    color: #f1f5f9 !important;
+}
+
+body.theme-dark .adm-label {
+    color: #f1f5f9 !important;
+}
+
+/* Tournament list styling */
+.adm-tour-row {
+    padding: 16px !important;
+    border-bottom: 1px solid var(--t-border, #f1f5f9) !important;
+    display: flex !important;
+    justify-content: space-between !important;
+    align-items: center !important;
+}
+
+.adm-tour-name {
+    font-size: 16px !important;
+    color: var(--t-text, #1e293b) !important;
+}
+
+.is-active .adm-tour-name {
+    color: var(--t-brand, #f97316) !important;
+}
+
+.adm-active-badge {
+    margin-left: 8px !important;
+}
+
+.adm-tour-meta {
+    font-size: 12px !important;
+    color: var(--t-text-light, #64748b) !important;
+    margin-top: 4px !important;
+    display: flex !important;
+    gap: 12px !important;
+}
+
+.adm-format-badge {
+    background: var(--t-bg-hover, #f1f5f9) !important;
+    padding: 2px 6px !important;
+    border-radius: 4px !important;
+    font-weight: 700 !important;
+    text-transform: uppercase !important;
+    font-size: 10px !important;
+}
+
+body.theme-dark .adm-tour-row {
+    border-color: var(--t-border, #334155) !important;
+}
+
+body.theme-dark .adm-tour-name {
+    color: #f1f5f9 !important;
+}
+
+body.theme-dark .is-active .adm-tour-name {
+    color: var(--t-brand, #f97316) !important;
+}
+
+body.theme-dark .adm-tour-meta {
+    color: #94a3b8 !important;
+}
+
+body.theme-dark .adm-format-badge {
+    background: #334155 !important;
+    color: #f1f5f9 !important;
+}
+
+/* Room row styling */
+.adm-room-row {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    padding: 8px 0 !important;
+    border-bottom: 1px solid var(--t-border, #e2e8f0) !important;
+}
+
+.adm-room-row-content {
+    flex: 1 !important;
+}
+
+.adm-room-row-name {
+    color: var(--t-text, #1e293b) !important;
+}
+
+.adm-room-row-teams {
+    font-size: 12px !important;
+    color: var(--t-text-light, #64748b) !important;
+}
+
+.adm-round-summary {
+    margin-bottom: 12px !important;
+    font-size: 13px !important;
+    color: var(--t-text-light, #64748b) !important;
+}
+
+body.theme-dark .adm-room-row {
+    border-color: var(--t-border, #334155) !important;
+}
+
+body.theme-dark .adm-room-row-name {
+    color: #f1f5f9 !important;
+}
+
+body.theme-dark .adm-room-row-teams {
+    color: #94a3b8 !important;
+}
+
+body.theme-dark .adm-round-summary {
+    color: #94a3b8 !important;
+}
+
+/* Empty card body */
+.adm-card-body--empty {
+    min-height: 120px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    color: var(--t-text-light, #64748b) !important;
+}
+
+/* Participants section */
+.adm-participants-section {
+    margin-top: 12px !important;
+    padding-top: 12px !important;
+    border-top: 1px solid var(--t-border, #e2e8f0) !important;
+}
+
+.adm-participants-header {
+    font-size: 12px !important;
+    font-weight: 700 !important;
+    color: var(--t-text, #1e293b) !important;
+    margin-bottom: 8px !important;
+}
+
+body.theme-dark .adm-participants-section {
+    border-color: var(--t-border, #334155) !important;
+}
+
+body.theme-dark .adm-participants-header {
+    color: #f1f5f9 !important;
+}
+
+/* Admin dark theme backgrounds */
+body.theme-dark .adm-shell {
+    background: #0f172a !important;
+}
+
+body.theme-dark .adm-sidebar {
+    background: #1e293b !important;
+    border-color: #334155 !important;
+}
+
+/* Ballot Override buttons */
+.adm-ballot-btn {
+    background: var(--t-brand-light, #fff7ed) !important;
+    color: var(--t-brand, #f97316) !important;
+    border: 1px solid var(--t-brand, #f97316) !important;
+}
+
+.adm-ballot-btn.pending {
+    background: var(--t-brand-light, #eff6ff) !important;
+    color: var(--t-brand, #3b82f6) !important;
+    border-color: var(--t-brand, #3b82f6) !important;
+}
+
+.adm-ballot-btn.pending:hover {
+    background: var(--t-brand, #3b82f6) !important;
+    color: white !important;
+}
+
+.adm-ballot-btn.done {
+    background: #fef3c7 !important;
+    color: #92400e !important;
+    border-color: #fde68a !important;
+}
+
+.adm-ballot-btn.done:hover {
+    background: #fde68a !important;
+}
+
+.adm-ballot-btn:hover {
+    background: var(--t-brand, #f97316) !important;
+    color: white !important;
+}
+
+/* Room status dots */
+.adm-room-dot.green {
+    background: #22c55e !important;
+}
+
+.adm-room-dot.amber {
+    background: #f59e0b !important;
+}
+
+body.theme-dark .adm-ballot-btn.pending {
+    background: #1e3a5f !important;
+    color: #60a5fa !important;
+    border-color: #60a5fa !important;
+}
+
+body.theme-dark .adm-ballot-btn.pending:hover {
+    background: #60a5fa !important;
+    color: white !important;
+}
+
+body.theme-dark .adm-ballot-btn.done {
+    background: #451a03 !important;
+    color: #fbbf24 !important;
+    border-color: #d97706 !important;
+}
+
+body.theme-dark .adm-ballot-btn.done:hover {
+    background: #d97706 !important;
+}
+
+body.theme-dark .adm-ballot-btn {
+    background: #451a03 !important;
+    color: #fb923c !important;
+    border-color: #f97316 !important;
+}
+
+body.theme-dark .adm-ballot-btn:hover {
+    background: #f97316 !important;
+    color: white !important;
+}
+
+/* Room card done state */
+.adm-room-card.done {
+    border-color: #22c55e !important;
+}
+
+.adm-room-card.done .adm-room-status {
+    color: #22c55e !important;
+}
+
+/* Remove old footer styles */
+.adm-footer {
+    display: none !important;
+}
+
+body.theme-dark .header-tournament-name {
+    color: #f1f5f9 !important;
+}
+
+body.theme-dark .header-settings-btn:hover {
+    background: #334155 !important;
+}
+
+body.theme-dark .header-settings-dropdown {
+    background: #1e293b !important;
+    border-color: #334155 !important;
+}
+
+body.theme-dark .header-settings-divider {
+    background: #334155 !important;
+}
+
+body.theme-dark .header-settings-item {
+    color: #f1f5f9 !important;
+}
+
+body.theme-dark .header-settings-item:hover {
+    background: #334155 !important;
+}
+
+/* New header layout */
+.header-container {
+    display: flex !important;
+    align-items: center !important;
+    gap: 16px !important;
+}
+
+.header-left {
+    display: flex !important;
+    align-items: center !important;
+    flex: 1 !important;
+    gap: 12px !important;
+}
+
+.header-center {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+}
+
+/* Admin info: tournament name + user */
+.header-admin-info {
+    display: flex !important;
+    align-items: center !important;
+    gap: 10px !important;
+}
+
+.header-tournament-name {
+    font-weight: 600;
+    font-size: 14px;
+    color: var(--t-text, #1e293b);
+}
+
+.header-admin-tag {
+    background: #f97316;
+    color: white;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 4px;
+    text-transform: uppercase;
+}
+
+.header-user-name {
+    color: var(--t-text-light, #64748b);
+    font-size: 13px;
+}
+
+/* Header search in admin mode */
+#header-left:has(.header-admin-info) #global-search {
+    display: none !important;
+}
+
+/* Dark theme */
+body.theme-dark .header-tournament-name {
+    color: #f1f5f9;
+}
+
+body.theme-dark .header-user-name {
+    color: #94a3b8;
+}
+
+/* Make main nav visible in admin mode */
+body:has(.adm-body) .dropdown-menu-container,
+body:has(.adm-body) .mobile-nav {
+    display: flex !important;
 }

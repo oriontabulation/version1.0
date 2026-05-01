@@ -121,17 +121,26 @@ export function renderAdminDashboard() {
                 <div class="adm-denied-icon">🔒</div>
                 <h2>Access Denied</h2><p>Log in as admin to access this panel.</p>
             </div>`;
+        _updateMainHeaderForAdmin(false);
         return;
     }
 
+    // Update main header for admin mode (auto-detects)
+    _updateMainHeaderForAdmin();
+
     container.innerHTML = `
         <div class="adm-shell">
-            ${_buildTopBar()}
+            ${_buildAdminHeader()}
             <div class="adm-layout">
                 ${_buildSidebar()}
                 <div class="adm-body" id="adm-body">${_buildSection(_activeSection)}</div>
             </div>
         </div>`;
+
+    // Render theme picker in settings dropdown
+    if (typeof window.renderThemePicker === 'function') {
+        window.renderThemePicker('adm-top-settings-theme');
+    }
 
     if (_activeSection === 'rounds') _refreshAdminRounds();
 }
@@ -224,35 +233,84 @@ function _fillRoundsSidebar() {
         </div>` : ''}`;
 }
 
-function _buildTopBar() {
+function _updateMainHeaderForAdmin(show) {
     const user = state.auth.currentUser;
     const tour = activeTournament();
-    const initial = (user.name || 'A')[0].toUpperCase();
+    
+    const adminInfo = document.getElementById('header-admin-info');
+    const adminControls = document.getElementById('header-admin-controls');
+    const tournamentName = document.getElementById('header-tournament-name');
+    const userNameDisplay = document.getElementById('header-user-name-display');
+    const themeContainer = document.getElementById('theme-picker-container');
+    const headerSearch = document.getElementById('header-search');
+    const globalSearch = document.getElementById('global-search');
+    
+    // Check if we're actually in admin mode by checking if adm-body exists
+    const inAdminMode = document.querySelector('.adm-body') !== null;
+    
+    // Use provided show value, or auto-detect based on admin mode
+    const shouldShow = show !== undefined ? show : inAdminMode;
+    
+    if (shouldShow && inAdminMode) {
+        // Show admin info with tournament name + user
+        if (adminInfo) {
+            adminInfo.style.display = 'flex';
+            if (tournamentName) {
+                tournamentName.textContent = tour?.name || 'No Tournament';
+                tournamentName.title = tour?.name || '';
+            }
+            if (userNameDisplay) {
+                userNameDisplay.textContent = user?.name || 'Admin';
+            }
+        }
+        // Show admin controls (Switch button)
+        if (adminControls) {
+            adminControls.style.display = 'flex';
+        }
+        // Hide search in admin mode
+        if (headerSearch) headerSearch.style.display = 'none';
+        // Render theme in settings dropdown
+        if (themeContainer && typeof window.renderThemePicker === 'function') {
+            window.renderThemePicker('theme-picker-container');
+        }
+    } else {
+        // Hide admin elements
+        if (adminInfo) adminInfo.style.display = 'none';
+        if (adminControls) adminControls.style.display = 'none';
+        // Show search for non-admin
+        if (headerSearch) headerSearch.style.display = '';
+    }
+}
+
+// Expose for router.js
+window._updateMainHeaderForAdmin = _updateMainHeaderForAdmin;
+
+function _buildAdminHeader() {
+    const user = state.auth.currentUser;
+    const tour = activeTournament();
     return `
-    <div class="adm-topbar">
-        <div class="header-container">
-            <button class="adm-hamburger" id="adm-hamburger" onclick="window.toggleAdmSidebar()" aria-label="Toggle navigation">
-                <span></span><span></span><span></span>
-            </button>
-            <div class="header-logo" onclick="window.navigate('public')" title="Back to main site">
-                <img src="IMG/logo.png" alt="Orion logo" class="logo-image">
-                <span class="header-logo-text">ORION</span>
-            </div>
-            <div class="adm-topbar-center">
-                <span class="adm-topbar-tournament" title="${escapeHTML(tour?.name || '')}">${escapeHTML(tour?.name || 'No Tournament')}</span>
-                <span class="adm-topbar-tag">Admin</span>
-            </div>
-            <div class="header-controls">
-                <div id="theme-picker-container"></div>
-                <button class="adm-pill" onclick="window.adminSwitchSection('tournaments')">Switch</button>
-                <div class="header-user" onclick="window.adminSwitchSection('users')" title="Manage users">
-                    <div class="adm-avatar" style="width:22px;height:22px;font-size:11px;flex-shrink:0;">${escapeHTML(initial)}</div>
-                    <span id="adm-topbar-username">${escapeHTML(user.name || 'Admin')}</span>
+        <div class="adm-topbar">
+            <div class="header-container">
+                <div class="adm-top-bar-left">
+                    <button class="adm-hamburger" onclick="window.toggleAdmSidebar()" aria-label="Open navigation">
+                        <span></span><span></span><span></span>
+                    </button>
+                    <span class="adm-top-bar-tournament">${escapeHTML(tour?.name || 'No Tournament')}</span>
+                    <span class="adm-top-bar-user">${escapeHTML(user?.name || 'Admin')}</span>
                 </div>
-                <button class="adm-pill" onclick="window.logout()">Logout</button>
+                <div class="adm-top-bar-right">
+                    <button class="adm-top-bar-btn" onclick="window.adminSwitchSection('tournaments')">🔄 Switch</button>
+                    <button class="adm-top-bar-btn adm-top-bar-home" onclick="switchTab('public')">🏠 Home</button>
+                    <button class="adm-top-bar-settings" id="adm-top-settings-btn" onclick="toggleAdmTopSettings(event)">⚙️ Settings</button>
+                    <div class="adm-top-settings-dropdown" id="adm-top-settings-dropdown">
+                        <div class="adm-top-settings-theme" id="adm-top-settings-theme"></div>
+                        <div class="adm-top-settings-divider"></div>
+                        <button class="adm-top-settings-item" onclick="switchTab('profile')">👤 Profile</button>
+                        <button class="adm-top-settings-item" data-action="logout">🚪 Logout</button>
+                    </div>
+                </div>
             </div>
-        </div>
-    </div>`;
+        </div>`;
 }
 
 function _buildStatStrip() {
@@ -342,9 +400,8 @@ export function adminSwitchSection(id) {
     document.querySelectorAll('.adm-nav-item').forEach(el =>
         el.classList.toggle('active', el.getAttribute('data-section') === id));
     if (id === 'rounds') _refreshAdminRounds();
-    // Also refresh topbar tournament badge
-    const topbar = document.querySelector('.adm-topbar');
-    if (topbar) topbar.outerHTML = _buildTopBar();
+    // Refresh main header tournament badge
+    _updateMainHeaderForAdmin();
     // Close drawer on mobile after navigation
     window.closeAdmSidebar?.();
 }
@@ -379,7 +436,7 @@ function _sectionFeedback() {
         <p>Overview of feedback captured for this tournament (judges and teams).</p>
     </div>
     <div class="adm-card adm-card--flush">
-        <div class="adm-card-body" style="min-height:120px; display:flex; align-items:center; justify-content:center; color:#64748b;">
+        <div class="adm-card-body adm-card-body--empty">
             No feedback loaded yet. Use the Feedback tab in Draw/Judges or submit new feedback from the portal.
         </div>
     </div>`;
@@ -390,8 +447,15 @@ function _sectionFeedback() {
 // ============================================================================
 function _sectionTournaments() {
     // state.tournaments is keyed by ID, so use Object.entries to get id + data
-    const tournaments = Object.entries(state.tournaments || {}).map(([id, t]) => ({ ...t, id }));
-    const activeId    = state.activeTournamentId;
+    let tournaments = Object.entries(state.tournaments || {}).map(([id, t]) => ({ ...t, id }));
+    // Sort: active tournament first, then by created date descending (newest first)
+    const activeId = state.activeTournamentId;
+    tournaments.sort((a, b) => {
+        if (a.id === activeId) return -1;
+        if (b.id === activeId) return 1;
+        return (b.created_at || 0) - (a.created_at || 0) || b.id.localeCompare(a.id);
+    });
+    const activeTournamentId = state.activeTournamentId;
 
     return `
     <div class="adm-section-head">
@@ -436,14 +500,14 @@ function _sectionTournaments() {
                 const ballotsDone = (t.rounds  || []).flatMap(r => r.debates||[]).filter(d => d.entered).length;
 
                 return `
-                <div class="adm-tour-row ${isActive ? 'is-active' : ''}" style="padding:16px;border-bottom:1px solid #f1f5f9;display:flex;justify-content:space-between;align-items:center;">
+                <div class="adm-tour-row ${isActive ? 'is-active' : ''}">
                     <div class="adm-grow">
                         <div class="adm-tour-header">
-                            <strong style="font-size:16px;color:${isActive?'#4f46e5':'#1e293b'}">${escapeHTML(t.name)}</strong>
-                            ${isActive ? `<span class="adm-badge indigo" style="margin-left:8px;">● ACTIVE</span>` : ''}
+                            <strong class="adm-tour-name">${escapeHTML(t.name)}</strong>
+                            ${isActive ? `<span class="adm-badge indigo adm-active-badge">● ACTIVE</span>` : ''}
                         </div>
-                        <div class="adm-tour-meta" style="font-size:12px;color:#64748b;margin-top:4px;display:flex;gap:12px;">
-                            <span class="adm-format-badge std" style="background:#f1f5f9;padding:2px 6px;border-radius:4px;font-weight:700;text-transform:uppercase;font-size:10px;">${t.format || 'std'}</span>
+                        <div class="adm-tour-meta">
+                            <span class="adm-format-badge std">${t.format || 'std'}</span>
                             <span>👥 ${teamCount} Teams</span>
                             <span>⚖️ ${judgeCount} Judges</span>
                             <span>🎲 ${roundCount} Rounds</span>
@@ -568,17 +632,17 @@ function _sectionOverview() {
             const govTeam = _getTeamName(d.gov);
             const oppTeam = _getTeamName(d.opp);
             
-            return `<div class="adm-room-row" style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid #e2e8f0;">
-                <div style="flex:1;">
-                    <strong style="color:#1e293b;">${escapeHTML(roomName)}</strong>
-                    <div style="font-size:12px;color:#64748b;">${escapeHTML(govTeam)} vs ${escapeHTML(oppTeam)}</div>
+            return `<div class="adm-room-row">
+                <div class="adm-room-row-content">
+                    <strong class="adm-room-row-name">${escapeHTML(roomName)}</strong>
+                    <div class="adm-room-row-teams">${escapeHTML(govTeam)} vs ${escapeHTML(oppTeam)}</div>
                 </div>
                 <span class="${isEntered ? 'adm-badge green' : 'adm-badge amber'}">${isEntered ? '✅ Submitted' : '⏳ Pending'}</span>
             </div>`;
         }).join('');
         
         roomBallotsHtml = `
-            <div style="margin-bottom:12px;font-size:13px;color:#64748b;">
+            <div class="adm-round-summary">
                 <strong>Round ${currentRound.id}</strong> — ${submitted} submitted, ${pending} pending
             </div>
             ${rows}
@@ -640,8 +704,8 @@ function _sectionOverview() {
             ${_progressBar('Teams Breaking',    s.teams.breaking, Math.max(s.teams.total,1), '#8b5cf6')}
             ${_progressBar('Team Feedback',      s.feedback.teamsWithFeedback, Math.max(s.teams.total,1), '#10b981')}
             ${_progressBar('Judge Feedback',     s.feedback.judgesWithFeedback, Math.max(s.judges.total,1), '#6366f1')}
-            <div style="margin-top:12px;padding-top:12px;border-top:1px solid #e2e8f0;">
-                <div style="font-size:12px;font-weight:700;color:#1e293b;margin-bottom:8px;">Participants</div>
+            <div class="adm-participants-section">
+                <div class="adm-participants-header">Participants</div>
                 ${_statRow('Teams', s.teams.total)}
                 ${_statRow('Judges', s.judges.total)}
                 ${_statRow('  - Chairs', s.judges.chair)}
@@ -2156,6 +2220,13 @@ export function initAdminDashboard() {
         document.getElementById('adm-sidebar')?.classList.remove('adm-sidebar--open');
         document.getElementById('adm-sidebar-overlay')?.classList.remove('adm-sidebar--open');
         document.body.style.overflow = '';
+    };
+
+    // Settings dropdown toggle
+    window.toggleAdmTopSettings = function(e) {
+        e.stopPropagation();
+        const dropdown = document.getElementById('adm-top-settings-dropdown');
+        if (dropdown) dropdown.classList.toggle('open');
     };
 
     // Format hint switcher — updates description card under the create-tournament form

@@ -942,7 +942,6 @@ function renderDebateCard(round, debate, roundIdx, debateIdx, previousMeetings) 
                 <button onclick="window.showEnterResults(${roundIdx},${debateIdx})" class="btn-primary" style="padding:4px 12px;font-size:12px;background:#7c3aed"
                         ${!govPresent||!oppPresent?'disabled title="Both teams must be present"':''}>Submit Ballot</button>
                 ` : debate.entered && !isBlinded ? `
-                <button onclick="window.viewDebateDetails(${roundIdx},${debateIdx})" class="btn-secondary" style="padding:4px 10px;font-size:12px">📊 Details</button>
                 ${isAdmin?`<button onclick="window.editResults(${roundIdx},${debateIdx})" class="btn-secondary" style="padding:4px 10px;font-size:12px">✏️ Edit Result</button>`:''}
                 ` : ''}
             </div>
@@ -3293,8 +3292,7 @@ function renderSpeechDebateCard(round, debate, roundIdx, debateIdx) {
     const btnHtml  = canScore
         ? managePanelBtn + '<button onclick="window.showEnterResults(' + roundIdx + ',' + debateIdx + ')" class="btn-primary" style="padding:4px 12px;font-size:12px' + (isMyRoom && !isAdmin ? ';background:#7c3aed' : '') + '">📝 ' + (isAdmin ? 'Enter Scores' : 'Submit Scores') + '</button>'
         : (canEdit
-            ? '<button onclick="window.viewDebateDetails(' + roundIdx + ',' + debateIdx + ')" class="btn-secondary" style="padding:4px 10px;font-size:12px">📊 Details</button>' +
-              (isAdmin ? '<button onclick="window.editResults(' + roundIdx + ',' + debateIdx + ')" class="btn-secondary" style="padding:4px 10px;font-size:12px">Edit</button>' : '')
+            ? (isAdmin ? '<button onclick="window.editResults(' + roundIdx + ',' + debateIdx + ')" class="btn-secondary" style="padding:4px 10px;font-size:12px">✏️ Edit Results</button>' : '')
             : '');
 
     return '<div class="draw-room ' + (debate.entered ? 'done' : 'pending-partial') + '" style="background:white;border-radius:10px;border-left:4px solid ' + statusDot + ';padding:14px;margin-bottom:10px">' +

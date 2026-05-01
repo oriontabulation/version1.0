@@ -453,16 +453,62 @@ async function init() {
     // 10. Initialize image optimizations
     initImageOptimizations();
 
-    // 10. Restore active tab (sticky navigation)
-    const savedTab = localStorage.getItem('orion_active_tab');
-    if (savedTab && savedTab !== 'public') {
-        try {
-            navigate(savedTab);
-        } catch (e) {
-            console.warn('[main] Failed to restore saved tab, falling back to public');
-            localStorage.setItem('orion_active_tab', 'public');
-            navigate('public');
+    // 11. Settings button dropdown
+    const settingsBtn = document.getElementById('header-settings-btn');
+    const settingsDropdown = document.getElementById('header-settings-dropdown');
+    const themeContainer = document.getElementById('theme-picker-container');
+    
+    function openSettings() {
+        const isOpen = settingsDropdown.classList.contains('open');
+        settingsDropdown.classList.toggle('open');
+        // Render theme picker when opening
+        if (!isOpen && typeof window.renderThemePicker === 'function') {
+            window.renderThemePicker('theme-picker-container');
         }
+    }
+    
+    if (settingsBtn && settingsDropdown) {
+        settingsBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            openSettings();
+        });
+        
+        // Stop propagation on dropdown content
+        settingsDropdown.addEventListener('click', (e) => {
+            e.stopPropagation();
+        });
+        
+        // Handle color input focus - don't close dropdown
+        themeContainer?.addEventListener('focus', (e) => {
+            settingsDropdown.classList.add('open');
+        }, true);
+        
+        // Close on outside click
+        document.addEventListener('click', (e) => {
+            if (!settingsDropdown.contains(e.target) && e.target !== settingsBtn) {
+                settingsDropdown.classList.remove('open');
+            }
+        });
+    }
+
+    // Admin settings dropdown close
+    const admSettingsBtn = document.getElementById('adm-top-settings-btn');
+    const admSettingsDropdown = document.getElementById('adm-top-settings-dropdown');
+    if (admSettingsBtn && admSettingsDropdown) {
+        document.addEventListener('click', (e) => {
+            if (!admSettingsDropdown.contains(e.target) && e.target !== admSettingsBtn) {
+                admSettingsDropdown.classList.remove('open');
+            }
+        });
+    }
+
+    // 10. Restore active tab (sticky navigation)
+    const savedTab = localStorage.getItem('orion_active_tab') || 'public';
+    try {
+        navigate(savedTab);
+    } catch (e) {
+        console.warn('[main] Failed to navigate to saved tab, falling back to public');
+        navigate('public');
     }
     window.__orionReady = true;
     console.log('[main] Init complete, step:', window.__orionStep);

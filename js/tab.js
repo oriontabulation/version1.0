@@ -928,8 +928,40 @@ function applyTheme(themeId) {
     const root  = document.documentElement;
     Object.values(THEMES).forEach(t => Object.keys(t.vars).forEach(k => root.style.removeProperty(k)));
     Object.entries(theme.vars).forEach(([k, v]) => root.style.setProperty(k, v));
+    
+    // Map --clr-* to --t-* for compatibility
+    if (theme.vars['--clr-bg']) {
+        root.style.setProperty('--t-bg', theme.vars['--clr-bg']);
+        root.style.setProperty('--t-bg-page', theme.vars['--clr-bg']);
+        root.style.setProperty('--t-bg-hover', adjustColor(theme.vars['--clr-bg'], -5));
+    }
+    if (theme.vars['--clr-surface']) root.style.setProperty('--t-surface', theme.vars['--clr-surface']);
+    if (theme.vars['--clr-text']) {
+        root.style.setProperty('--t-text', theme.vars['--clr-text']);
+        root.style.setProperty('--t-text-light', adjustColor(theme.vars['--clr-text'], -30));
+    }
+    if (theme.vars['--clr-border']) {
+        root.style.setProperty('--t-border', theme.vars['--clr-border']);
+        root.style.setProperty('--border', theme.vars['--clr-border']);
+    }
+    if (theme.vars['--clr-primary']) {
+        root.style.setProperty('--t-brand', theme.vars['--clr-primary']);
+        root.style.setProperty('--t-brand-light', adjustColor(theme.vars['--clr-primary'], 40));
+        root.style.setProperty('--t-brand-hover', adjustColor(theme.vars['--clr-primary'], -15));
+    }
+    
     document.body.classList.toggle('theme-dark', themeId === 'dark' || themeId === 'highcontrast');
     try { localStorage.setItem('orion_theme', themeId); } catch(e) {}
+}
+
+// Helper to lighten/darken colors
+function adjustColor(hex, amount) {
+    if (!hex) return hex;
+    const num = parseInt(hex.replace('#', ''), 16);
+    const r = Math.min(255, Math.max(0, (num >> 16) + amount));
+    const g = Math.min(255, Math.max(0, ((num >> 8) & 0x00FF) + amount));
+    const b = Math.min(255, Math.max(0, (num & 0x0000FF) + amount));
+    return '#' + (1 << 24 | r << 16 | g << 8 | b).toString(16).slice(1);
 }
 
 function renderThemePicker(containerId) {

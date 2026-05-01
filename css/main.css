@@ -2029,7 +2029,13 @@ body.admin-mode .dropdown-menu-container {
 }
 
 body.admin-mode .mobile-menu-btn {
-    display: none !important;
+    display: none;
+}
+
+@media (max-width: 768px) {
+    body.admin-mode .mobile-menu-btn {
+        display: flex !important;
+    }
 }
 
 body.admin-mode .mobile-nav-drawer {

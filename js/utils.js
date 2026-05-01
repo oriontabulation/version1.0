@@ -51,8 +51,11 @@ function updatePublicCounts() {
 function updateHeaderTournamentName() {
     const el = document.getElementById('header-tournament-name');
     if (el && state.activeTournamentId) {
-        const t = state.tournaments.find(t => t.id === state.activeTournamentId);
-        el.textContent = t?.name ? `| ${t.name}` : '';
+        const t = state.tournaments?.[state.activeTournamentId];
+        el.textContent = t?.name || '';
+    } else {
+        const el = document.getElementById('header-tournament-name');
+        if (el) el.textContent = '';
     }
 }
 

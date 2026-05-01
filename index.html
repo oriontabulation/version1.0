@@ -58,56 +58,65 @@
          ═══════════════════════════════════════════════ -->
     <header>
       <div class="header-container">
-        <!-- Hamburger: first child, left side -->
-        <button
-          class="mobile-menu-btn"
-          id="mobile-hamburger"
-          aria-label="Open navigation"
-        >
-          <span></span><span></span><span></span>
-        </button>
-
-        <!-- Logo -->
+        <!-- Logo: extreme left -->
         <div class="header-logo" onclick="switchTab('public')">
           <img src="IMG/logo.png" alt="Orion logo" class="logo-image" />
           <span class="header-logo-text">ORION</span>
         </div>
 
-        <!-- Global search -->
-        <div class="header-search">
-          <input
-            type="text"
-            placeholder="Search teams, judges, rounds…"
-            id="global-search"
-          />
+        <!-- Hamburger: mobile menu -->
+        <button
+          class="mobile-menu-btn"
+          id="mobile-hamburger"
+          aria-label="Open navigation"
+          onclick="var m=document.getElementById('main-nav'),o=document.getElementById('mobile-nav-overlay');if(document.getElementById('admin-dashboard')&&document.getElementById('admin-dashboard').style.display!=='none'){window.toggleAdmSidebar&&window.toggleAdmSidebar()}else{this.classList.toggle('open');m&&m.classList.toggle('open');o&&o.classList.toggle('open')}"
+        >
+          <span></span><span></span><span></span>
+        </button>
+
+        <!-- Tournament name (with bar separator) -->
+        <div class="header-tournament" id="header-tournament">
+          <span class="header-tournament-bar">|</span>
+          <span class="header-tournament-name" id="header-tournament-name">No Tournament</span>
         </div>
 
-        <div class="header-controls" id="header-controls">
-          <div
-            class="header-user"
-            id="header-user-info"
-            style="display: none"
-            onclick="switchTab('profile')"
-            title="View profile"
-          >
-            <span id="header-user-name">User</span>
+        <!-- Spacer -->
+        <div class="header-spacer"></div>
+
+        <!-- Center: Search bar -->
+        <div class="header-center">
+          <div class="header-search">
+            <input
+              type="text"
+              placeholder="Search teams, judges, rounds…"
+              id="global-search"
+            />
           </div>
+        </div>
+
+        <!-- Right: User + Settings -->
+        <div class="header-right">
+          <!-- Login button (visible when logged out) -->
           <button
             type="button"
             id="header-login-btn"
-            class="btn-primary"
+            class="btn-primary header-login-btn"
             data-action="showLoginModal"
           >
             Login
           </button>
-          <button
-            id="header-logout-btn"
-            class="btn-secondary"
-            style="display: none"
-            data-action="logout"
-          >
-            Logout
-          </button>
+          <!-- Settings button (visible when logged in) -->
+          <div class="header-settings-wrapper" id="header-settings-wrapper" style="display:none;">
+            <button class="header-settings-btn" id="header-settings-btn" title="Settings">
+              ⚙️
+            </button>
+            <div class="header-settings-dropdown" id="header-settings-dropdown">
+              <div class="header-settings-section" id="theme-picker-container"></div>
+              <div class="header-settings-divider"></div>
+              <button class="header-settings-item" onclick="switchTab('profile')">👤 Profile</button>
+              <button class="header-settings-item" data-action="logout">🚪 Logout</button>
+            </div>
+          </div>
         </div>
       </div>
     </header>
@@ -122,7 +131,7 @@
     >
       <div class="dropdown-group">
         <button
-          class="dropdown-trigger active"
+          class="dropdown-trigger"
           data-tab="public"
           onclick="switchTab('public')"
         >
@@ -254,9 +263,55 @@
         </div>
       </div>
 
-      <div class="dropdown-group">
+      <!-- Admin dropdown (visible in admin mode) -->
+      <div class="dropdown-group" id="admin-nav-group" style="display:none;">
+        <button class="dropdown-trigger" data-tab-group="admin">
+          ⚙️ Admin ▾
+        </button>
+        <div class="dropdown-content">
+          <button class="dropdown-item" data-action="admin-section" data-args="overview" onclick="window.adminSwitchSection('overview')">
+            📊 Overview
+          </button>
+          <button class="dropdown-item" data-action="admin-section" data-args="tournaments" onclick="window.adminSwitchSection('tournaments')">
+            🏟️ Tournaments
+          </button>
+          <button class="dropdown-item" data-action="admin-section" data-args="rounds" onclick="window.adminSwitchSection('rounds')">
+            🎲 Rounds & Draw
+          </button>
+          <button class="dropdown-item" data-action="admin-section" data-args="ballots" onclick="window.adminSwitchSection('ballots')">
+            🗳️ Ballot Override
+          </button>
+          <button class="dropdown-item" data-action="admin-section" data-args="break" onclick="window.adminSwitchSection('break')">
+            🏆 Break & Outrounds
+          </button>
+          <button class="dropdown-item" data-action="admin-section" data-args="publish" onclick="window.adminSwitchSection('publish')">
+            📡 Publish Controls
+          </button>
+          <button class="dropdown-item" data-action="admin-section" data-args="feedback" onclick="window.adminSwitchSection('feedback')">
+            💬 Feedback
+          </button>
+          <button class="dropdown-item" data-action="admin-section" data-args="urls" onclick="window.adminSwitchSection('urls')">
+            🔗 URLs & Access
+          </button>
+          <button class="dropdown-item" data-action="admin-section" data-args="data" onclick="window.adminSwitchSection('data')">
+            💾 Data & Export
+          </button>
+          <button class="dropdown-item" data-action="admin-section" data-args="users" onclick="window.adminSwitchSection('users')">
+            👥 Local Users
+          </button>
+          <button class="dropdown-item" data-action="admin-section" data-args="sample" onclick="window.adminSwitchSection('sample')">
+            🚀 Test Data
+          </button>
+          <button class="dropdown-item" data-action="admin-section" data-args="danger" onclick="window.adminSwitchSection('danger')">
+            ⚠️ Danger Zone
+</button>
+        </div>
+      </div>
+
+      <!-- Admin link (only visible for admin users) -->
+      <div class="dropdown-group" id="admin-nav-item" style="display:none;">
         <button
-          class="dropdown-item"
+          class="dropdown-trigger"
           data-tab="admin-dashboard"
           onclick="switchTab('admin-dashboard')"
         >

@@ -333,10 +333,29 @@ function updateHeaderControls() {
     const headerInfo   = document.getElementById('header-user-info');
     const headerLogin  = document.getElementById('header-login-btn');
     const headerLogout = document.getElementById('header-logout-btn');
+    const settingsWrapper = document.getElementById('header-settings-wrapper');
     if (headerName)   headerName.textContent    = user?.name || 'Guest';
     if (headerInfo)   headerInfo.style.display  = isAuth ? '' : 'none';
     if (headerLogin)  headerLogin.style.display = isAuth ? 'none' : '';
-    if (headerLogout) headerLogout.style.display = isAuth ? '' : 'none';
+    if (settingsWrapper) settingsWrapper.style.display = isAuth ? '' : 'none';
+
+    // Settings dropdown (only visible when logged in)
+    const settingsDropdown = document.getElementById('header-settings-dropdown');
+    if (settingsDropdown && isAuth) {
+        const profileItem = settingsDropdown.querySelector('button[onclick*="profile"]');
+        const logoutItem = settingsDropdown.querySelector('[data-action="logout"]');
+        if (profileItem) profileItem.style.display = '';
+        if (logoutItem) logoutItem.style.display = '';
+    }
+
+    // Admin nav item
+    const adminNavItem = document.getElementById('admin-nav-item');
+    const isAdmin = user?.role === 'admin';
+    if (adminNavItem) adminNavItem.style.display = (isAuth && isAdmin) ? 'block' : 'none';
+
+    // Admin header user name display
+    const adminUserDisplay = document.getElementById('header-user-name-display');
+    if (adminUserDisplay) adminUserDisplay.textContent = user?.name || '';
 
     // Drawer
     const drawerName   = document.getElementById('drawer-user-name');
