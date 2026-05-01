@@ -4840,7 +4840,7 @@ export function renderRoundCard(round, actualRoundIdx, previousMeetings) {
     </div>`;
 }
 
-export function renderRoundMiniTable(round) {
+function renderRoundMiniTable(round) {
     const debates = round.debates || [];
     const rooms = round.rooms || [];
     
