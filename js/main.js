@@ -215,11 +215,6 @@ window.renderAdminDashboard = renderAdminDashboard;
 window.adminPublishAll = adminPublishAll;
 window.adminHideAll = adminHideAll;
 
-// Expose state for debugging (REMOVE AFTER FIXING)
-import { state } from './state.js';
-window.state = state;
-window.getState = () => state;
-
 // Teams
 window.addTeam = addTeam;
 window.deleteTeam = deleteTeam;
@@ -467,6 +462,12 @@ async function init() {
             localStorage.setItem('orion_active_tab', 'public');
             navigate('public');
         }
+    }
+    window.__orionReady = true;
+    console.log('[main] Init complete, step:', window.__orionStep);
+    } catch (err) {
+        window.__orionStep = 'error';
+        console.error('[main] Init error:', err);
     }
 }
 
