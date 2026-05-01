@@ -14,74 +14,109 @@
     <link rel="icon" href="favicon.ico" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self' https://*.supabase.co https://browser.sentry-cdn.com https://esm.sh; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://browser.sentry-cdn.com https://esm.sh; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:;"
+      content="default-src 'self' https://*.supabase.co https://browser.sentry-cdn.com https://esm.sh; 
+      connect-src 'self' https://*.supabase.co wss://*.supabase.co https://esm.sh;
+      script-src 'self' 'unsafe-inline' 'unsafe-eval' https://browser.sentry-cdn.com https://esm.sh; 
+      style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; 
+      font-src 'self' https://fonts.gstatic.com; 
+      img-src 'self' data: https:;"
     />
     <script type="importmap">
       {
         "imports": {
-          "@sentry/browser": "https://esm.sh/@sentry/browser@7.110.0",
           "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2.48.1"
         }
       }
     </script>
-    <script type="module" src="js/main.js"></script>
+    <script type="module" src="js/main.js" onerror="console.error('Failed to load main.js:', this.src); document.getElementById('init-error').style.display='block'; document.getElementById('init-error').innerHTML='Failed to load main.js. Check Console (F12).';"></script>
+    <script>
+      // Fallback check - if main.js doesn't load in 3 seconds
+      setTimeout(() => {
+          if (typeof window.__orionStep === 'undefined') {
+              const errDiv = document.getElementById('init-error');
+              if (errDiv) {
+                  errDiv.style.display = 'block';
+                  errDiv.innerHTML = 'App failed to load. <br>Please refresh (Ctrl+Shift+R) or try Chrome/Edge.<br><small>Debug: __orionStep=' + (window.__orionStep || 'undefined') + ', main.js loaded=' + (typeof window.mainLoaded || 'unknown') + '</small>';
+              }
+              console.error('[index.html] main.js failed to load or init() was not called');
+          }
+      }, 3000);
+      
+      // Check if main.js loads
+      window.mainLoaded = false;
+    </script>
+    <!-- Fallback - try loading main.js without module -->
+    <script>console.log('Inline script running');</script>
   </head>
 
   <body>
+    <!-- Error display for initialization failures -->
+    <div id="init-error" style="display:none;position:fixed;top:0;left:0;right:0;background:#dc2626;color:white;padding:12px;text-align:center;z-index:99999;font-family:system-ui;"></div>
+
     <!-- ═══════════════════════════════════════════════
          HEADER
          ═══════════════════════════════════════════════ -->
     <header>
       <div class="header-container">
-        <!-- Hamburger: first child, left side -->
-        <button
-          class="mobile-menu-btn"
-          id="mobile-hamburger"
-          aria-label="Open navigation"
-        >
-          <span></span><span></span><span></span>
-        </button>
-
-        <!-- Logo -->
+        <!-- Logo: extreme left -->
         <div class="header-logo" onclick="switchTab('public')">
           <img src="IMG/logo.png" alt="Orion logo" class="logo-image" />
           <span class="header-logo-text">ORION</span>
         </div>
 
-        <!-- Global search -->
-        <div class="header-search">
-          <input
-            type="text"
-            placeholder="Search teams, judges, rounds…"
-            id="global-search"
-          />
+        <!-- Hamburger: mobile menu -->
+        <button
+          class="mobile-menu-btn"
+          id="mobile-hamburger"
+          aria-label="Open navigation"
+          onclick="var m=document.getElementById('main-nav'),o=document.getElementById('mobile-nav-overlay');if(document.getElementById('admin-dashboard')&&document.getElementById('admin-dashboard').style.display!=='none'){window.toggleAdmSidebar&&window.toggleAdmSidebar()}else{this.classList.toggle('open');m&&m.classList.toggle('open');o&&o.classList.toggle('open')}"
+        >
+          <span></span><span></span><span></span>
+        </button>
+
+        <!-- Tournament name (with bar separator) -->
+        <div class="header-tournament" id="header-tournament">
+          <span class="header-tournament-bar">|</span>
+          <span class="header-tournament-name" id="header-tournament-name">No Tournament</span>
         </div>
 
-        <div class="header-controls" id="header-controls">
-          <div
-            class="header-user"
-            id="header-user-info"
-            style="display: none"
-            onclick="switchTab('profile')"
-            title="View profile"
-          >
-            <span id="header-user-name">User</span>
+        <!-- Spacer -->
+        <div class="header-spacer"></div>
+
+        <!-- Center: Search bar -->
+        <div class="header-center">
+          <div class="header-search">
+            <input
+              type="text"
+              placeholder="Search teams, judges, rounds…"
+              id="global-search"
+            />
           </div>
+        </div>
+
+        <!-- Right: User + Settings -->
+        <div class="header-right">
+          <!-- Login button (visible when logged out) -->
           <button
+            type="button"
             id="header-login-btn"
-            class="btn-primary"
+            class="btn-primary header-login-btn"
             data-action="showLoginModal"
           >
             Login
           </button>
-          <button
-            id="header-logout-btn"
-            class="btn-secondary"
-            style="display: none"
-            data-action="logout"
-          >
-            Logout
-          </button>
+          <!-- Settings button (visible when logged in) -->
+          <div class="header-settings-wrapper" id="header-settings-wrapper" style="display:none;">
+            <button class="header-settings-btn" id="header-settings-btn" title="Settings">
+              ⚙️
+            </button>
+            <div class="header-settings-dropdown" id="header-settings-dropdown">
+              <div class="header-settings-section" id="theme-picker-container"></div>
+              <div class="header-settings-divider"></div>
+              <button class="header-settings-item" onclick="switchTab('profile')">👤 Profile</button>
+              <button class="header-settings-item" data-action="logout">🚪 Logout</button>
+            </div>
+          </div>
         </div>
       </div>
     </header>
@@ -96,7 +131,7 @@
     >
       <div class="dropdown-group">
         <button
-          class="dropdown-trigger active"
+          class="dropdown-trigger"
           data-tab="public"
           onclick="switchTab('public')"
         >
@@ -228,9 +263,55 @@
         </div>
       </div>
 
-      <div class="dropdown-group">
+      <!-- Admin dropdown (visible in admin mode) -->
+      <div class="dropdown-group" id="admin-nav-group" style="display:none;">
+        <button class="dropdown-trigger" data-tab-group="admin">
+          ⚙️ Admin ▾
+        </button>
+        <div class="dropdown-content">
+          <button class="dropdown-item" data-action="admin-section" data-args="overview" onclick="window.adminSwitchSection('overview')">
+            📊 Overview
+          </button>
+          <button class="dropdown-item" data-action="admin-section" data-args="tournaments" onclick="window.adminSwitchSection('tournaments')">
+            🏟️ Tournaments
+          </button>
+          <button class="dropdown-item" data-action="admin-section" data-args="rounds" onclick="window.adminSwitchSection('rounds')">
+            🎲 Rounds & Draw
+          </button>
+          <button class="dropdown-item" data-action="admin-section" data-args="ballots" onclick="window.adminSwitchSection('ballots')">
+            🗳️ Ballot Override
+          </button>
+          <button class="dropdown-item" data-action="admin-section" data-args="break" onclick="window.adminSwitchSection('break')">
+            🏆 Break & Outrounds
+          </button>
+          <button class="dropdown-item" data-action="admin-section" data-args="publish" onclick="window.adminSwitchSection('publish')">
+            📡 Publish Controls
+          </button>
+          <button class="dropdown-item" data-action="admin-section" data-args="feedback" onclick="window.adminSwitchSection('feedback')">
+            💬 Feedback
+          </button>
+          <button class="dropdown-item" data-action="admin-section" data-args="urls" onclick="window.adminSwitchSection('urls')">
+            🔗 URLs & Access
+          </button>
+          <button class="dropdown-item" data-action="admin-section" data-args="data" onclick="window.adminSwitchSection('data')">
+            💾 Data & Export
+          </button>
+          <button class="dropdown-item" data-action="admin-section" data-args="users" onclick="window.adminSwitchSection('users')">
+            👥 Local Users
+          </button>
+          <button class="dropdown-item" data-action="admin-section" data-args="sample" onclick="window.adminSwitchSection('sample')">
+            🚀 Test Data
+          </button>
+          <button class="dropdown-item" data-action="admin-section" data-args="danger" onclick="window.adminSwitchSection('danger')">
+            ⚠️ Danger Zone
+</button>
+        </div>
+      </div>
+
+      <!-- Admin link (only visible for admin users) -->
+      <div class="dropdown-group" id="admin-nav-item" style="display:none;">
         <button
-          class="dropdown-item"
+          class="dropdown-trigger"
           data-tab="admin-dashboard"
           onclick="switchTab('admin-dashboard')"
         >
@@ -603,6 +684,7 @@
     <!-- ═══════════════════════════════════════════════
          PATCHES — load AFTER modules
          ═══════════════════════════════════════════════ -->
-    <script src="js/patches.js" defer></script>
+    <script src="js/patches.js" type="module"></script>
   </body>
 </html>
+

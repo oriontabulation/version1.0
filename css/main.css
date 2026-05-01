@@ -1481,9 +1481,13 @@ tbody tr:hover td {
 .modal-overlay {
     position: fixed;
     inset: 0;
-    background: rgba(8, 14, 30, 0.82);
+    background: rgba(8, 14, 30, 0.88);
     backdrop-filter: blur(12px) saturate(1.4);
     -webkit-backdrop-filter: blur(12px) saturate(1.4);
+    /* Fallback for browsers that don't support backdrop-filter */
+    @supports not (backdrop-filter: blur(12px)) {
+        background: rgba(8, 14, 30, 0.95);
+    }
     display: flex;
     align-items: center;
     justify-content: center;
@@ -2025,7 +2029,13 @@ body.admin-mode .dropdown-menu-container {
 }
 
 body.admin-mode .mobile-menu-btn {
-    display: none !important;
+    display: none;
+}
+
+@media (max-width: 768px) {
+    body.admin-mode .mobile-menu-btn {
+        display: flex !important;
+    }
 }
 
 body.admin-mode .mobile-nav-drawer {
@@ -3593,6 +3603,20 @@ footer {
 .td-avg {
     text-align: center;
     color: var(--color-muted);
+}
+
+.td-wins,
+.td-total {
+    text-align: center;
+    font-weight: 600;
+}
+
+.td-wins {
+    color: var(--color-primary);
+}
+
+.td-total {
+    color: var(--color-primary);
 }
 
 .td-muted {

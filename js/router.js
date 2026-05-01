@@ -56,6 +56,7 @@ function _handleClick(e) {
     if (!target) return;
 
     const action = target.dataset.action;
+    console.log('router click detected action:', action);
     if (!action) return;
 
     let args = [];
@@ -117,14 +118,23 @@ export function navigate(tabId) {
         const oc   = btn.getAttribute('onclick') || '';
         const dact = btn.dataset.action;
         const darg = btn.dataset.args || btn.dataset.id;
-        const isActive =
-            oc.includes(`'${tabId}'`) || oc.includes(`"${tabId}"`) ||
+        const onclickTab = oc.match(/switchTab\(['"'](\w+)['"]\)/)?.[1] || oc.match(/navigate\(['"'](\w+)['"]\)/)?.[1];
+        const isActive = tabId === onclickTab || 
             (dact === 'navigate' && darg === tabId) ||
             (dact === 'switchTab' && darg === tabId);
         btn.classList.toggle('active', isActive);
     });
 
     history.pushState({ tabId }, '', `#${tabId}`);
+
+    // Sync admin header state based on current tab
+    if (window._updateMainHeaderForAdmin && !window._headerSyncRunning) {
+        window._headerSyncRunning = true;
+        setTimeout(() => {
+            window._headerSyncRunning = false;
+            window._updateMainHeaderForAdmin();
+        }, 50);
+    }
 
     const renderer = _tabRenderers.get(tabId);
     if (renderer) {

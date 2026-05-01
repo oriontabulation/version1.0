@@ -280,23 +280,28 @@ export function renderDraw() {
                  <span style="font-size:13px;color:#94a3b8">${(rounds || []).length} rounds · ${entered}/${total} results</span>
              </div>
 <div class="draw-controls-right">
-                  <select id="round-filter" class="draw-round-filter"
-                          onchange="window.displayRounds()"
-                          title="Filter rounds">
-                      <option value="all" ${savedFilter==='all'?'selected':''}>All Rounds</option>
-                      <option value="pending"   ${savedFilter==='pending'  ?'selected':''}>Pending</option>
-                      <option value="completed" ${savedFilter==='completed'?'selected':''}>Completed</option>
-                      <option value="blinded"   ${savedFilter==='blinded'  ?'selected':''}>Blind</option>
-                  </select>
-                  <select id="draw-name-display" class="draw-round-filter"
-                          onchange="window._setNameDisplay(this.value)"
-                          title="Show names or codes">
-                      <option value="names" ${(savedPrefs['display']||'names')==='names'?'selected':''}>Names</option>
-                      <option value="codes" ${savedPrefs['display']==='codes'?'selected':''}>Codes</option>
-                  </select>
-                  ${isAdmin ? `<button onclick="window._toggleCreateRound()" id="draw-new-btn"
-                          class="btn-primary" style="padding:5px 12px;font-size:12px;font-weight:700">➕ New Round</button>` : ''}
-              </div>
+                   <select id="round-filter" class="draw-round-filter"
+                           onchange="window.displayRounds()"
+                           title="Filter rounds">
+                       <option value="all" ${savedFilter==='all'?'selected':''}>All Rounds</option>
+                       <option value="pending"   ${savedFilter==='pending'  ?'selected':''}>Pending</option>
+                       <option value="completed" ${savedFilter==='completed'?'selected':''}>Completed</option>
+                       <option value="blinded"   ${savedFilter==='blinded'  ?'selected':''}>Blind</option>
+                   </select>
+                   <select id="draw-name-display" class="draw-round-filter"
+                           onchange="window._setNameDisplay(this.value)"
+                           title="Show names or codes">
+                       <option value="names" ${(savedPrefs['display']||'names')==='names'?'selected':''}>Names</option>
+                       <option value="codes" ${savedPrefs['display']==='codes'?'selected':''}>Codes</option>
+                   </select>
+<button id="draw-view-toggle" onclick="window._toggleDrawView()" 
+                            class="btn-secondary" style="padding:8px 14px;font-size:13px;font-weight:600"
+                            title="Toggle between edit mode and list mode">
+                        📋 List Mode
+                    </button>
+                   ${isAdmin ? `<button onclick="window._toggleCreateRound()" id="draw-new-btn"
+                           class="btn-primary" style="padding:5px 12px;font-size:12px;font-weight:700">➕ New Round</button>` : ''}
+               </div>
          </div>
          <div id="draw-jump-pills" class="draw-jump-pills"></div>
 
@@ -937,7 +942,6 @@ function renderDebateCard(round, debate, roundIdx, debateIdx, previousMeetings) 
                 <button onclick="window.showEnterResults(${roundIdx},${debateIdx})" class="btn-primary" style="padding:4px 12px;font-size:12px;background:#7c3aed"
                         ${!govPresent||!oppPresent?'disabled title="Both teams must be present"':''}>Submit Ballot</button>
                 ` : debate.entered && !isBlinded ? `
-                <button onclick="window.viewDebateDetails(${roundIdx},${debateIdx})" class="btn-secondary" style="padding:4px 10px;font-size:12px">📊 Details</button>
                 ${isAdmin?`<button onclick="window.editResults(${roundIdx},${debateIdx})" class="btn-secondary" style="padding:4px 10px;font-size:12px">✏️ Edit Result</button>`:''}
                 ` : ''}
             </div>
@@ -3288,8 +3292,7 @@ function renderSpeechDebateCard(round, debate, roundIdx, debateIdx) {
     const btnHtml  = canScore
         ? managePanelBtn + '<button onclick="window.showEnterResults(' + roundIdx + ',' + debateIdx + ')" class="btn-primary" style="padding:4px 12px;font-size:12px' + (isMyRoom && !isAdmin ? ';background:#7c3aed' : '') + '">📝 ' + (isAdmin ? 'Enter Scores' : 'Submit Scores') + '</button>'
         : (canEdit
-            ? '<button onclick="window.viewDebateDetails(' + roundIdx + ',' + debateIdx + ')" class="btn-secondary" style="padding:4px 10px;font-size:12px">📊 Details</button>' +
-              (isAdmin ? '<button onclick="window.editResults(' + roundIdx + ',' + debateIdx + ')" class="btn-secondary" style="padding:4px 10px;font-size:12px">Edit</button>' : '')
+            ? (isAdmin ? '<button onclick="window.editResults(' + roundIdx + ',' + debateIdx + ')" class="btn-secondary" style="padding:4px 10px;font-size:12px">✏️ Edit Results</button>' : '')
             : '');
 
     return '<div class="draw-room ' + (debate.entered ? 'done' : 'pending-partial') + '" style="background:white;border-radius:10px;border-left:4px solid ' + statusDot + ';padding:14px;margin-bottom:10px">' +
@@ -4299,8 +4302,24 @@ function addDebate(roundIdx, debateIdx) {
     displayRounds();
 }
 
+function _toggleDrawView() {
+    let prefs = {};
+    try { prefs = JSON.parse(localStorage.getItem('orion_draw_prefs') || '{}'); } catch(e) {}
+    const current = prefs['miniView'] || false;
+    prefs['miniView'] = !current;
+    localStorage.setItem('orion_draw_prefs', JSON.stringify(prefs));
+    
+    const btn = document.getElementById('draw-view-toggle');
+    if (btn) {
+        btn.textContent = current ? '📋 List Mode' : '📝 Edit Mode';
+    }
+    displayRounds();
+}
+
 window.displayRounds        = displayRounds;
 window._setNameDisplay      = _setNameDisplay;
+window._toggleDrawView      = _toggleDrawView;
+window.renderRoundMiniTable = renderRoundMiniTable;
 
 window._toggleRoundSettings = function(roundId) {
     const menu = document.getElementById(`round-settings-${roundId}`);
@@ -4647,6 +4666,15 @@ export function displayRounds() {
     }
 
     const previousMeetings = getPreviousMeetings();
+    
+    // Check mini view preference
+    let prefs = {};
+    try { prefs = JSON.parse(localStorage.getItem('orion_draw_prefs') || '{}'); } catch(e) {}
+    const isMiniView = prefs['miniView'] || false;
+
+    // Update button text
+    const viewBtn = document.getElementById('draw-view-toggle');
+    if (viewBtn) viewBtn.textContent = isMiniView ? '📝 Edit Mode' : '📋 List Mode';
 
     // Group rounds by bracket for knockout rounds
     const knockoutRounds = filteredRounds.filter(r => r.type === 'knockout');
@@ -4669,7 +4697,11 @@ export function displayRounds() {
 
     // Display prelim rounds — newest first
     prelimRounds.forEach(round => {
-        html += renderRoundCard(round, state.rounds.findIndex(r => r.id === round.id), previousMeetings);
+        if (isMiniView) {
+            html += renderRoundMiniTable(round);
+        } else {
+            html += renderRoundCard(round, state.rounds.findIndex(r => r.id === round.id), previousMeetings);
+        }
     });
 
     // Display knockout rounds in bracket format
@@ -4710,7 +4742,7 @@ export function displayRounds() {
 }
 
 
-function renderRoundCard(round, actualRoundIdx, previousMeetings) {
+export function renderRoundCard(round, actualRoundIdx, previousMeetings) {
     const debates = round.debates || [];
     const entered = debates.filter(d => d.entered).length;
     const total   = debates.length;
@@ -4804,6 +4836,74 @@ function renderRoundCard(round, actualRoundIdx, previousMeetings) {
                 ${debates.map((debate, i) => renderDebateCard(round, debate, actualRoundIdx, i, previousMeetings)).join('')}
             </div>
         </div>
+    </div>`;
+}
+
+function renderRoundMiniTable(round) {
+    const debates = round.debates || [];
+    const rooms = round.rooms || [];
+    
+    // Get display preference (names or codes)
+    let prefs = {};
+    try { prefs = JSON.parse(localStorage.getItem('orion_draw_prefs') || '{}'); } catch(e) {}
+    const displayMode = prefs['display'] || 'names';
+    
+    const getDisplayName = (team) => {
+        if (!team) return '?';
+        return displayMode === 'codes' && team.code ? team.code : team.name;
+    };
+    
+    const rows = debates.map((debate, i) => {
+        const room = rooms[i] || `Room ${i+1}`;
+        let teamsHtml = '';
+        if (debate.format === 'bp') {
+            const og = (state.teams||[]).find(t=>t.id==debate.og);
+            const oo = (state.teams||[]).find(t=>t.id==debate.oo);
+            const cg = (state.teams||[]).find(t=>t.id==debate.cg);
+            const co = (state.teams||[]).find(t=>t.id==debate.co);
+            teamsHtml = `${escapeHTML(getDisplayName(og))}/${escapeHTML(getDisplayName(oo))} vs ${escapeHTML(getDisplayName(cg))}/${escapeHTML(getDisplayName(co))}`;
+        } else if (debate.format === 'speech') {
+            teamsHtml = `${(debate.roomSpeakers||[]).length} speakers`;
+        } else {
+            const gov = (state.teams||[]).find(t=>t.id==debate.gov);
+            const opp = (state.teams||[]).find(t=>t.id==debate.opp);
+            teamsHtml = `${escapeHTML(getDisplayName(gov))} vs ${escapeHTML(getDisplayName(opp))}`;
+        }
+        const panel = debate.panel || [];
+        const chairEntry     = panel.find(p => p.role === 'chair');
+        const wingEntries    = panel.filter(p => p.role !== 'chair' && p.role !== 'trainee');
+        const traineeEntries = panel.filter(p => p.role === 'trainee');
+        const chairJudge     = chairEntry ? (state.judges||[]).find(j=>j.id==chairEntry.id) : null;
+        const wingNames      = wingEntries.map(p=>(state.judges||[]).find(j=>j.id==p.id)?.name||'').filter(Boolean);
+        const traineeNames   = traineeEntries.map(p=>(state.judges||[]).find(j=>j.id==p.id)?.name||'').filter(Boolean);
+        const status = debate.entered ? '✅' : panel.length ? '⏳' : '⚠️';
+        const chairHtml = chairJudge
+            ? `${escapeHTML(chairJudge.name)}<span class="rmt-c">(c)</span>`
+            : `<span style="color:#94a3b8">—</span>`;
+        return `<tr>
+            <td class="rmt-room">${escapeHTML(room)}</td>
+            <td class="rmt-teams">${teamsHtml}</td>
+            <td class="rmt-chair">${chairHtml}</td>
+            <td class="rmt-wings">${wingNames.length ? escapeHTML(wingNames.join(', ')) : '<span style="color:#94a3b8">—</span>'}</td>
+            <td class="rmt-trainee">${traineeNames.length ? escapeHTML(traineeNames.join(', ')) : '<span style="color:#94a3b8">—</span>'}</td>
+            <td class="rmt-status">${status}</td>
+        </tr>`;
+    }).join('');
+
+    return `
+    <div style="margin-bottom:16px;">
+        <div style="background:#f8fafc;padding:8px 12px;border-radius:6px 6px 0 0;border:1px solid #e2e8f0;border-bottom:none;">
+            <strong style="font-size:14px;color:#1e293b;">Round ${round.id}</strong>
+            ${round.type==='knockout'?'<span style="background:#fee2e2;color:#991b1b;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;margin-left:8px;">🏆 KO</span>':''}
+            ${round.blinded?'<span style="background:#f1f5f9;color:#475569;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;margin-left:8px;">🔒 Blind</span>':''}
+            <span style="font-size:12px;color:#64748b;margin-left:12px;">${debates.filter(d=>d.entered).length}/${debates.length} results</span>
+        </div>
+        <table class="round-mini-table" style="border-radius:0 0 6px 6px;border-top:none;">
+            <thead><tr>
+                <th>Room</th><th>Teams</th><th>Chair</th><th>Wings</th><th>T</th><th></th>
+            </tr></thead>
+            <tbody>${rows}</tbody>
+        </table>
     </div>`;
 }
 
@@ -4978,4 +5078,4 @@ export const openJudgeModal = showJudgeManagement;
 export const enterResults   = showEnterResults;
 
 // ─── ADD MISSING EXPORT for admin.js ──────────────────────────────────────────
-export { displayAdminRounds, showJudgeManagement};
+export { displayAdminRounds, showJudgeManagement };

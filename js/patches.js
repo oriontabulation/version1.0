@@ -184,62 +184,127 @@
     controls.insertBefore(p, document.getElementById('header-login-btn') || controls.firstChild);
   }
 
-  function injectAdminPicker() {
-    if (document.getElementById('orion-admin-picker')) return;
-    const right = document.querySelector('.adm-topbar-right');
-    if (!right) return;
-    const p = buildPicker('adm-pill theme-picker-btn');
-    p.id = 'orion-admin-picker';
-    right.insertBefore(p, right.firstChild);
-  }
-
   /* Admin overview inline picker (called from admin.js renderThemePicker) */
   window.renderThemePicker = function(containerId) {
     const el = containerId ? document.getElementById(containerId) : null;
     if (!el) return;
     const cur = loadColor();
     el.innerHTML = '';
-    el.style.cssText = 'display:flex;align-items:center;gap:12px;flex-wrap:wrap;';
 
-    // Color wheel button
-    const wheelWrap = document.createElement('label');
-    wheelWrap.className = 'theme-inline-wheel';
-    wheelWrap.title = 'Pick any colour';
-    wheelWrap.innerHTML = `
-      <span class="theme-wheel-swatch" style="background:${cur};width:28px;height:28px;border-radius:50%;display:inline-block;border:2px solid #e2e8f0;flex-shrink:0;cursor:pointer;transition:transform 0.15s;"></span>
-      <span style="font-size:13px;font-weight:600;color:#1e293b">Pick any colour</span>
-      <span style="font-size:16px">🎨</span>
-      <input type="color" class="theme-color-wheel" value="${cur}"
-        style="position:absolute;width:0;height:0;opacity:0;pointer-events:none;">`;
-    wheelWrap.style.cssText = 'position:relative;display:inline-flex;align-items:center;gap:8px;padding:7px 14px;border-radius:10px;border:1.5px solid #e2e8f0;background:white;cursor:pointer;transition:border-color .18s;';
-    const wInput = wheelWrap.querySelector('input');
-    wInput.addEventListener('input',  () => {
-      applyColor(wInput.value);
-      wheelWrap.querySelector('.theme-wheel-swatch').style.background = wInput.value;
-    });
-    wInput.addEventListener('change', () => applyColor(wInput.value));
-    el.appendChild(wheelWrap);
-
-    // Divider
-    const div = document.createElement('span');
-    div.style.cssText = 'width:1px;height:28px;background:#e2e8f0;flex-shrink:0;';
-    el.appendChild(div);
-
-    // Preset swatches
+    // Build preset buttons
+    let presetsHTML = '';
     PRESETS.forEach(c => {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.title = c;
-      btn.style.cssText = `width:26px;height:26px;border-radius:50%;background:${c};border:2.5px solid ${cur===c?c:'transparent'};
-        box-shadow:${cur===c?'0 0 0 2px '+c+', 0 0 0 4px white':''};
-        outline:${cur===c?'2px solid '+c:'none'};outline-offset:2px;
-        cursor:pointer;transition:all .18s;flex-shrink:0;padding:0;`;
+      const isActive = cur === c;
+      presetsHTML += `<button type="button" class="theme-color-btn" 
+        style="width:20px;height:20px;border-radius:50%;background:${c};border:${isActive?'2px solid #1e293b':'1px solid #cbd5e1'};cursor:pointer;padding:0;"
+        title="${c}" data-color="${c}"></button>`;
+    });
+
+    el.innerHTML = `
+      <div class="theme-picker-inner" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+        <label class="theme-color-label" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;padding:6px 10px;border:1px solid var(--t-border,#e2e8f0);border-radius:6px;background:var(--t-bg,white);">
+          <input type="color" value="${cur}" class="theme-color-input" style="width:24px;height:24px;padding:0;border:none;cursor:grab;background:transparent;">
+          <span class="theme-color-label-text" style="font-size:12px;color:var(--t-text-light,#64748b);">Theme</span>
+        </label>
+        <div class="theme-presets" style="display:flex;gap:4px;">${presetsHTML}</div>
+        
+        <!-- Theme toggles -->
+        <button type="button" class="theme-toggle-btn" data-mode="dark" title="Dark/Light">${document.body.classList.contains('theme-dark') ? '☀️' : '🌙'}</button>
+        <button type="button" class="theme-toggle-btn" data-mode="bright" title="Brightness">${document.body.classList.contains('theme-high-contrast') ? '🔆' : '🔅'}</button>
+        <button type="button" class="theme-toggle-btn" data-mode="font" title="Font Size">${document.body.classList.contains('theme-large-font') ? 'A' : 'A'}</button>
+      </div>
+    `;
+
+    // Add event listeners for color input
+    const colorInput = el.querySelector('.theme-color-input');
+    colorInput?.addEventListener('input', (e) => {
+      applyColor(e.target.value);
+      window.renderThemePicker(containerId);
+    });
+
+    // Add event listeners for toggle buttons
+    el.querySelectorAll('.theme-toggle-btn').forEach(btn => {
+      btn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        const mode = this.dataset.mode;
+        
+        if (mode === 'dark') {
+          window.toggleBackgroundMode();
+        } else if (mode === 'bright') {
+          window.toggleBrightness();
+        } else if (mode === 'font') {
+          window.toggleFontSize();
+        }
+        
+        // Update all toggle button icons without re-rendering the whole picker
+        document.querySelectorAll('.theme-toggle-btn').forEach(b => {
+          if (b.dataset.mode === 'dark') b.textContent = document.body.classList.contains('theme-dark') ? '☀️' : '🌙';
+          if (b.dataset.mode === 'bright') b.textContent = document.body.classList.contains('theme-high-contrast') ? '🔆' : '🔅';
+          if (b.dataset.mode === 'font') b.textContent = document.body.classList.contains('theme-large-font') ? 'A' : 'A';
+        });
+      });
+    });
+
+    el.querySelectorAll('.theme-color-btn').forEach(btn => {
       btn.addEventListener('click', () => {
-        applyColor(c);
+        applyColor(btn.dataset.color);
         window.renderThemePicker(containerId);
       });
-      el.appendChild(btn);
     });
+  };
+
+  // Add simple dark/light toggle function
+  window.toggleBackgroundMode = function() {
+    const body = document.body;
+    const isDark = body.classList.contains('theme-dark');
+    
+    if (isDark) {
+      // Switch to light
+      body.classList.remove('theme-dark');
+      document.documentElement.style.setProperty('--t-bg', '#f8fafc');
+      document.documentElement.style.setProperty('--t-text', '#1e293b');
+      document.documentElement.style.setProperty('--t-text-light', '#64748b');
+      document.documentElement.style.setProperty('--t-border', '#e2e8f0');
+      document.documentElement.style.setProperty('--t-bg-hover', '#f1f5f9');
+    } else {
+      // Switch to dark
+      body.classList.add('theme-dark');
+      document.documentElement.style.setProperty('--t-bg', '#0f172a');
+      document.documentElement.style.setProperty('--t-text', '#f1f5f9');
+      document.documentElement.style.setProperty('--t-text-light', '#94a3b8');
+      document.documentElement.style.setProperty('--t-border', '#334155');
+      document.documentElement.style.setProperty('--t-bg-hover', '#1e293b');
+    }
+  };
+
+  // Toggle brightness (high contrast mode)
+  window.toggleBrightness = function() {
+    const body = document.body;
+    const isHighContrast = body.classList.contains('theme-high-contrast');
+    
+    if (isHighContrast) {
+      body.classList.remove('theme-high-contrast');
+      document.documentElement.style.setProperty('--t-bg', document.body.classList.contains('theme-dark') ? '#0f172a' : '#f8fafc');
+      document.documentElement.style.setProperty('--t-text', document.body.classList.contains('theme-dark') ? '#f1f5f9' : '#1e293b');
+    } else {
+      body.classList.add('theme-high-contrast');
+      document.documentElement.style.setProperty('--t-bg', '#000000');
+      document.documentElement.style.setProperty('--t-text', '#ffffff');
+    }
+  };
+
+  // Toggle font size (large text)
+  window.toggleFontSize = function() {
+    const body = document.body;
+    const isLargeFont = body.classList.contains('theme-large-font');
+    
+    if (isLargeFont) {
+      body.classList.remove('theme-large-font');
+      document.documentElement.style.removeProperty('--t-font-scale');
+    } else {
+      body.classList.add('theme-large-font');
+      document.documentElement.style.setProperty('--t-font-scale', '1.15');
+    }
   };
 
     /* ────────────────────────────────────────────────────────────
@@ -300,13 +365,21 @@
     window.adminToggleIneligible._p = true;
   }
 
-  /* ────────────────────────────────────────────────────────────
-     OBSERVE DOM for admin topbar
+/* ────────────────────────────────────────────────────────────
+     OBSERVE DOM for admin mode to inject theme picker
   ──────────────────────────────────────────────────────────── */
+  let _headerSyncRunning = false;
   new MutationObserver(() => {
-    if (document.querySelector('.adm-topbar')) injectAdminPicker();
-    // Also re-run hero injection in case content was dynamically replaced
-  
+    if (_headerSyncRunning) return;
+    _headerSyncRunning = true;
+    setTimeout(() => {
+      _headerSyncRunning = false;
+      if (document.querySelector('.adm-body') && document.getElementById('theme-picker-container')) {
+        if (typeof window.renderThemePicker === 'function') {
+          window.renderThemePicker('theme-picker-container');
+        }
+      }
+    }, 100);
   }).observe(document.body, { childList:true, subtree:true });
 
   /* ────────────────────────────────────────────────────────────

@@ -88,6 +88,8 @@ async function handleLogin() {
     try {
         await api.signIn(email, password);
         // Success is handled by onAuthStateChange SIGNED_IN event
+        // But close modal as fallback in case that fails
+        setTimeout(() => closeAllModals(), 500);
     } catch (err) {
         console.error('[auth] Login error:', err);
 
@@ -331,10 +333,29 @@ function updateHeaderControls() {
     const headerInfo   = document.getElementById('header-user-info');
     const headerLogin  = document.getElementById('header-login-btn');
     const headerLogout = document.getElementById('header-logout-btn');
+    const settingsWrapper = document.getElementById('header-settings-wrapper');
     if (headerName)   headerName.textContent    = user?.name || 'Guest';
     if (headerInfo)   headerInfo.style.display  = isAuth ? '' : 'none';
     if (headerLogin)  headerLogin.style.display = isAuth ? 'none' : '';
-    if (headerLogout) headerLogout.style.display = isAuth ? '' : 'none';
+    if (settingsWrapper) settingsWrapper.style.display = isAuth ? '' : 'none';
+
+    // Settings dropdown (only visible when logged in)
+    const settingsDropdown = document.getElementById('header-settings-dropdown');
+    if (settingsDropdown && isAuth) {
+        const profileItem = settingsDropdown.querySelector('button[onclick*="profile"]');
+        const logoutItem = settingsDropdown.querySelector('[data-action="logout"]');
+        if (profileItem) profileItem.style.display = '';
+        if (logoutItem) logoutItem.style.display = '';
+    }
+
+    // Admin nav item
+    const adminNavItem = document.getElementById('admin-nav-item');
+    const isAdmin = user?.role === 'admin';
+    if (adminNavItem) adminNavItem.style.display = (isAuth && isAdmin) ? 'block' : 'none';
+
+    // Admin header user name display
+    const adminUserDisplay = document.getElementById('header-user-name-display');
+    if (adminUserDisplay) adminUserDisplay.textContent = user?.name || '';
 
     // Drawer
     const drawerName   = document.getElementById('drawer-user-name');
@@ -520,15 +541,42 @@ async function signInWithApple() {
 function showLoginModal() {
     closeAllModals();
 
-    const overlay     = document.createElement('div');
-    overlay.id        = 'auth-modal-overlay';
+    // Create overlay with explicit inline styles that override everything
+    const overlay = document.createElement('div');
+    overlay.id = 'auth-modal-overlay';
     overlay.className = 'modal-overlay';
-    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;';
+    // Force all styles inline to ensure it works in all browsers
+    overlay.style.cssText = `
+        position: fixed !important;
+        top: 0 !important;
+        left: 0 !important;
+        right: 0 !important;
+        bottom: 0 !important;
+        width: 100vw !important;
+        height: 100vh !important;
+        background: #000 !important;
+        background-color: rgba(0,0,0,0.75) !important;
+        z-index: 99999 !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        padding: 20px !important;
+        box-sizing: border-box !important;
+    `;
     overlay.addEventListener('click', e => { if (e.target === overlay) closeAllModals(); });
 
+    // Create modal with explicit styles
     const modal = document.createElement('div');
-    modal.id    = 'auth-modal';
-    modal.style.cssText = 'background:#fff;border-radius:20px;width:100%;max-width:440px;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.25);';
+    modal.id = 'auth-modal';
+    modal.style.cssText = `
+        background: #fff !important;
+        border-radius: 20px !important;
+        padding: 30px !important;
+        width: 100% !important;
+        max-width: 420px !important;
+        box-shadow: 0 25px 80px rgba(0,0,0,0.4) !important;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
+    `;
 
     const judgeOptions = (state.judges || []).map(j =>
         `<option value="${escapeHTML(String(j.id))}">${escapeHTML(j.name)}</option>`
@@ -537,7 +585,7 @@ function showLoginModal() {
         `<option value="${escapeHTML(String(t.id))}">${escapeHTML(t.name)}</option>`
     ).join('');
 
-    const oauthLinks = ''; /* OAuth providers hidden — under development */
+    const oauthLinks = ''; 
 
     modal.innerHTML = `
     <style>
@@ -575,6 +623,7 @@ function showLoginModal() {
     .auth-divider hr{flex:1;border:none;border-top:1px solid #1e293b;}
     .auth-divider span{font-size:11px;color:#334155;white-space:nowrap;letter-spacing:.04em;}
     </style>
+    <button onclick="closeAllModals()" style="position:absolute;top:12px;right:12px;background:none;border:none;font-size:24px;cursor:pointer;color:#64748b;z-index:10;">&times;</button>
     <div class="auth-inner">
         <div class="auth-logo-wrap">
             <img src="IMG/logo.png" alt="Orion logo" class="auth-logo">
@@ -650,6 +699,11 @@ function showLoginModal() {
 
     overlay.appendChild(modal);
     document.body.appendChild(overlay);
+    
+    // Force a reflow and ensure visibility
+    overlay.offsetHeight; // trigger reflow
+    overlay.style.visibility = 'visible';
+    overlay.style.opacity = '1';
 
     // Wire events
     document.getElementById('loginTabBtn')    ?.addEventListener('click', () => switchAuthTab('login'));

@@ -263,36 +263,38 @@ function renderSpeakerStandings() {
         ? `<span style="background:${catObj.color}18;border:1.5px solid ${catObj.color}50;color:${catObj.color};padding:3px 10px;border-radius:12px;font-size:12px;font-weight:700;">${catObj.icon} ${escapeHTML(catObj.name)}</span>` : '';
 
     const filterBar = `
-        <div class="filter-bar">
-            <div class="filter-bar__row">
-                <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-                    <span class="filter-bar__label">🎤 Speakers</span>
-                    ${catBadge}
-                    <span class="filter-bar__count">${speakers.length} visible &middot; ${totalDisabled} hidden</span>
+        <div class="standings-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;padding:16px 20px;">
+            <div style="display:flex;align-items:center;gap:14px;">
+                <h2 class="u-mt-0" style="font-size:18px;font-weight:700;color:#1e293b;margin:0;">🎤 Speaker Rankings</h2>
+                ${catBadge}
+            </div>
+            <div style="display:flex;align-items:center;gap:12px;">
+                <span style="font-size:13px;color:#64748b;">${speakers.length} speakers</span>
+                ${isAdmin ? `
+                <select id="team-filter-select" class="standings-filter-select" style="min-width:150px;font-size:12px;padding:6px 10px;">
+                    <option value="">Filter by team...</option>
+                    ${Array.from(teamMap.entries()).map(([id, d]) =>
+                        `<option value="${id}">${escapeHTML(d.name)} (${d.speakerCount - d.disabledCount}/${d.speakerCount})</option>`
+                    ).join('')}
+                </select>
+                <div class="dropdown" style="display:inline-block;">
+                    <button onclick="window._toggleDropdown(this)" class="btn btn-primary btn-sm" style="padding:6px 12px;font-size:12px;">⚙️ Manage ▼</button>
+                    <div class="dropdown-menu">
+                        <button onclick="window.applyTeamFilter()" class="dropdown-item">✓ Apply Team Filter</button>
+                        <button onclick="window.clearTeamFilter()" class="dropdown-item">✕ Clear Filter</button>
+                        <div class="dropdown-divider"></div>
+                        <button onclick="window.toggleReplyColumn()" class="dropdown-item">${showReplies ? '👁️ Hide Replies' : '👁️ Show Replies'}</button>
+                        <div class="dropdown-divider"></div>
+                        <button onclick="window.clearAllDisabledSpeakers()" class="dropdown-item">🗑️ Show All Disabled</button>
+                        <button onclick="window.showBulkDisableModal()" class="dropdown-item">🔽 Bulk Disable</button>
+                        <div class="dropdown-divider"></div>
+                        <button onclick="window.exportSpeakerStandings()" class="dropdown-item">📥 Export CSV</button>
+                    </div>
                 </div>
-                <div class="filter-bar__actions">
-                    ${isAdmin ? `
-                        <select id="team-filter-select" class="standings-filter-select" style="min-width:150px;font-size:13px;">
-                            <option value="">Filter by team...</option>
-                            ${Array.from(teamMap.entries()).map(([id, d]) =>
-                                `<option value="${id}">${escapeHTML(d.name)} (${d.speakerCount - d.disabledCount}/${d.speakerCount})</option>`
-                            ).join('')}
-                        </select>
-                        <button onclick="window.applyTeamFilter()" class="btn btn-secondary btn-xs">Apply</button>
-                        <button onclick="window.clearTeamFilter()" class="btn btn-secondary btn-xs">Clear</button>
-                        <div class="dropdown">
-                            <button onclick="window._toggleDropdown(this)" class="btn btn-primary btn-xs">⚙️ Manage ▼</button>
-                            <div class="dropdown-menu">
-                                <button onclick="window.clearAllDisabledSpeakers()" class="dropdown-item">🗑️ Clear all disabled</button>
-                                <button onclick="window.showBulkDisableModal()" class="dropdown-item">🔽 Bulk disable</button>
-                                <button onclick="window.exportSpeakerStandings()" class="dropdown-item">📥 Export CSV</button>
-                            </div>
-                        </div>
-                    ` : ''}
-                    <button onclick="window.toggleReplyColumn()" class="btn btn-secondary btn-xs">
-                        ${showReplies ? 'Hide Replies' : 'Show Replies'}
-                    </button>
-                </div>
+                ` : `
+                <button onclick="window.toggleReplyColumn()" class="btn btn-secondary btn-sm" style="padding:6px 12px;font-size:12px;">
+                    ${showReplies ? 'Hide Replies' : 'Show Replies'}
+                </button>`}
             </div>
         </div>`;
 

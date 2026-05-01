@@ -66,11 +66,16 @@ function _renderAdminScaffold(container) {
     formSection.className = 'section';
     formSection.innerHTML = `
         <h2 style="margin:0 0 16px;">Add New Team</h2>
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:12px;">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:12px;">
             <input type="text"  id="team-name"     placeholder="Team Name *"                          style="padding:12px;">
             <input type="text"  id="team-code"     placeholder="Code (e.g. SEN)"                      style="padding:12px;">
-            <input type="email" id="team-email"    placeholder="Email (optional)"                      style="padding:12px;">
-            <input type="text"  id="team-speakers" placeholder="Speakers (comma-separated, optional)"  style="padding:12px;">
+            <input type="email" id="team-email"    placeholder="Team Email (optional)"              style="padding:12px;">
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:16px;">
+            <input type="text"  id="speaker1-name" placeholder="Speaker 1 Name (optional)"          style="padding:12px;">
+            <input type="email" id="speaker1-email" placeholder="Speaker 1 Email (optional)"        style="padding:12px;">
+            <input type="text"  id="speaker2-name" placeholder="Speaker 2 Name (optional)"          style="padding:12px;">
+            <input type="email" id="speaker2-email" placeholder="Speaker 2 Email (optional)"        style="padding:12px;">
         </div>
         <button class="btn btn-primary" style="padding:12px;" data-action="addTeam">Add Team</button>`;
 
@@ -212,32 +217,34 @@ function _buildTeamCard(team, isAdmin, cats = []) {
 
     card.appendChild(header);
 
-    // Stats strip
-    const stats = el('div', { class: 'team-stats' });
-    for (const [val, lbl] of [[team.wins || 0, 'Wins'], [(team.total_points || 0).toFixed(1), 'Points']]) {
-        const stat = el('div', { class: 'team-stat' });
-        stat.appendChild(el('span', { class: 'stat-value' }, String(val)));
-        stat.appendChild(el('span', { class: 'stat-label' }, lbl));
-        stats.appendChild(stat);
-    }
-    card.appendChild(stats);
-
     // Speakers
     const speakers = team.speakers || [];
     if (speakers.length > 0) {
         const spkEl = el('div', { class: 'team-speakers' },
-            ...speakers.map(s => el('span', {}, s.name || s, ' '))
+            ...speakers.map(s => {
+                const name = s.name || s;
+                const email = s.email;
+                const content = email ? `${name} (${email})` : name;
+                return el('span', {}, content);
+            })
         );
         card.appendChild(spkEl);
     }
 
-    // Actions
+    // Actions - always show for now to debug
+    const actions = el('div', { 
+        style: 'display:flex;gap:10px;margin-top:16px;padding-top:12px;border-top:1px solid var(--color-border);'
+    });
+    // Check if admin - show edit/delete only if admin
     if (isAdmin) {
-        const actions = el('div', { class: 'team-actions', style: 'margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;' });
-        actions.appendChild(el('button', { class: 'btn btn-secondary btn-sm', 'data-action': 'showEditTeam', 'data-args': JSON.stringify([team.id]) }, '✏️ Edit'));
-        actions.appendChild(el('button', { class: 'btn btn-danger btn-sm', 'data-action': 'deleteTeam', 'data-args': JSON.stringify([team.id]) }, '🗑 Delete'));
-        card.appendChild(actions);
+        actions.innerHTML = `
+            <button class="btn btn-secondary" style="padding:8px 16px;font-size:13px;border-radius:8px;cursor:pointer;" data-action="showEditTeam" data-args='["${team.id}"]'>✏️ Edit</button>
+            <button style="padding:8px 16px;font-size:13px;border-radius:8px;background:#ef4444;color:white;border:none;cursor:pointer;" data-action="deleteTeam" data-args='["${team.id}"]'>🗑 Delete</button>
+        `;
+    } else {
+        actions.innerHTML = `<span style="color:#94a3b8;font-size:12px;">Admin only</span>`;
     }
+    card.appendChild(actions);
 
     return card;
 }
@@ -249,13 +256,21 @@ export async function addTeam() {
     const name = document.getElementById('team-name')?.value.trim();
     const code = document.getElementById('team-code')?.value.trim().toUpperCase();
     const email = document.getElementById('team-email')?.value.trim();
-    const spkRaw = document.getElementById('team-speakers')?.value.trim();
-    const speakers = spkRaw ? spkRaw.split(',').map(s => s.trim()).filter(Boolean) : [];
+    
+    const spk1Name = document.getElementById('speaker1-name')?.value.trim();
+    const spk1Email = document.getElementById('speaker1-email')?.value.trim();
+    const spk2Name = document.getElementById('speaker2-name')?.value.trim();
+    const spk2Email = document.getElementById('speaker2-email')?.value.trim();
+    
+    const speakers = [];
+    if (spk1Name) speakers.push({ name: spk1Name, email: spk1Email || null, position: 1 });
+    if (spk2Name) speakers.push({ name: spk2Name, email: spk2Email || null, position: 2 });
+    
     const catId = document.getElementById('add-team-category')?.value || null;
     const tournId = state.activeTournamentId;
 
     if (!name) { showNotification('Team name is required', 'error'); return; }
-    if (!tournId) { showNotification('No active tournament', 'error'); return; }
+    if (!tournId) { showNotification('No active tournament. State: ' + JSON.stringify(state), 'error'); return; }
 
     try {
         const team = await api.createTeam({
@@ -264,12 +279,12 @@ export async function addTeam() {
             categories: catId ? [catId] : []
         });
 
-        addTeamToCache({ ...team, speakers: speakers.map((n, i) => ({ name: n, position: i + 1 })) });
+        addTeamToCache({ ...team, speakers });
         displayTeams();
         showNotification(`Team "${name}" added`, 'success');
 
         // Clear form
-        ['team-name', 'team-code', 'team-email', 'team-speakers'].forEach(id => {
+        ['team-name', 'team-code', 'team-email', 'speaker1-name', 'speaker1-email', 'speaker2-name', 'speaker2-email'].forEach(id => {
             const el = document.getElementById(id); if (el) el.value = '';
         });
         window.updateNavDropdowns?.();
@@ -302,7 +317,9 @@ export function showEditTeam(teamId) {
     const card = document.getElementById(`team-${teamId}`);
     if (!card) return;
 
-    const spkNames = (team.speakers || []).map(s => s.name || s).join(', ');
+    const speakers = team.speakers || [];
+    const spk1 = speakers[0] || {};
+    const spk2 = speakers[1] || {};
 
     // Build edit form safely
     card.innerHTML = '';
@@ -317,7 +334,6 @@ export function showEditTeam(teamId) {
         ['edit-team-name-' + teamId, 'text', 'Team Name', team.name],
         ['edit-team-code-' + teamId, 'text', 'Code', team.code || ''],
         ['edit-team-email-' + teamId, 'email', 'Email', team.email || ''],
-        ['edit-team-speakers-' + teamId, 'text', 'Speakers (comma-sep)', spkNames],
     ];
 
     for (const [id, type, placeholder, value] of fields) {
@@ -329,6 +345,24 @@ export function showEditTeam(teamId) {
         group.appendChild(inp);
         grid.appendChild(group);
     }
+
+    // Speaker fields
+    const speakerFields = [
+        ['edit-spk1-name-' + teamId, 'edit-spk1-email-' + teamId, 'Speaker 1', spk1.name || '', spk1.email || ''],
+        ['edit-spk2-name-' + teamId, 'edit-spk2-email-' + teamId, 'Speaker 2', spk2.name || '', spk2.email || ''],
+    ];
+
+    for (const [nameId, emailId, label, nameVal, emailVal] of speakerFields) {
+        const group = el('div', { style: 'display:flex;gap:8px;' });
+        const nameInp = el('input', { type: 'text', id: nameId, placeholder: label + ' Name', style: 'flex:1;padding:8px;border-radius:6px;border:1px solid #e2e8f0;' });
+        nameInp.value = nameVal;
+        const emailInp = el('input', { type: 'email', id: emailId, placeholder: label + ' Email', style: 'flex:1;padding:8px;border-radius:6px;border:1px solid #e2e8f0;' });
+        emailInp.value = emailVal;
+        group.appendChild(nameInp);
+        group.appendChild(emailInp);
+        grid.appendChild(group);
+    }
+
     form.appendChild(grid);
 
     const btns = el('div', { style: 'display:flex;gap:10px;' });
@@ -347,14 +381,21 @@ export async function saveEditTeam(teamId) {
     const name = document.getElementById(`edit-team-name-${teamId}`)?.value.trim();
     const code = document.getElementById(`edit-team-code-${teamId}`)?.value.trim().toUpperCase();
     const email = document.getElementById(`edit-team-email-${teamId}`)?.value.trim();
-    const spkRaw = document.getElementById(`edit-team-speakers-${teamId}`)?.value.trim();
-    const speakers = spkRaw ? spkRaw.split(',').map(s => s.trim()).filter(Boolean) : [];
+
+    const spk1Name = document.getElementById(`edit-spk1-name-${teamId}`)?.value.trim();
+    const spk1Email = document.getElementById(`edit-spk1-email-${teamId}`)?.value.trim();
+    const spk2Name = document.getElementById(`edit-spk2-name-${teamId}`)?.value.trim();
+    const spk2Email = document.getElementById(`edit-spk2-email-${teamId}`)?.value.trim();
+
+    const speakers = [];
+    if (spk1Name) speakers.push({ name: spk1Name, email: spk1Email || null, position: 1 });
+    if (spk2Name) speakers.push({ name: spk2Name, email: spk2Email || null, position: 2 });
 
     if (!name) { showNotification('Team name required', 'error'); return; }
 
     try {
         await api.updateTeam(teamId, { name, code, email, speakers });
-        patchTeam(teamId, { name, code, email, speakers: speakers.map((n, i) => ({ name: n, position: i + 1 })) });
+        patchTeam(teamId, { name, code, email, speakers });
         displayTeams();
         showNotification('Team updated', 'success');
     } catch (e) {

@@ -1,26 +1,17 @@
-import * as Sentry from '@sentry/browser';
+console.log('[main.js] Module loading...');
 
 const env = (typeof import.meta !== 'undefined' && import.meta.env) ? import.meta.env : (window.ENV || {});
-
-if (env.VITE_SENTRY_DSN && env.VITE_SENTRY_DSN !== 'YOUR_SENTRY_DSN') {
-    Sentry.init({
-        dsn: env.VITE_SENTRY_DSN,
-        integrations: [
-            Sentry.browserTracingIntegration(),
-            Sentry.replayIntegration(),
-        ],
-        tracesSampleRate: 1.0,
-        replaysSessionSampleRate: 0.1,
-        replaysOnErrorSampleRate: 1.0,
-    });
-}
 
 // Global error handler to prevent blank screen on errors
 window.addEventListener('error', (e) => {
     console.error('[global] Uncaught error:', e.error);
-    const env = (typeof import.meta !== 'undefined' && import.meta.env) ? import.meta.env : (window.ENV || {});
-    if (env.VITE_SENTRY_DSN) Sentry.captureException(e.error);
     localStorage.setItem('orion_active_tab', 'public');
+    // Show visible error to user
+    const errDiv = document.getElementById('init-error');
+    if (errDiv) {
+        errDiv.style.display = 'block';
+        errDiv.textContent = 'Error: ' + (e.error?.message || e.message);
+    }
 });
 
 window.addEventListener('unhandledrejection', (e) => {
@@ -219,6 +210,48 @@ window.showNotification = showNotification;
 window.updatePublicCounts = updatePublicCounts;
 window.updateHeaderTournamentName = updateHeaderTournamentName;
 window.navigate = navigate;
+window.showLoginModal = showLoginModal;
+window.renderAdminDashboard = renderAdminDashboard;
+window.adminPublishAll = adminPublishAll;
+window.adminHideAll = adminHideAll;
+
+// Teams
+    window.addTeam = addTeam;
+    window.exportTeams = exportTeams;
+    window.deleteTeam = deleteTeam;
+window.showEditTeam = showEditTeam;
+window.saveEditTeam = saveEditTeam;
+window.filterTeamsByCategory = filterTeamsByCategory;
+
+// Judges
+window.addJudge = addJudge;
+window.deleteJudge = deleteJudge;
+window.showEditJudge = showEditJudge;
+window.saveEditJudge = saveEditJudge;
+
+// File manager (import/export)
+window.importTeams = importTeams;
+window.importJudges = importJudges;
+window.renderImport = renderImport;
+window.exportData = exportData;
+window.exportStandings = exportStandings;
+window.exportSpeakerStandings = exportSpeakerStandings;
+window.previewTeams = previewTeams;
+window.previewJudges = previewJudges;
+window.clearTeamImport = clearTeamImport;
+window.clearJudgeImport = clearJudgeImport;
+
+// Drag and Drop
+window.dndJudgeDragStart = dndJudgeDragStart;
+window.dndJudgeDragOver = dndJudgeDragOver;
+window.dndJudgeDrop = dndJudgeDrop;
+window.dndTeamDragStart = dndTeamDragStart;
+window.dndTeamDragOver = dndTeamDragOver;
+window.dndTeamDrop = dndTeamDrop;
+window.dndDragEnd = dndDragEnd;
+window.dndDragLeave = dndDragLeave;
+window.executeMoveTeam = executeMoveTeam;
+window.moveJudgeToPanel = moveJudgeToPanel;
 
 function activeTabId() {
     return document.querySelector('.tab-content.active')?.id || 'public';
@@ -343,6 +376,17 @@ function _setupRealtimeSync(tournamentId) {
 
 // ── App initialization ────────────────────────────────────────────────────────
 async function init() {
+    window.__orionReady = false;
+    window.__orionStep = 'starting';
+    console.log('[main] init() started');
+    
+    try {
+        window.__orionStep = 'init-router';
+        console.log('[main] Step 1: Init router...');
+        // 0. Init router immediately
+        initRouter();
+        window.__orionStep = 'restore-session';
+        console.log('[main] Step 2: Restore session...');
     // 0. Init router immediately
     initRouter();
 
@@ -409,56 +453,76 @@ async function init() {
     // 10. Initialize image optimizations
     initImageOptimizations();
 
-    // 10. Restore active tab (sticky navigation)
-    const savedTab = localStorage.getItem('orion_active_tab');
-    if (savedTab && savedTab !== 'public') {
-        try {
-            navigate(savedTab);
-        } catch (e) {
-            console.warn('[main] Failed to restore saved tab, falling back to public');
-            localStorage.setItem('orion_active_tab', 'public');
-            navigate('public');
+    // 11. Settings button dropdown
+    const settingsBtn = document.getElementById('header-settings-btn');
+    const settingsDropdown = document.getElementById('header-settings-dropdown');
+    const themeContainer = document.getElementById('theme-picker-container');
+    
+    function openSettings() {
+        const isOpen = settingsDropdown.classList.contains('open');
+        settingsDropdown.classList.toggle('open');
+        // Render theme picker when opening
+        if (!isOpen && typeof window.renderThemePicker === 'function') {
+            window.renderThemePicker('theme-picker-container');
         }
+    }
+    
+    if (settingsBtn && settingsDropdown) {
+        settingsBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            openSettings();
+        });
+        
+        // Stop propagation on dropdown content
+        settingsDropdown.addEventListener('click', (e) => {
+            e.stopPropagation();
+        });
+        
+        // Handle color input focus - don't close dropdown
+        themeContainer?.addEventListener('focus', (e) => {
+            settingsDropdown.classList.add('open');
+        }, true);
+        
+        // Close on outside click
+        document.addEventListener('click', (e) => {
+            if (!settingsDropdown.contains(e.target) && e.target !== settingsBtn) {
+                settingsDropdown.classList.remove('open');
+            }
+        });
+    }
+
+    // Admin settings dropdown close
+    const admSettingsBtn = document.getElementById('adm-top-settings-btn');
+    const admSettingsDropdown = document.getElementById('adm-top-settings-dropdown');
+    if (admSettingsBtn && admSettingsDropdown) {
+        document.addEventListener('click', (e) => {
+            if (!admSettingsDropdown.contains(e.target) && e.target !== admSettingsBtn) {
+                admSettingsDropdown.classList.remove('open');
+            }
+        });
+    }
+
+    // 10. Restore active tab (sticky navigation)
+    const savedTab = localStorage.getItem('orion_active_tab') || 'public';
+    try {
+        navigate(savedTab);
+    } catch (e) {
+        console.warn('[main] Failed to navigate to saved tab, falling back to public');
+        navigate('public');
+    }
+    window.__orionReady = true;
+    console.log('[main] Init complete, step:', window.__orionStep);
+    } catch (err) {
+        window.__orionStep = 'error';
+        console.error('[main] Init error:', err);
     }
 }
 
-// ── DOMContentLoaded ──────────────────────────────────────────────────────────
-document.addEventListener('DOMContentLoaded', () => {
-    // Logo/profile nav
-    document.querySelector('.header-logo')
-        ?.addEventListener('click', () => navigate('public'));
-    document.querySelector('.header-user')
-        ?.addEventListener('click', () => navigate('profile'));
 
-    document.getElementById('global-search')?.addEventListener('input', () => {
-        syncGlobalSearchForActiveTab();
-        applyGlobalSearch();
-    });
 
-    // Install the delegated click listener immediately so modal buttons work
-    // even if the user opens the modal before the async init() chain finishes.
-    installDelegatedListener();
-
-    // Auth modal — Enter key on inputs
-    document.addEventListener('keydown', e => {
-        if (e.key === 'Enter' && document.getElementById('loginPassword') === document.activeElement) {
-            handleLogin();
-        }
-    });
-
-    // Start the app
-    init().catch(err => {
-        console.error('[main] Init failed:', err);
-        showNotification('Failed to connect to the server. Check your internet connection.', 'error');
-        // Force navigate to public tab on any error
-        localStorage.setItem('orion_active_tab', 'public');
-        navigate('public');
-    });
+// Start the app
+console.log('[main] About to call init()');
+window.mainLoaded = true;
+init().catch(err => {
+    console.error('[main] Init failed:', err);
 });
-
-// ── Legacy shim: exposeOnWindow ───────────────────────────────────────────────
-// Needed while any onclick="window.X()" attributes remain in HTML or JS templates.
-// DELETE this block once all templates use data-action.
-// The router's registerActions() already sets window.switchTab as a shim.
-import { exposeOnWindow } from './registry.js';
-exposeOnWindow();

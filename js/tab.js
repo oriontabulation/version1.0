@@ -413,13 +413,11 @@ function renderMotions() {
     if (!container) return;
 
     const allRounds = [...(state.rounds || [])].sort((a, b) => (b.id || 0) - (a.id || 0));
-    const isAdmin   = state.auth?.currentUser?.role === 'admin';
 
     let html = `
         <div class="section">
             <div class="standings-header">
                 <h2 class="u-mt-0">Round Motions</h2>
-                ${isAdmin ? `<button onclick="window.showAddMotionModal?.()" class="btn btn-primary btn-sm">Add Motion</button>` : ''}
             </div>
             <p class="u-text-muted u-mb-xl">All motions from the tournament</p>
     `;
@@ -460,11 +458,6 @@ function renderMotions() {
                         ${round.infoslide ? `
                             <div class="motion-card__infoslide">
                                 <strong class="u-text-primary">📌 Info Slide:</strong> ${escapeHTML(round.infoslide)}
-                            </div>
-                        ` : ''}
-                        ${isAdmin ? `
-                            <div class="u-mt-lg">
-                                <button onclick="window.showEditMotionModal?.(${state.rounds.indexOf(round)})" class="btn btn-secondary btn-xs">✏️ Edit Motion</button>
                             </div>
                         ` : ''}
                     </div>
@@ -592,10 +585,10 @@ function buildStandingsTable(ranked, allRounds) {
     });
 
     html += `
-                        <th class="th-center th-accent">Wins</th>
-                        <th class="th-center th-accent">Total</th>
-                        <th class="th-center">Avg</th>
-                        <th class="th-center">Status</th>
+                        <th class="th-center th-accent" style="min-width:50px;">Wins</th>
+                        <th class="th-center th-accent" style="min-width:60px;">Total</th>
+                        <th class="th-center" style="min-width:50px;">Avg</th>
+                        <th class="th-center" style="min-width:80px;">Status</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -753,6 +746,18 @@ function renderResults() {
 
                 const govWin = (debate.govResults?.total || 0) > (debate.oppResults?.total || 0);
 
+                // Get room info
+                const room = debate.room || debate.roomName || null;
+                
+                // Get judge/panel info
+                const judgePanel = debate.judges || [];
+                const judgeNames = judgePanel.length > 0 
+                    ? judgePanel.map(j => {
+                        const judge = (state.judges || []).find(jdg => jdg && jdg.id === j);
+                        return judge?.name || 'Judge';
+                      }).filter(Boolean).join(', ')
+                    : null;
+
                 html += `
                     <div class="result-debate">
                         <div class="result-debate__sides">
@@ -770,6 +775,12 @@ function renderResults() {
                                 </div>
                             </div>
                         </div>
+                        ${room || judgeNames ? `
+                        <div class="result-debate__meta">
+                            ${room ? `<span class="result-meta__room">📍 ${escapeHTML(room)}</span>` : ''}
+                            ${judgeNames ? `<span class="result-meta__judges">👤 ${escapeHTML(judgeNames)}</span>` : ''}
+                        </div>
+                        ` : ''}
                     </div>
                 `;
             });
@@ -917,8 +928,40 @@ function applyTheme(themeId) {
     const root  = document.documentElement;
     Object.values(THEMES).forEach(t => Object.keys(t.vars).forEach(k => root.style.removeProperty(k)));
     Object.entries(theme.vars).forEach(([k, v]) => root.style.setProperty(k, v));
+    
+    // Map --clr-* to --t-* for compatibility
+    if (theme.vars['--clr-bg']) {
+        root.style.setProperty('--t-bg', theme.vars['--clr-bg']);
+        root.style.setProperty('--t-bg-page', theme.vars['--clr-bg']);
+        root.style.setProperty('--t-bg-hover', adjustColor(theme.vars['--clr-bg'], -5));
+    }
+    if (theme.vars['--clr-surface']) root.style.setProperty('--t-surface', theme.vars['--clr-surface']);
+    if (theme.vars['--clr-text']) {
+        root.style.setProperty('--t-text', theme.vars['--clr-text']);
+        root.style.setProperty('--t-text-light', adjustColor(theme.vars['--clr-text'], -30));
+    }
+    if (theme.vars['--clr-border']) {
+        root.style.setProperty('--t-border', theme.vars['--clr-border']);
+        root.style.setProperty('--border', theme.vars['--clr-border']);
+    }
+    if (theme.vars['--clr-primary']) {
+        root.style.setProperty('--t-brand', theme.vars['--clr-primary']);
+        root.style.setProperty('--t-brand-light', adjustColor(theme.vars['--clr-primary'], 40));
+        root.style.setProperty('--t-brand-hover', adjustColor(theme.vars['--clr-primary'], -15));
+    }
+    
     document.body.classList.toggle('theme-dark', themeId === 'dark' || themeId === 'highcontrast');
     try { localStorage.setItem('orion_theme', themeId); } catch(e) {}
+}
+
+// Helper to lighten/darken colors
+function adjustColor(hex, amount) {
+    if (!hex) return hex;
+    const num = parseInt(hex.replace('#', ''), 16);
+    const r = Math.min(255, Math.max(0, (num >> 16) + amount));
+    const g = Math.min(255, Math.max(0, ((num >> 8) & 0x00FF) + amount));
+    const b = Math.min(255, Math.max(0, (num & 0x0000FF) + amount));
+    return '#' + (1 << 24 | r << 16 | g << 8 | b).toString(16).slice(1);
 }
 
 function renderThemePicker(containerId) {

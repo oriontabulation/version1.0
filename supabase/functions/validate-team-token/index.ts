@@ -1,11 +1,24 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
-const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type' };
+// CORS: restrict origins and allow credentials
+const ALLOWED_ORIGINS = (Deno.env.get('ALLOWED_ORIGINS') ?? 'https://oriontabulation.com,https://www.oriontabulation.com').split(',').map(s => s.trim()).filter(Boolean);
+function corsHeaders(origin?: string | null) {
+  const originToUse = origin && ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0] ?? '';
+  const h: Record<string, string> = {
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+    'Access-Control-Allow-Credentials': 'true',
+    'Vary': 'Origin',
+  };
+  if (originToUse) h['Access-Control-Allow-Origin'] = originToUse;
+  return h;
+}
 
 serve(async (req: Request) => {
-    if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
-    const json = (body: object, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...CORS, 'Content-Type': 'application/json' } });
+    const origin = req.headers.get('Origin');
+    const headers = corsHeaders(origin);
+    if (req.method === 'OPTIONS') return new Response('ok', { headers });
+    const json = (body: object, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...headers, 'Content-Type': 'application/json' } });
 
     try {
         const { token, email } = await req.json();
