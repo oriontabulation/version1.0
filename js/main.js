@@ -216,8 +216,9 @@ window.adminPublishAll = adminPublishAll;
 window.adminHideAll = adminHideAll;
 
 // Teams
-window.addTeam = addTeam;
-window.deleteTeam = deleteTeam;
+    window.addTeam = addTeam;
+    window.exportTeams = exportTeams;
+    window.deleteTeam = deleteTeam;
 window.showEditTeam = showEditTeam;
 window.saveEditTeam = saveEditTeam;
 window.filterTeamsByCategory = filterTeamsByCategory;

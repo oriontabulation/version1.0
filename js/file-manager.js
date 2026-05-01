@@ -316,6 +316,26 @@ export function exportStandings() {
     _downloadCsv(header + rows.join('\n'), 'standings.csv');
 }
 
+// ── exportTeams ───────────────────────────────────────────────────────
+export function exportTeams() {
+    const teams = state.teams || [];
+    if (!teams.length) {
+        showNotification('No teams to export', 'error');
+        return;
+    }
+    const header = 'Name,Code,Speakers';
+    const lines = teams.map(t => {
+        const name = (t.name ?? '').replace(/"/g, '""');
+        const code = (t.code ?? '');
+        const speakers = (t.speakers ?? [])
+            .map(s => s.name ?? '')
+            .join('; ');
+        return `"${name}","${code}","${speakers}"`;
+    });
+    const csv = [header, ...lines].join('\n');
+    _downloadCsv(csv, 'teams.csv');
+}
+
 export function exportSpeakerStandings() {
     const teams = state.teams || [];
     let rows = [];
@@ -363,6 +383,6 @@ registerActions({
     importTeams, importJudges,
     previewTeams, previewJudges,
     clearTeamImport, clearJudgeImport,
-    exportData, exportStandings, exportSpeakerStandings,
+    exportData, exportStandings, exportSpeakerStandings, exportTeams,
     fullReset,
 });
