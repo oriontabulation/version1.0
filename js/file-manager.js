@@ -240,7 +240,7 @@ export function previewJudges() {
 }
 
 // ── importTeams ───────────────────────────────────────────────────────────────
-export async function importTeams() {
+export async function importTeams() {`n    console.log(`[file-manager] importTeams() called`);`n    debugger; // Pause here for debugging
     const text = document.getElementById('teamCsv')?.value.trim();
     if (!text) { showNotification('No data to import', 'error'); return; }
 
@@ -404,3 +404,4 @@ registerActions({
     exportData, exportStandings, exportSpeakerStandings, exportTeams,
     fullReset
 });
+
