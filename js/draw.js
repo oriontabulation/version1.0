@@ -280,23 +280,28 @@ export function renderDraw() {
                  <span style="font-size:13px;color:#94a3b8">${(rounds || []).length} rounds · ${entered}/${total} results</span>
              </div>
 <div class="draw-controls-right">
-                  <select id="round-filter" class="draw-round-filter"
-                          onchange="window.displayRounds()"
-                          title="Filter rounds">
-                      <option value="all" ${savedFilter==='all'?'selected':''}>All Rounds</option>
-                      <option value="pending"   ${savedFilter==='pending'  ?'selected':''}>Pending</option>
-                      <option value="completed" ${savedFilter==='completed'?'selected':''}>Completed</option>
-                      <option value="blinded"   ${savedFilter==='blinded'  ?'selected':''}>Blind</option>
-                  </select>
-                  <select id="draw-name-display" class="draw-round-filter"
-                          onchange="window._setNameDisplay(this.value)"
-                          title="Show names or codes">
-                      <option value="names" ${(savedPrefs['display']||'names')==='names'?'selected':''}>Names</option>
-                      <option value="codes" ${savedPrefs['display']==='codes'?'selected':''}>Codes</option>
-                  </select>
-                  ${isAdmin ? `<button onclick="window._toggleCreateRound()" id="draw-new-btn"
-                          class="btn-primary" style="padding:5px 12px;font-size:12px;font-weight:700">➕ New Round</button>` : ''}
-              </div>
+                   <select id="round-filter" class="draw-round-filter"
+                           onchange="window.displayRounds()"
+                           title="Filter rounds">
+                       <option value="all" ${savedFilter==='all'?'selected':''}>All Rounds</option>
+                       <option value="pending"   ${savedFilter==='pending'  ?'selected':''}>Pending</option>
+                       <option value="completed" ${savedFilter==='completed'?'selected':''}>Completed</option>
+                       <option value="blinded"   ${savedFilter==='blinded'  ?'selected':''}>Blind</option>
+                   </select>
+                   <select id="draw-name-display" class="draw-round-filter"
+                           onchange="window._setNameDisplay(this.value)"
+                           title="Show names or codes">
+                       <option value="names" ${(savedPrefs['display']||'names')==='names'?'selected':''}>Names</option>
+                       <option value="codes" ${savedPrefs['display']==='codes'?'selected':''}>Codes</option>
+                   </select>
+                   <button id="draw-view-toggle" onclick="window._toggleDrawView()" 
+                           class="btn-secondary" style="padding:5px 10px;font-size:12px;font-weight:600"
+                           title="Toggle between full and mini view">
+                       📋 Mini
+                   </button>
+                   ${isAdmin ? `<button onclick="window._toggleCreateRound()" id="draw-new-btn"
+                           class="btn-primary" style="padding:5px 12px;font-size:12px;font-weight:700">➕ New Round</button>` : ''}
+               </div>
          </div>
          <div id="draw-jump-pills" class="draw-jump-pills"></div>
 
@@ -4299,8 +4304,23 @@ function addDebate(roundIdx, debateIdx) {
     displayRounds();
 }
 
+function _toggleDrawView() {
+    let prefs = {};
+    try { prefs = JSON.parse(localStorage.getItem('orion_draw_prefs') || '{}'); } catch(e) {}
+    const current = prefs['miniView'] || false;
+    prefs['miniView'] = !current;
+    localStorage.setItem('orion_draw_prefs', JSON.stringify(prefs));
+    
+    const btn = document.getElementById('draw-view-toggle');
+    if (btn) {
+        btn.textContent = current ? '📋 Mini' : '📑 Full';
+    }
+    displayRounds();
+}
+
 window.displayRounds        = displayRounds;
 window._setNameDisplay      = _setNameDisplay;
+window._toggleDrawView      = _toggleDrawView;
 
 window._toggleRoundSettings = function(roundId) {
     const menu = document.getElementById(`round-settings-${roundId}`);
@@ -4647,6 +4667,15 @@ export function displayRounds() {
     }
 
     const previousMeetings = getPreviousMeetings();
+    
+    // Check mini view preference
+    let prefs = {};
+    try { prefs = JSON.parse(localStorage.getItem('orion_draw_prefs') || '{}'); } catch(e) {}
+    const isMiniView = prefs['miniView'] || false;
+
+    // Update button text
+    const viewBtn = document.getElementById('draw-view-toggle');
+    if (viewBtn) viewBtn.textContent = isMiniView ? '📑 Full' : '📋 Mini';
 
     // Group rounds by bracket for knockout rounds
     const knockoutRounds = filteredRounds.filter(r => r.type === 'knockout');
@@ -4669,7 +4698,11 @@ export function displayRounds() {
 
     // Display prelim rounds — newest first
     prelimRounds.forEach(round => {
-        html += renderRoundCard(round, state.rounds.findIndex(r => r.id === round.id), previousMeetings);
+        if (isMiniView) {
+            html += renderRoundMiniTable(round);
+        } else {
+            html += renderRoundCard(round, state.rounds.findIndex(r => r.id === round.id), previousMeetings);
+        }
     });
 
     // Display knockout rounds in bracket format
@@ -5036,4 +5069,4 @@ export const openJudgeModal = showJudgeManagement;
 export const enterResults   = showEnterResults;
 
 // ─── ADD MISSING EXPORT for admin.js ──────────────────────────────────────────
-export { displayAdminRounds, showJudgeManagement};
+export { displayAdminRounds, showJudgeManagement, renderRoundMiniTable };
