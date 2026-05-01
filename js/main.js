@@ -83,8 +83,7 @@ import {
     executeMoveTeam, dndJudgeDragStart,
     dndJudgeDragOver, dndJudgeDrop,
     dndTeamDragStart, dndTeamDragOver,
-    dndTeamDrop, dndDragEnd, dndDragLeave,
-    renderRoundMiniTable
+    dndTeamDrop, dndDragEnd, dndDragLeave
 } from './draw.js';
 import {
     renderBreak, calculateBreak,
@@ -213,7 +212,6 @@ window.updateHeaderTournamentName = updateHeaderTournamentName;
 window.navigate = navigate;
 window.showLoginModal = showLoginModal;
 window.renderAdminDashboard = renderAdminDashboard;
-window.renderRoundMiniTable = renderRoundMiniTable;
 window.adminPublishAll = adminPublishAll;
 window.adminHideAll = adminHideAll;
 

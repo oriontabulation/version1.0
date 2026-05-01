@@ -4321,6 +4321,7 @@ function _toggleDrawView() {
 window.displayRounds        = displayRounds;
 window._setNameDisplay      = _setNameDisplay;
 window._toggleDrawView      = _toggleDrawView;
+window.renderRoundMiniTable = renderRoundMiniTable;
 
 window._toggleRoundSettings = function(roundId) {
     const menu = document.getElementById(`round-settings-${roundId}`);
