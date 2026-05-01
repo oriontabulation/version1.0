@@ -72,10 +72,6 @@ function _adminScaffold() {
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:15px;margin-bottom:20px;">
             <input type="text"  id="judge-name"  placeholder="Judge Name"               style="padding:12px;">
             <input type="email" id="judge-email" placeholder="Email (for private URL)"   style="padding:12px;">
-            <select id="judge-role" style="padding:12px;border:1px solid #e2e8f0;border-radius:6px;">
-                <option value="panellist">Panellist</option>
-                <option value="chair">Chair</option>
-            </select>
             <button class="btn btn-primary" style="padding:12px;" data-action="addJudge">Add Judge</button>
         </div>`;
 
@@ -136,12 +132,7 @@ function _judgeProfileSection() {
 
         // Profile card
         const card = el('div', { style: 'background:white;border:2px solid #bfdbfe;border-radius:12px;padding:20px;margin-bottom:20px;' });
-        const nameEl = el('div', { style: 'font-size:22px;font-weight:700;color:#1e293b;' }, myJudge.name);
-        const roleEl = el('div', {
-            style: `display:inline-block;background:${myJudge.role === 'chair' ? '#dcfce7' : '#dbeafe'};color:${myJudge.role === 'chair' ? '#16a34a' : '#1e40af'};padding:2px 12px;border-radius:20px;font-size:12px;font-weight:700;margin-top:4px;`
-        }, (myJudge.role || 'panellist').toUpperCase());
-        card.appendChild(nameEl);
-        card.appendChild(roleEl);
+        card.appendChild(el('div', { style: 'font-size:22px;font-weight:700;color:#1e293b;' }, myJudge.name));
         profileSec.appendChild(card);
         frag.appendChild(profileSec);
     } else {
@@ -221,13 +212,7 @@ function _buildJudgeCard(judge, isAdmin) {
     const header = el('div', { class: 'judge-header', style: 'display:flex;align-items:center;gap:10px;' });
     const avatar = el('div', { class: 'judge-avatar' }, (judge.name || '?')[0].toUpperCase());
     const info = el('div', { class: 'judge-info' });
-    const name = el('strong', {}, judge.name);
-    const role = el('span', {
-        class: `badge ${judge.role === 'chair' ? 'badge-success' : 'badge-info'}`,
-        style: 'margin-left:6px;'
-    }, judge.role || 'panellist');
-    info.appendChild(name);
-    info.appendChild(role);
+    info.appendChild(el('strong', {}, judge.name));
     header.appendChild(avatar);
     header.appendChild(info);
 
@@ -263,9 +248,8 @@ function _buildJudgeCard(judge, isAdmin) {
 async function addJudge() {
     if (!_isAdmin()) { showNotification('Admin access required', 'error'); return; }
 
-    const name = document.getElementById('judge-name')?.value.trim();
+const name = document.getElementById('judge-name')?.value.trim();
     const email = document.getElementById('judge-email')?.value.trim();
-    const role = document.getElementById('judge-role')?.value || 'panellist';
     const tournId = state.activeTournamentId;
 
     if (!name) { showNotification('Judge name required', 'error'); return; }
@@ -275,8 +259,8 @@ async function addJudge() {
     try {
         const judge = await api.createJudge({
             tournamentId: tournId,
-            name, email, role,
-            affiliations: checkedAffils
+            name,
+            email
         });
         addJudgeToCache({ ...judge, judge_conflicts: checkedAffils.map(id => ({ team_id: id })) });
         displayJudges();
@@ -327,22 +311,11 @@ function showEditJudge(judgeId) {
     const nameInp = el('input', { type: 'text', id: `edit-judge-name-${judgeId}`, style: 'padding:10px;border-radius:8px;border:1px solid #e2e8f0;width:100%;box-sizing:border-box;' });
     nameInp.value = judge.name;
 
-    const roleSelEl = document.createElement('select');
-    roleSelEl.id = `edit-judge-role-${judgeId}`;
-    roleSelEl.style.cssText = 'padding:10px;border-radius:8px;border:1px solid #e2e8f0;width:100%;';
-    [['panellist', 'Panellist'], ['chair', 'Chair']].forEach(([v, l]) => {
-        const o = document.createElement('option');
-        o.value = v; o.textContent = l;
-        if (v === judge.role) o.selected = true;
-        roleSelEl.appendChild(o);
-    });
-
     const emailInp = el('input', { type: 'email', id: `edit-judge-email-${judgeId}`, style: 'padding:10px;border-radius:8px;border:1px solid #e2e8f0;width:100%;box-sizing:border-box;' });
     emailInp.value = judge.email || '';
 
-    grid.appendChild(el('div', {}, el('label', { style: 'font-size:12px;font-weight:700;color:#64748b;display:block;margin-bottom:4px;' }, 'Name'), nameInp));
-    grid.appendChild(el('div', {}, el('label', { style: 'font-size:12px;font-weight:700;color:#64748b;display:block;margin-bottom:4px;' }, 'Role'), roleSelEl));
-    grid.appendChild(el('div', {}, el('label', { style: 'font-size:12px;font-weight:700;color:#64748b;display:block;margin-bottom:4px;' }, 'Email'), emailInp));
+    grid.appendChild(el('div', { style: 'grid-column:span2;' }, el('label', { style: 'font-size:12px;font-weight:700;color:#64748b;display:block;margin-bottom:4px;' }, 'Name'), nameInp));
+    grid.appendChild(el('div', { style: 'grid-column:span2;' }, el('label', { style: 'font-size:12px;font-weight:700;color:#64748b;display:block;margin-bottom:4px;' }, 'Email'), emailInp));
     form.appendChild(grid);
 
     // Conflict checkboxes
@@ -380,7 +353,6 @@ function showEditJudge(judgeId) {
 async function saveEditJudge(judgeId) {
     if (!_isAdmin()) { showNotification('Admin access required', 'error'); return; }
     const name = document.getElementById(`edit-judge-name-${judgeId}`)?.value.trim();
-    const role = document.getElementById(`edit-judge-role-${judgeId}`)?.value;
     const email = document.getElementById(`edit-judge-email-${judgeId}`)?.value.trim();
 
     if (!name) { showNotification('Name required', 'error'); return; }
@@ -388,8 +360,8 @@ async function saveEditJudge(judgeId) {
     const affiliations = [...document.querySelectorAll(`.edit-judge-affil-${judgeId}:checked`)].map(cb => cb.value);
 
     try {
-        await api.updateJudge(judgeId, { name, role, email, affiliations });
-        patchJudge(judgeId, { name, role, email, judge_conflicts: affiliations.map(id => ({ team_id: id })) });
+        await api.updateJudge(judgeId, { name, email, affiliations });
+        patchJudge(judgeId, { name, email, judge_conflicts: affiliations.map(id => ({ team_id: id })) });
         displayJudges();
         showNotification('Judge updated', 'success');
     } catch (e) {

@@ -212,21 +212,11 @@ function _buildTeamCard(team, isAdmin, cats = []) {
 
     card.appendChild(header);
 
-    // Stats strip
-    const stats = el('div', { class: 'team-stats' });
-    for (const [val, lbl] of [[team.wins || 0, 'Wins'], [(team.total_points || 0).toFixed(1), 'Points']]) {
-        const stat = el('div', { class: 'team-stat' });
-        stat.appendChild(el('span', { class: 'stat-value' }, String(val)));
-        stat.appendChild(el('span', { class: 'stat-label' }, lbl));
-        stats.appendChild(stat);
-    }
-    card.appendChild(stats);
-
     // Speakers
     const speakers = team.speakers || [];
     if (speakers.length > 0) {
-        const spkEl = el('div', { class: 'team-speakers' },
-            ...speakers.map(s => el('span', {}, s.name || s, ' '))
+        const spkEl = el('div', { class: 'team-speakers', style: 'margin-top:12px;' },
+            ...speakers.map(s => el('span', { style: 'background:var(--bg-light);padding:4px 10px;border-radius:14px;font-size:12px;margin-right:6px;' }, s.name || s, ' '))
         );
         card.appendChild(spkEl);
     }
