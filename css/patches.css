@@ -1554,3 +1554,189 @@ body.hide-judge-role-reg #registerForm .judge-role-field {
     bottom: 50px !important;
   }
 }
+
+/* ================================================================
+   RESULTS & MOTIONS TAB STYLING
+   ================================================================ */
+
+/* Motion Cards */
+.motion-card {
+    background: var(--color-surface, #1e293b);
+    border: 1px solid var(--color-border, #334155);
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 20px;
+    max-width: 800px;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.motion-card__header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--color-border, #334155);
+}
+
+.motion-card__badge {
+    background: var(--color-primary, #f97316);
+    color: white;
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-weight: 600;
+    font-size: 14px;
+}
+
+.motion-card__badge--prelim {
+    background: #3b82f6;
+}
+
+.motion-card__badge--knockout {
+    background: #8b5cf6;
+}
+
+.motion-card__body {
+    padding: 0;
+}
+
+.motion-card__text {
+    font-size: 18px;
+    line-height: 1.6;
+    color: var(--color-text, #f1f5f9);
+    text-align: center;
+    font-style: italic;
+    padding: 16px;
+    background: rgba(255,255,255,0.03);
+    border-radius: 8px;
+}
+
+.motion-card__infoslide {
+    margin-top: 16px;
+    padding: 12px 16px;
+    background: rgba(99, 102, 241, 0.1);
+    border: 1px solid rgba(99, 102, 241, 0.3);
+    border-radius: 8px;
+    font-size: 14px;
+    color: #a5b4fc;
+}
+
+/* Result Cards */
+.result-card {
+    background: var(--color-surface, #1e293b);
+    border: 1px solid var(--color-border, #334155);
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 24px;
+    max-width: 800px;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.result-card__header {
+    text-align: center;
+    margin-bottom: 20px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--color-border, #334155);
+}
+
+.result-card__header h2 {
+    margin-bottom: 8px;
+    font-size: 20px;
+}
+
+.result-debate {
+    background: rgba(255,255,255,0.03);
+    border-radius: 10px;
+    padding: 20px;
+    margin-bottom: 16px;
+}
+
+.result-debate:last-child {
+    margin-bottom: 0;
+}
+
+.result-debate__sides {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.result-debate__team {
+    flex: 1;
+    text-align: center;
+}
+
+.result-debate__team:first-child {
+    text-align: right;
+}
+
+.result-debate__team:last-child {
+    text-align: left;
+}
+
+.result-debate__vs {
+    color: var(--color-muted, #64748b);
+    font-weight: 700;
+    font-size: 14px;
+    white-space: nowrap;
+}
+
+.result-debate__score {
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--color-text, #f1f5f9);
+    margin-top: 8px;
+}
+
+.result-debate__score--winner {
+    color: #10b981;
+}
+
+.u-fw-700 {
+    font-weight: 700;
+}
+
+/* Status badges */
+.status-blinded,
+.badge-warning {
+    background: #fbbf24;
+    color: #1f2937;
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.badge-warning {
+    background: #f59e0b;
+}
+
+/* Responsive */
+@media (max-width: 600px) {
+    .motion-card,
+    .result-card {
+        padding: 16px;
+        margin: 0 12px 20px 12px;
+    }
+    
+    .motion-card__text {
+        font-size: 16px;
+    }
+    
+    .result-debate__sides {
+        flex-direction: column;
+        gap: 12px;
+    }
+    
+    .result-debate__team:first-child,
+    .result-debate__team:last-child {
+        text-align: center;
+    }
+    
+    .result-debate__vs {
+        order: -1;
+    }
+}
