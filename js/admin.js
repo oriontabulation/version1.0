@@ -637,13 +637,12 @@ function _sectionOverview() {
             ${_progressBar('Rounds Completed',  s.rounds.completed, Math.max(s.rounds.total,1), '#3b82f6')}
             ${_progressBar('Teams Breaking',    s.teams.breaking, Math.max(s.teams.total,1), '#8b5cf6')}
             <div style="margin-top:12px;padding-top:12px;border-top:1px solid #e2e8f0;">
-                <div style="font-size:12px;font-weight:700;color:#1e293b;margin-bottom:8px;">Feedback & Participants</div>
-                ${_statRow('Feedback Submitted', s.feedback.total)}
+                <div style="font-size:12px;font-weight:700;color:#1e293b;margin-bottom:8px;">Participants</div>
+                ${_statRow('Teams', s.teams.total)}
                 ${_statRow('Judges', s.judges.total)}
                 ${_statRow('  - Chairs', s.judges.chair)}
                 ${_statRow('  - Panelists', s.judges.panellist)}
                 ${_statRow('  - Trainees', s.judges.trainee)}
-                ${_statRow('Teams', s.teams.total)}
             </div>
         </div>
         <div class="adm-card">
@@ -1669,7 +1668,6 @@ function _getStats() {
     const judges     = state.judges || [];
     const rounds     = state.rounds || [];
     const allDebates = rounds.flatMap(r => r.debates || []);
-    const feedback   = state.feedback || [];
     
     return {
         teams:   { total: teams.length,   breaking: teams.filter(t=>t.broke).length },
@@ -1679,7 +1677,6 @@ function _getStats() {
             panellist: judges.filter(j=>j.role==='panellist').length,
             trainee: judges.filter(j=>j.role==='trainee').length
         },
-        feedback: { total: feedback.length },
         rounds:  { total: rounds.length,  completed: rounds.filter(r=>(r.debates||[]).every(d=>d.entered)&&r.debates?.length>0).length },
         debates: { total: allDebates.length, entered: allDebates.filter(d=>d.entered).length },
     };
