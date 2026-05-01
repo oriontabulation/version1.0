@@ -232,6 +232,31 @@ window.renderAdminDashboard = renderAdminDashboard;
 window.adminPublishAll = adminPublishAll;
 window.adminHideAll = adminHideAll;
 
+// Teams
+window.addTeam = addTeam;
+window.deleteTeam = deleteTeam;
+window.showEditTeam = showEditTeam;
+window.saveEditTeam = saveEditTeam;
+window.filterTeamsByCategory = filterTeamsByCategory;
+
+// Judges
+window.addJudge = addJudge;
+window.deleteJudge = deleteJudge;
+window.showEditJudge = showEditJudge;
+window.saveEditJudge = saveEditJudge;
+
+// File manager (import/export)
+window.importTeams = importTeams;
+window.importJudges = importJudges;
+window.renderImport = renderImport;
+window.exportData = exportData;
+window.exportStandings = exportStandings;
+window.exportSpeakerStandings = exportSpeakerStandings;
+window.previewTeams = previewTeams;
+window.previewJudges = previewJudges;
+window.clearTeamImport = clearTeamImport;
+window.clearJudgeImport = clearJudgeImport;
+
 function activeTabId() {
     return document.querySelector('.tab-content.active')?.id || 'public';
 }
