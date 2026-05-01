@@ -8,7 +8,7 @@
 import { state, activeTournament, switchTournamentCache, save, saveNow } from './state.js';
 import { api } from './api.js';
 import { showNotification, escapeHTML, closeAllModals } from './utils.js';
-import { displayAdminRounds } from './draw.js';
+import { displayAdminRounds, renderRoundCard } from './draw.js';
 import { calculateBreak } from './knockout.js';
 import { exportData, fullReset } from './file-manager.js';
 import { getLocalUsers, registerLocalUser, deleteLocalUser, updateLocalUserRole } from './local-auth.js';
@@ -135,15 +135,19 @@ export function renderAdminDashboard() {
     if (_activeSection === 'rounds') _refreshAdminRounds();
 }
 
-// Lightweight refresh — no full section rebuild
+// Lightweight refresh — rebuild the rounds view
 function _refreshAdminRounds() {
     _fillRoundsSidebar();
-    try { displayAdminRounds(); } catch(e) { window.displayAdminRounds?.(); }
-    const rounds  = state.rounds || [];
-    const entered = rounds.flatMap(r => r.debates || []).filter(d => d.entered).length;
-    const total   = rounds.flatMap(r => r.debates || []).length;
-    const badge   = document.getElementById('adm-draw-count');
-    if (badge) badge.textContent = `${entered}/${total} results`;
+    const roundsHtml = (state.rounds || []).slice().reverse().map((r, idx) => {
+        const actualIdx = (state.rounds || []).length - 1 - idx;
+        return renderRoundCard(r, actualIdx, []);
+    }).join('');
+    const listBody = document.querySelector('.adm-rounds-list-body');
+    if (listBody) {
+        listBody.innerHTML = (state.rounds || []).length === 0 
+            ? '<div class="adm-empty">No rounds yet. Create one from the left panel.</div>' 
+            : roundsHtml;
+    }
 }
 
 // Render the sticky left column into #adm-rounds-sidebar
@@ -658,6 +662,12 @@ function _sectionOverview() {
 // SECTION: ROUNDS & DRAW — side-by-side layout
 // ============================================================================
 function _sectionRounds() {
+    const rounds = state.rounds || [];
+    const roundsHtml = rounds.slice().reverse().map((r, idx) => {
+        const actualIdx = rounds.length - 1 - idx;
+        return renderRoundCard(r, actualIdx, []);
+    }).join('');
+    
     return `
     <div class="adm-section-head">
         <h2>🎲 Rounds &amp; Draw</h2>
@@ -669,25 +679,8 @@ function _sectionRounds() {
             <div class="adm-empty">Loading…</div>
         </div>
         <div class="adm-rounds-live-col">
-            <div class="adm-card adm-card--flush adm-card--no-mb">
-                <div class="adm-card-header adm-row between">
-                    <span class="adm-card-title adm-card-title--inline">
-                        📋 Live Draw
-                        <span class="adm-card-title-sub" id="adm-draw-count"></span>
-                    </span>
-                    <div class="adm-row gap-sm">
-                        <select id="round-filter" onchange="window.displayAdminRounds()" class="adm-select adm-select--sm">
-                            <option value="all">All Rounds</option>
-                            <option value="pending">Pending</option>
-                            <option value="completed">Submitted</option>
-                            <option value="blinded">Blinded</option>
-                        </select>
-                        <button class="adm-btn secondary sm" onclick="window.refreshAdminRounds()">↺</button>
-                    </div>
-                </div>
-                <div id="rounds-list" class="adm-rounds-list-body">
-                    <div class="adm-empty">Loading…</div>
-                </div>
+            <div class="adm-rounds-list-body">
+                ${rounds.length === 0 ? '<div class="adm-empty">No rounds yet. Create one from the left panel.</div>' : roundsHtml}
             </div>
         </div>
     </div>`;
