@@ -1,27 +1,10 @@
-import * as Sentry from '@sentry/browser';
-
 console.log('[main.js] Module loading...');
 
 const env = (typeof import.meta !== 'undefined' && import.meta.env) ? import.meta.env : (window.ENV || {});
 
-if (env.VITE_SENTRY_DSN && env.VITE_SENTRY_DSN !== 'YOUR_SENTRY_DSN') {
-    Sentry.init({
-        dsn: env.VITE_SENTRY_DSN,
-        integrations: [
-            Sentry.browserTracingIntegration(),
-            Sentry.replayIntegration(),
-        ],
-        tracesSampleRate: 1.0,
-        replaysSessionSampleRate: 0.1,
-        replaysOnErrorSampleRate: 1.0,
-    });
-}
-
 // Global error handler to prevent blank screen on errors
 window.addEventListener('error', (e) => {
     console.error('[global] Uncaught error:', e.error);
-    const env = (typeof import.meta !== 'undefined' && import.meta.env) ? import.meta.env : (window.ENV || {});
-    if (env.VITE_SENTRY_DSN) Sentry.captureException(e.error);
     localStorage.setItem('orion_active_tab', 'public');
     // Show visible error to user
     const errDiv = document.getElementById('init-error');
