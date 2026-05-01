@@ -294,11 +294,11 @@ export function renderDraw() {
                        <option value="names" ${(savedPrefs['display']||'names')==='names'?'selected':''}>Names</option>
                        <option value="codes" ${savedPrefs['display']==='codes'?'selected':''}>Codes</option>
                    </select>
-                   <button id="draw-view-toggle" onclick="window._toggleDrawView()" 
-                           class="btn-secondary" style="padding:5px 10px;font-size:12px;font-weight:600"
-                           title="Toggle between full and mini view">
-                       📋 Mini
-                   </button>
+<button id="draw-view-toggle" onclick="window._toggleDrawView()" 
+                            class="btn-secondary" style="padding:8px 14px;font-size:13px;font-weight:600"
+                            title="Toggle between edit mode and list mode">
+                        📋 List Mode
+                    </button>
                    ${isAdmin ? `<button onclick="window._toggleCreateRound()" id="draw-new-btn"
                            class="btn-primary" style="padding:5px 12px;font-size:12px;font-weight:700">➕ New Round</button>` : ''}
                </div>
@@ -4313,7 +4313,7 @@ function _toggleDrawView() {
     
     const btn = document.getElementById('draw-view-toggle');
     if (btn) {
-        btn.textContent = current ? '📋 Mini' : '📑 Full';
+        btn.textContent = current ? '📋 List Mode' : '📝 Edit Mode';
     }
     displayRounds();
 }
@@ -4676,7 +4676,7 @@ export function displayRounds() {
 
     // Update button text
     const viewBtn = document.getElementById('draw-view-toggle');
-    if (viewBtn) viewBtn.textContent = isMiniView ? '📑 Full' : '📋 Mini';
+    if (viewBtn) viewBtn.textContent = isMiniView ? '📝 Edit Mode' : '📋 List Mode';
 
     // Group rounds by bracket for knockout rounds
     const knockoutRounds = filteredRounds.filter(r => r.type === 'knockout');
@@ -4845,6 +4845,16 @@ function renderRoundMiniTable(round) {
     const debates = round.debates || [];
     const rooms = round.rooms || [];
     
+    // Get display preference (names or codes)
+    let prefs = {};
+    try { prefs = JSON.parse(localStorage.getItem('orion_draw_prefs') || '{}'); } catch(e) {}
+    const displayMode = prefs['display'] || 'names';
+    
+    const getDisplayName = (team) => {
+        if (!team) return '?';
+        return displayMode === 'codes' && team.code ? team.code : team.name;
+    };
+    
     const rows = debates.map((debate, i) => {
         const room = rooms[i] || `Room ${i+1}`;
         let teamsHtml = '';
@@ -4853,13 +4863,13 @@ function renderRoundMiniTable(round) {
             const oo = (state.teams||[]).find(t=>t.id==debate.oo);
             const cg = (state.teams||[]).find(t=>t.id==debate.cg);
             const co = (state.teams||[]).find(t=>t.id==debate.co);
-            teamsHtml = `${escapeHTML(og?.name||'?')}/${escapeHTML(oo?.name||'?')} vs ${escapeHTML(cg?.name||'?')}/${escapeHTML(co?.name||'?')}`;
+            teamsHtml = `${escapeHTML(getDisplayName(og))}/${escapeHTML(getDisplayName(oo))} vs ${escapeHTML(getDisplayName(cg))}/${escapeHTML(getDisplayName(co))}`;
         } else if (debate.format === 'speech') {
             teamsHtml = `${(debate.roomSpeakers||[]).length} speakers`;
         } else {
             const gov = (state.teams||[]).find(t=>t.id==debate.gov);
             const opp = (state.teams||[]).find(t=>t.id==debate.opp);
-            teamsHtml = `${escapeHTML(gov?.name||'TBD')} vs ${escapeHTML(opp?.name||'TBD')}`;
+            teamsHtml = `${escapeHTML(getDisplayName(gov))} vs ${escapeHTML(getDisplayName(opp))}`;
         }
         const panel = debate.panel || [];
         const chairEntry     = panel.find(p => p.role === 'chair');

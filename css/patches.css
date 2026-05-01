@@ -1120,7 +1120,7 @@ body.hide-judge-role-reg #registerForm .judge-role-field {
 #rounds-list > div {
   border-radius: 12px !important;
   overflow: hidden !important;
-  margin-bottom: 16px !important;
+  margin-bottom: 24px !important;
 }
 
 /* BP room: minimum readable text */
@@ -1137,6 +1137,91 @@ body.hide-judge-role-reg #registerForm .judge-role-field {
 /* ================================================================
    ADMIN BREAK SECTION IMPROVEMENTS
    ================================================================ */
+
+/* Speaker section header - match standings style */
+.speaker-section .standings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: #f8fafc;
+  border-radius: 10px;
+  border: 1px solid #e2e8f0;
+  margin-bottom: 16px;
+}
+
+.speaker-section .standings-header h2 {
+  font-size: 18px !important;
+  font-weight: 700 !important;
+  margin: 0 !important;
+}
+.break-table-header {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 18px;
+  margin-bottom: 16px;
+  background: #f8fafc;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+}
+
+.break-table-title {
+  font-size: 15px !important;
+  font-weight: 700 !important;
+  color: #1e293b !important;
+  margin: 0 !important;
+}
+
+.break-table-sub {
+  font-size: 12px !important;
+  color: #94a3b8 !important;
+  margin: 0 !important;
+  font-style: italic;
+}
+
+/* Section subtitles -统一样式 for all main tabs */
+.section-subtitle,
+.u-text-muted.u-mb-xl {
+  font-size: 13px !important;
+  color: #64748b !important;
+  margin-bottom: 20px !important;
+  padding: 10px 14px !important;
+  background: #f8fafc !important;
+  border-radius: 6px !important;
+  border-left: 3px solid #cbd5e1 !important;
+  display: inline-block !important;
+}
+
+.section-subtitle.compact {
+  padding: 0 !important;
+  background: transparent !important;
+  border: none !important;
+  margin-bottom: 16px !important;
+}
+
+/* Draw section headers */
+.section > h2 {
+  margin-bottom: 16px !important;
+}
+
+/* Draw round card headers */
+.round-card-hdr {
+  padding: 14px 16px !important;
+  background: #f8fafc !important;
+  border-radius: 8px 8px 0 0 !important;
+  border-bottom: 1px solid #e2e8f0 !important;
+  margin-bottom: 0 !important;
+}
+
+/* Knockout bracket headers */
+.draw-section h2[style*="margin-bottom"] {
+  margin-bottom: 16px !important;
+  padding: 12px 16px !important;
+  background: #f8fafc !important;
+  border-radius: 8px !important;
+  border-left: 3px solid #6366f1 !important;
+}
 
 /* Break size dropdown — full options visible */
 #adm-break-size {
@@ -1361,6 +1446,50 @@ body.hide-judge-role-reg #registerForm .judge-role-field {
   margin: 4px 0 0 !important;
 }
 
+/* Break table header styling */
+.break-table-header {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 18px;
+  margin-bottom: 16px;
+  background: #f8fafc;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+}
+
+.break-table-title {
+  font-size: 15px !important;
+  font-weight: 700 !important;
+  color: #1e293b !important;
+  margin: 0 !important;
+}
+
+.break-table-sub {
+  font-size: 12px !important;
+  color: #94a3b8 !important;
+  margin: 0 !important;
+  font-style: italic;
+}
+
+/* Speaker section header - match standings style */
+.speaker-section .standings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: #f8fafc;
+  border-radius: 10px;
+  border: 1px solid #e2e8f0;
+  margin-bottom: 16px;
+}
+
+.speaker-section .standings-header h2 {
+  font-size: 18px !important;
+  font-weight: 700 !important;
+  margin: 0 !important;
+}
+
 /* Standings header + subtitle controls */
 .standings-header {
   display: flex !important;
@@ -1460,6 +1589,7 @@ body.hide-judge-role-reg #registerForm .judge-role-field {
   background: #ffffff !important;
   box-shadow: 0 4px 20px rgba(0,0,0,0.06) !important;
   margin-bottom: 16px !important;
+  padding: 16px 20px !important;
 }
 .draw-create-panel.open {
   display: block !important;
@@ -1468,7 +1598,17 @@ body.hide-judge-role-reg #registerForm .judge-role-field {
 
 /* Draw controls bar spacing */
 .draw-controls-bar {
-  margin-bottom: 16px !important;
+  margin-bottom: 24px !important;
+}
+
+/* Draw create panel */
+.draw-create-panel {
+  display: none !important;
+  border-radius: 14px !important;
+  border: 1px solid #e2e8f0 !important;
+  background: #ffffff !important;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.06) !important;
+  margin-bottom: 24px !important;
 }
 
 /* Round card header — tighter, more readable */
@@ -1481,7 +1621,7 @@ body.hide-judge-role-reg #registerForm .judge-role-field {
 
 /* Round mini table spacing */
 .round-mini-summary {
-  margin-top: 12px !important;
+  margin-top: 16px !important;
 }
 
 /* Mini draw table: responsive scroll on mobile */
