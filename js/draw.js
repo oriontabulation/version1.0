@@ -4710,7 +4710,7 @@ export function displayRounds() {
 }
 
 
-export export function renderRoundCard(round, actualRoundIdx, previousMeetings) {
+export function renderRoundCard(round, actualRoundIdx, previousMeetings) {
     const debates = round.debates || [];
     const entered = debates.filter(d => d.entered).length;
     const total   = debates.length;

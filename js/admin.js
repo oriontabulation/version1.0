@@ -8,7 +8,8 @@
 import { state, activeTournament, switchTournamentCache, save, saveNow } from './state.js';
 import { api } from './api.js';
 import { showNotification, escapeHTML, closeAllModals } from './utils.js';
-import { renderRoundMiniTable } from './draw.js';
+import { displayAdminRounds } from './draw.js';
+// renderRoundMiniTable will be assigned via window after load
 import { calculateBreak } from './knockout.js';
 import { exportData, fullReset } from './file-manager.js';
 import { getLocalUsers, registerLocalUser, deleteLocalUser, updateLocalUserRole } from './local-auth.js';
@@ -138,7 +139,7 @@ export function renderAdminDashboard() {
 // Lightweight refresh — rebuild the rounds view
 function _refreshAdminRounds() {
     _fillRoundsSidebar();
-    const roundsHtml = (state.rounds || []).slice().reverse().map(r => renderRoundMiniTable(r)).join('');
+    const roundsHtml = (state.rounds || []).slice().reverse().map(r => window.renderRoundMiniTable(r)).join('');
     const listBody = document.querySelector('.adm-rounds-list-body');
     if (listBody) {
         listBody.innerHTML = (state.rounds || []).length === 0 
@@ -660,7 +661,7 @@ function _sectionOverview() {
 // ============================================================================
 function _sectionRounds() {
     const rounds = state.rounds || [];
-    const roundsHtml = rounds.slice().reverse().map(r => renderRoundMiniTable(r)).join('');
+    const roundsHtml = rounds.slice().reverse().map(r => window.renderRoundMiniTable(r)).join('');
     
     return `
     <div class="adm-section-head">
