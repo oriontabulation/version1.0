@@ -1548,10 +1548,16 @@ body.hide-judge-role-reg #registerForm .judge-role-field {
     border-radius: 14px 14px 0 0 !important;
   }
   .ballot-modal-overlay .modal-results-grid {
-    grid-template-columns: 1fr !important;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important;
   }
   .ballot-modal-overlay #ballot-totals-bar {
     bottom: 50px !important;
+  }
+}
+
+@media (max-width: 400px) {
+  .ballot-modal-overlay .modal-results-grid {
+    grid-template-columns: 1fr !important;
   }
 }
 
