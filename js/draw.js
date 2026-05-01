@@ -5069,4 +5069,4 @@ export const openJudgeModal = showJudgeManagement;
 export const enterResults   = showEnterResults;
 
 // ─── ADD MISSING EXPORT for admin.js ──────────────────────────────────────────
-export { displayAdminRounds, showJudgeManagement, renderRoundMiniTable };
+export { displayAdminRounds, showJudgeManagement };
