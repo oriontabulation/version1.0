@@ -4,6 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Orion Debate Tab</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
       href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
       rel="stylesheet"
@@ -11,14 +13,14 @@
     <link rel="stylesheet" href="css/main.css" />
     <link rel="stylesheet" href="css/admin.css" />
     <link rel="stylesheet" href="css/patches.css" />
-    <link rel="icon" href="favicon.ico" />
+    <link rel="icon" href="/favicon.ico" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self' https://*.supabase.co https://browser.sentry-cdn.com https://esm.sh; 
+      content="default-src 'self' https://*.supabase.co https://esm.sh;
       connect-src 'self' https://*.supabase.co wss://*.supabase.co https://esm.sh;
-      script-src 'self' 'unsafe-inline' 'unsafe-eval' https://browser.sentry-cdn.com https://esm.sh; 
-      style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; 
-      font-src 'self' https://fonts.gstatic.com; 
+      script-src 'self' 'unsafe-inline' https://esm.sh;
+      style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
+      font-src 'self' https://fonts.gstatic.com;
       img-src 'self' data: https:;"
     />
     <script type="importmap">
@@ -60,7 +62,7 @@
       <div class="header-container">
         <!-- Logo: extreme left -->
         <div class="header-logo" onclick="switchTab('public')">
-          <img src="IMG/logo.png" alt="Orion logo" class="logo-image" />
+          <img src="/logo.png" alt="Orion logo" class="logo-image" />
           <span class="header-logo-text">ORION</span>
         </div>
 
@@ -112,6 +114,7 @@
             </button>
             <div class="header-settings-dropdown" id="header-settings-dropdown">
               <div class="header-settings-section" id="theme-picker-container"></div>
+              <div class="header-settings-section" id="inactivity-settings-container"></div>
               <div class="header-settings-divider"></div>
               <button class="header-settings-item" onclick="switchTab('profile')">👤 Profile</button>
               <button class="header-settings-item" data-action="logout">🚪 Logout</button>
@@ -460,7 +463,7 @@
       <!-- Drawer header -->
       <div class="mobile-nav-head">
         <div class="mobile-nav-logo">
-          <img src="IMG/logo.png" alt="Orion logo" class="logo-image" />
+          <img src="/logo.png" alt="Orion logo" class="logo-image" />
           <span>Orion</span>
         </div>
         <button

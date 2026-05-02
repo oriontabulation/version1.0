@@ -184,128 +184,158 @@
     controls.insertBefore(p, document.getElementById('header-login-btn') || controls.firstChild);
   }
 
-  /* Admin overview inline picker (called from admin.js renderThemePicker) */
+  /* ── Brightness & font-size helpers ──────────────────────────────────────── */
+  window.applyBrightness = function(val) {
+    val = Math.min(1.5, Math.max(0.4, parseFloat(val) || 1));
+    document.body.style.filter = val === 1 ? '' : `brightness(${val})`;
+    try { localStorage.setItem('orion_brightness', val); } catch(_) { /* ignore unavailable localStorage */ }
+  };
+
+  window.applyFontSize = function(px) {
+    px = Math.min(22, Math.max(11, parseInt(px) || 16));
+    document.documentElement.style.fontSize = px + 'px';
+    try { localStorage.setItem('orion_font_size', px); } catch(_) { /* ignore unavailable localStorage */ }
+  };
+
+  /* ── Dark mode toggle ─────────────────────────────────────────────────────── */
+  window.toggleBackgroundMode = function() {
+    const isDark = document.body.classList.contains('theme-dark');
+    document.body.classList.toggle('theme-dark', !isDark);
+    const root = document.documentElement;
+    if (isDark) {
+      root.style.setProperty('--t-bg',       '#f8fafc');
+      root.style.setProperty('--t-text',     '#1e293b');
+      root.style.setProperty('--t-text-light','#64748b');
+      root.style.setProperty('--t-border',   '#e2e8f0');
+      root.style.setProperty('--t-bg-hover', '#f1f5f9');
+      localStorage.setItem('orion_theme_mode', 'light');
+    } else {
+      root.style.setProperty('--t-bg',       '#0f172a');
+      root.style.setProperty('--t-text',     '#f1f5f9');
+      root.style.setProperty('--t-text-light','#94a3b8');
+      root.style.setProperty('--t-border',   '#334155');
+      root.style.setProperty('--t-bg-hover', '#1e293b');
+      localStorage.setItem('orion_theme_mode', 'dark');
+    }
+  };
+
+  /* ── Settings panel renderer ──────────────────────────────────────────────── */
   window.renderThemePicker = function(containerId) {
     const el = containerId ? document.getElementById(containerId) : null;
     if (!el) return;
-    const cur = loadColor();
-    el.innerHTML = '';
 
-    // Build preset buttons
-    let presetsHTML = '';
-    PRESETS.forEach(c => {
-      const isActive = cur === c;
-      presetsHTML += `<button type="button" class="theme-color-btn" 
-        style="width:20px;height:20px;border-radius:50%;background:${c};border:${isActive?'2px solid #1e293b':'1px solid #cbd5e1'};cursor:pointer;padding:0;"
-        title="${c}" data-color="${c}"></button>`;
-    });
+    const cur        = loadColor();
+    const isDark     = document.body.classList.contains('theme-dark');
+    const brightness = Math.round((parseFloat(localStorage.getItem('orion_brightness') || '1')) * 100);
+    const fontSize   = parseInt(localStorage.getItem('orion_font_size') || '16');
 
-    el.innerHTML = `
-      <div class="theme-picker-inner" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-        <label class="theme-color-label" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;padding:6px 10px;border:1px solid var(--t-border,#e2e8f0);border-radius:6px;background:var(--t-bg,white);">
-          <input type="color" value="${cur}" class="theme-color-input" style="width:24px;height:24px;padding:0;border:none;cursor:grab;background:transparent;">
-          <span class="theme-color-label-text" style="font-size:12px;color:var(--t-text-light,#64748b);">Theme</span>
-        </label>
-        <div class="theme-presets" style="display:flex;gap:4px;">${presetsHTML}</div>
-        
-        <!-- Theme toggles -->
-        <button type="button" class="theme-toggle-btn" data-mode="dark" title="Dark/Light">${document.body.classList.contains('theme-dark') ? '☀️' : '🌙'}</button>
-        <button type="button" class="theme-toggle-btn" data-mode="bright" title="Brightness">${document.body.classList.contains('theme-high-contrast') ? '🔆' : '🔅'}</button>
-        <button type="button" class="theme-toggle-btn" data-mode="font" title="Font Size">${document.body.classList.contains('theme-large-font') ? 'A' : 'A'}</button>
+    const presetsHTML = PRESETS.map(c =>
+      `<button type="button" class="stp-preset${cur===c?' active':''}" data-color="${c}"
+        style="background:${c}" title="${c}"></button>`
+    ).join('');
+
+    el.innerHTML = `<div class="stp-panel">
+      <div class="stp-section">
+        <div class="stp-section-label">Accent colour</div>
+        <div class="stp-presets">
+          ${presetsHTML}
+          <label class="stp-wheel-label" title="Custom colour">🎨
+            <input type="color" class="stp-wheel" value="${cur}">
+          </label>
+        </div>
       </div>
-    `;
+      <div class="stp-divider"></div>
+      <div class="stp-row-toggle">
+        <span class="stp-row-label">${isDark ? '☀️' : '🌙'} Dark mode</span>
+        <button type="button" class="stp-toggle${isDark ? ' on' : ''}" data-action="dark">
+          <span class="stp-toggle-knob"></span>
+        </button>
+      </div>
+      <div class="stp-divider"></div>
+      <div class="stp-row-slider">
+        <div class="stp-slider-head">
+          <span class="stp-row-label">☀️ Brightness</span>
+          <span class="stp-slider-val" id="stp-br-val-${containerId}">${brightness}%</span>
+        </div>
+        <input type="range" class="stp-slider" data-action="brightness"
+          min="40" max="150" step="5" value="${brightness}">
+      </div>
+      <div class="stp-row-slider">
+        <div class="stp-slider-head">
+          <span class="stp-row-label">Aa Font size</span>
+          <span class="stp-slider-val" id="stp-fs-val-${containerId}">${fontSize}px</span>
+        </div>
+        <input type="range" class="stp-slider" data-action="fontsize"
+          min="11" max="22" step="1" value="${fontSize}">
+      </div>
+    </div>`;
 
-    // Add event listeners for color input
-    const colorInput = el.querySelector('.theme-color-input');
-    colorInput?.addEventListener('input', (e) => {
-      applyColor(e.target.value);
-      window.renderThemePicker(containerId);
-    });
-
-    // Add event listeners for toggle buttons
-    el.querySelectorAll('.theme-toggle-btn').forEach(btn => {
-      btn.addEventListener('click', function(e) {
+    // Preset swatches
+    el.querySelectorAll('.stp-preset').forEach(btn => {
+      btn.addEventListener('click', e => {
         e.stopPropagation();
-        const mode = this.dataset.mode;
-        
-        if (mode === 'dark') {
-          window.toggleBackgroundMode();
-        } else if (mode === 'bright') {
-          window.toggleBrightness();
-        } else if (mode === 'font') {
-          window.toggleFontSize();
-        }
-        
-        // Update all toggle button icons without re-rendering the whole picker
-        document.querySelectorAll('.theme-toggle-btn').forEach(b => {
-          if (b.dataset.mode === 'dark') b.textContent = document.body.classList.contains('theme-dark') ? '☀️' : '🌙';
-          if (b.dataset.mode === 'bright') b.textContent = document.body.classList.contains('theme-high-contrast') ? '🔆' : '🔅';
-          if (b.dataset.mode === 'font') b.textContent = document.body.classList.contains('theme-large-font') ? 'A' : 'A';
-        });
-      });
-    });
-
-    el.querySelectorAll('.theme-color-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
         applyColor(btn.dataset.color);
         window.renderThemePicker(containerId);
       });
     });
+
+    // Colour wheel
+    const wheel = el.querySelector('.stp-wheel');
+    wheel.addEventListener('input',  () => applyColor(wheel.value));
+    wheel.addEventListener('change', () => { applyColor(wheel.value); window.renderThemePicker(containerId); });
+    wheel.addEventListener('click',  e => e.stopPropagation());
+    el.querySelector('.stp-wheel-label').addEventListener('click', e => {
+      e.stopPropagation();
+      wheel.click();
+    });
+
+    // Dark mode toggle
+    el.querySelector('[data-action="dark"]').addEventListener('click', e => {
+      e.stopPropagation();
+      window.toggleBackgroundMode();
+      window.renderThemePicker(containerId);
+    });
+
+    // Sliders
+    el.querySelectorAll('.stp-slider').forEach(slider => {
+      slider.addEventListener('input', e => {
+        e.stopPropagation();
+        const action = slider.dataset.action;
+        if (action === 'brightness') {
+          const val = parseInt(slider.value) / 100;
+          window.applyBrightness(val);
+          const valEl = document.getElementById('stp-br-val-' + containerId);
+          if (valEl) valEl.textContent = slider.value + '%';
+        } else if (action === 'fontsize') {
+          window.applyFontSize(slider.value);
+          const valEl = document.getElementById('stp-fs-val-' + containerId);
+          if (valEl) valEl.textContent = slider.value + 'px';
+        }
+      });
+      slider.addEventListener('click', e => e.stopPropagation());
+    });
   };
 
-  // Add simple dark/light toggle function
-  window.toggleBackgroundMode = function() {
-    const body = document.body;
-    const isDark = body.classList.contains('theme-dark');
-    
-    if (isDark) {
-      // Switch to light
-      body.classList.remove('theme-dark');
-      document.documentElement.style.setProperty('--t-bg', '#f8fafc');
-      document.documentElement.style.setProperty('--t-text', '#1e293b');
-      document.documentElement.style.setProperty('--t-text-light', '#64748b');
-      document.documentElement.style.setProperty('--t-border', '#e2e8f0');
-      document.documentElement.style.setProperty('--t-bg-hover', '#f1f5f9');
-    } else {
-      // Switch to dark
-      body.classList.add('theme-dark');
-      document.documentElement.style.setProperty('--t-bg', '#0f172a');
-      document.documentElement.style.setProperty('--t-text', '#f1f5f9');
-      document.documentElement.style.setProperty('--t-text-light', '#94a3b8');
-      document.documentElement.style.setProperty('--t-border', '#334155');
-      document.documentElement.style.setProperty('--t-bg-hover', '#1e293b');
+  function restoreThemeModePrefs() {
+    try {
+      applyColor(loadColor());
+      if (localStorage.getItem('orion_theme_mode') === 'dark') {
+        document.body.classList.add('theme-dark');
+        const root = document.documentElement;
+        root.style.setProperty('--t-bg',        '#0f172a');
+        root.style.setProperty('--t-text',      '#f1f5f9');
+        root.style.setProperty('--t-text-light','#94a3b8');
+        root.style.setProperty('--t-border',    '#334155');
+        root.style.setProperty('--t-bg-hover',  '#1e293b');
+      }
+      const brightness = parseFloat(localStorage.getItem('orion_brightness') || '1');
+      if (brightness !== 1) window.applyBrightness(brightness);
+      const fontSize = parseInt(localStorage.getItem('orion_font_size') || '16');
+      if (fontSize !== 16) window.applyFontSize(fontSize);
+    } catch (_) {
+      // Theme prefs are cosmetic; ignore storage failures.
     }
-  };
-
-  // Toggle brightness (high contrast mode)
-  window.toggleBrightness = function() {
-    const body = document.body;
-    const isHighContrast = body.classList.contains('theme-high-contrast');
-    
-    if (isHighContrast) {
-      body.classList.remove('theme-high-contrast');
-      document.documentElement.style.setProperty('--t-bg', document.body.classList.contains('theme-dark') ? '#0f172a' : '#f8fafc');
-      document.documentElement.style.setProperty('--t-text', document.body.classList.contains('theme-dark') ? '#f1f5f9' : '#1e293b');
-    } else {
-      body.classList.add('theme-high-contrast');
-      document.documentElement.style.setProperty('--t-bg', '#000000');
-      document.documentElement.style.setProperty('--t-text', '#ffffff');
-    }
-  };
-
-  // Toggle font size (large text)
-  window.toggleFontSize = function() {
-    const body = document.body;
-    const isLargeFont = body.classList.contains('theme-large-font');
-    
-    if (isLargeFont) {
-      body.classList.remove('theme-large-font');
-      document.documentElement.style.removeProperty('--t-font-scale');
-    } else {
-      body.classList.add('theme-large-font');
-      document.documentElement.style.setProperty('--t-font-scale', '1.15');
-    }
-  };
+  }
 
     /* ────────────────────────────────────────────────────────────
      SELECTOR MEMORY
@@ -385,6 +415,12 @@
   /* ────────────────────────────────────────────────────────────
      WRAP switchTab — run lightweight tasks after every switch
   ──────────────────────────────────────────────────────────── */
+  function _markHasTabHero() {
+    document.querySelectorAll('.section, .tab-content').forEach(el => {
+      el.classList.toggle('has-tab-hero', el.querySelector('.tab-hero') !== null);
+    });
+  }
+
   function wrapSwitchTab() {
     if (!window.switchTab || window.switchTab._w) return;
     const orig = window.switchTab;
@@ -395,7 +431,8 @@
         attachSelectors();
         patchToggleIneligible();
         injectHeaderPicker();
-          }, 80);
+        _markHasTabHero();
+      }, 80);
     };
     window.switchTab._w = true;
   }
@@ -411,7 +448,7 @@
     attachSelectors();
     patchToggleIneligible();
     wrapSwitchTab();
-  
+    _markHasTabHero();
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
@@ -425,134 +462,6 @@
     wrapSwitchTab(); injectHeaderPicker();
     if (++n > 12) clearInterval(t);
   }, 500);
-
-  function computeSpeakerRankings(categoryFilter) {
-    const state  = window.state;
-    if (!state) return [];
-    const teams  = state.teams  || [];
-    const rounds = state.rounds || [];
-
-    // Build speaker map: speakerId → { name, teamName, category, scores[] }
-    const speakers = new Map();
-
-    teams.forEach(team => {
-      (team.speakers || []).forEach(spk => {
-        if (!spk.id) return;
-        speakers.set(String(spk.id), {
-          id:       spk.id,
-          name:     spk.name || '?',
-          teamName: team.name || '?',
-          teamId:   team.id,
-          category: team.category || spk.category || null,
-          scores:   [],
-          replyScores: []
-        });
-      });
-    });
-
-    rounds.forEach(round => {
-      if (round.blinded) return;          // respect blind rounds
-      (round.debates || []).forEach(debate => {
-        if (!debate.entered) return;
-        ['gov','opp'].forEach(side => {
-          const res = debate[`${side}Results`];
-          if (!res) return;
-          (res.substantive || []).forEach(s => {
-            const spk = speakers.get(String(s.speakerId));
-            if (spk) spk.scores.push(s.score);
-          });
-          if (res.reply?.speakerId) {
-            const spk = speakers.get(String(res.reply.speakerId));
-            if (spk) spk.replyScores.push(res.reply.score);
-          }
-        });
-      });
-    });
-
-    let list = [...speakers.values()]
-      .filter(s => s.scores.length > 0);
-
-    if (categoryFilter && categoryFilter !== 'all') {
-      list = list.filter(s => (s.category || 'Uncategorised') === categoryFilter);
-    }
-
-    list.forEach(s => {
-      s.total = s.scores.reduce((a,b) => a+b, 0);
-      s.avg   = s.scores.length ? (s.total / s.scores.length) : 0;
-      s.replyTotal = s.replyScores.reduce((a,b) => a+b, 0);
-    });
-
-    list.sort((a,b) => b.total - a.total || b.avg - a.avg);
-    list.forEach((s,i) => { s.rank = i + 1; });
-    return list;
-  }
-
-  function getAllCategories() {
-    const state = window.state;
-    if (!state) return [];
-    const cats = new Set();
-    (state.teams || []).forEach(t => {
-      const cat = t.category || null;
-      if (cat) cats.add(cat);
-      (t.speakers || []).forEach(s => { if (s.category) cats.add(s.category); });
-    });
-    return [...cats];
-  }
-
-  let _domat_cat = 'all';
-
-  window.renderSpeakerDomat = function(containerId, categoryFilter) {
-    const el = containerId ? document.getElementById(containerId) : null;
-    if (!el) return;
-    if (categoryFilter !== undefined) _domat_cat = categoryFilter;
-    const cat = _domat_cat;
-
-    const cats = getAllCategories();
-    const hasCats = cats.length > 0;
-    const isPublic = !window.state?.auth?.currentUser || window.state.auth.currentUser.role === 'guest';
-
-    // Category tab bar
-    const tabBar = hasCats ? `
-      <div class="spk-cat-tabs">
-        <button class="spk-cat-tab ${cat==='all'?'active':''}" onclick="window.renderSpeakerDomat('${containerId}','all')">All Speakers</button>
-        ${cats.map(c => `<button class="spk-cat-tab ${cat===c?'active':''}" onclick="window.renderSpeakerDomat('${containerId}','${c.replace(/'/g,"\\'")}')">🏷 ${c}</button>`).join('')}
-      </div>` : '';
-
-    const speakers = computeSpeakerRankings(cat === 'all' ? null : cat);
-    if (speakers.length === 0) {
-      el.innerHTML = tabBar + `<div class="adm-empty" style="padding:40px 0;text-align:center;color:#94a3b8;">No speaker scores entered yet.</div>`;
-      return;
-    }
-
-    const cards = speakers.map(s => {
-      const rankClass = s.rank <= 3 ? `spk-domat-rank--${s.rank}` : 'spk-domat-rank--n';
-      const medal = s.rank === 1 ? '🥇' : s.rank === 2 ? '🥈' : s.rank === 3 ? '🥉' : s.rank;
-      return `
-        <div class="spk-domat-card">
-          <div class="spk-domat-rank ${rankClass}">${medal}</div>
-          <div class="spk-domat-info">
-            <div class="spk-domat-name">${escHTML(s.name)}</div>
-            <div class="spk-domat-team">${escHTML(s.teamName)}${s.category ? ` · <em>${escHTML(s.category)}</em>` : ''}</div>
-          </div>
-          <div class="spk-domat-scores">
-            <div class="spk-domat-total">${s.total.toFixed(1)}</div>
-            <div class="spk-domat-avg">avg ${s.avg.toFixed(1)}</div>
-          </div>
-        </div>`;
-    }).join('');
-
-    el.innerHTML = tabBar + `<div class="spk-domat-grid">${cards}</div>`;
-  };
-
-  function escHTML(str) {
-    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-  }
-
-  /* Auto-render if the domat container already exists in DOM */
-  function tryAutoDomat() {
-    const el = document.getElementById('spk-domat-body');
-    if (el) window.renderSpeakerDomat('spk-domat-body');
-  }
 
   function patchFilterCounts() {
     const role = window.state?.auth?.currentUser?.role || 'guest';
@@ -577,7 +486,6 @@
 
   // ── Extend init and switchTab hooks ─────────────────────────
   function initEnhancements() {
-    tryAutoDomat();
     patchFilterCounts();
   }
 
@@ -585,10 +493,9 @@
   else initEnhancements();
   window.addEventListener('load', initEnhancements);
 
-  // Poll for domat container
+  // Poll for filter count visibility
   let _dm = 0;
   const _dmt = setInterval(() => {
-    tryAutoDomat();
     patchFilterCounts();
     if (++_dm > 10) clearInterval(_dmt);
   }, 600);
@@ -783,30 +690,6 @@
   }
 
   /* ─────────────────────────────────────────────────────────────
-     SPEAKER SCORE RANGE — tabmaster-configurable min/max
-  ───────────────────────────────────────────────────────────── */
-  window.getSpeakerScoreRange = function() {
-    var tid  = window.state && window.state.activeTournamentId;
-    var tour = tid && window.state.tournaments && window.state.tournaments[tid];
-    return {
-      subMin: tour ? (tour.scoreRangeSubMin !== undefined ? tour.scoreRangeSubMin : 60) : 60,
-      subMax: tour ? (tour.scoreRangeSubMax !== undefined ? tour.scoreRangeSubMax : 80) : 80,
-      repMin: tour ? (tour.scoreRangeRepMin !== undefined ? tour.scoreRangeRepMin : 30) : 30,
-      repMax: tour ? (tour.scoreRangeRepMax !== undefined ? tour.scoreRangeRepMax : 40) : 40,
-    };
-  };
-  window.setSpeakerScoreRange = function(subMin, subMax, repMin, repMax) {
-    var tid = window.state && window.state.activeTournamentId;
-    if (!tid || !window.state.tournaments || !window.state.tournaments[tid]) return;
-    Object.assign(window.state.tournaments[tid], {
-      scoreRangeSubMin: subMin, scoreRangeSubMax: subMax,
-      scoreRangeRepMin: repMin, scoreRangeRepMax: repMax
-    });
-    window.save && window.save();
-    window.showNotification && window.showNotification('Score ranges updated', 'success');
-  };
-
-  /* ─────────────────────────────────────────────────────────────
      ENHANCED BREAK SIZES (partial breaks, round of 128, etc.)
   ───────────────────────────────────────────────────────────── */
   function _upgradeBreakDropdown() {
@@ -858,6 +741,7 @@
   ───────────────────────────────────────────────────────────── */
   var _initDone = false;
   function _runInits() {
+    restoreThemeModePrefs();
     if (!_initDone && window.switchTab && window.closeAllModals) {
       _applyPatchClose();
       // _applyPatchLogin removed — caused infinite recursion loop

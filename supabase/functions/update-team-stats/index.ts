@@ -21,6 +21,16 @@ serve(async (req: Request) => {
     const json = (body: object, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...headers, 'Content-Type': 'application/json' } });
 
     try {
+        const auth = req.headers.get('Authorization');
+        if (!auth) return json({ error: 'Unauthorized' }, 401);
+        const callerSb = createClient(
+            Deno.env.get('SUPABASE_URL')!,
+            Deno.env.get('SUPABASE_ANON_KEY')!,
+            { global: { headers: { Authorization: auth } } }
+        );
+        const { data: { user: caller } } = await callerSb.auth.getUser();
+        if (!caller || (caller.app_metadata as any)?.role !== 'admin') return json({ error: 'Forbidden' }, 403);
+
         const { debateId, tournamentId } = await req.json();
         if (!debateId || !tournamentId) return json({ error: 'debateId and tournamentId required' }, 400);
 

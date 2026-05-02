@@ -5,6 +5,7 @@
 
 import { state, save } from './state.js';
 import { showNotification, escapeHTML } from './utils.js';
+import { buildTeamMap } from './maps.js';
 
 // ============================================
 // URL TOKEN MANAGEMENT
@@ -173,14 +174,15 @@ function validateToken(token) {
 // Sync judge assignments with rounds
 function syncJudgeAssignments(judgeId) {
     const assignments = [];
-    
+    const teamById = buildTeamMap(state.teams || []);
+
     // Find all rounds where this judge is assigned
     (state.rounds || []).forEach(round => {
         (round.debates || []).forEach((debate, idx) => {
             const panelMember = (debate.panel || []).find(p => p.id === judgeId);
             if (panelMember) {
-                const gov = state.teams.find(t => t.id === debate.gov);
-                const opp = state.teams.find(t => t.id === debate.opp);
+                const gov = teamById.get(String(debate.gov));
+                const opp = teamById.get(String(debate.opp));
                 
                 assignments.push({
                     roundId: round.id,
@@ -224,14 +226,15 @@ function getJudgeAssignments(judgeId) {
 // Sync team assignments with rounds
 function syncTeamAssignments(teamId) {
     const assignments = [];
-    
+    const teamById = buildTeamMap(state.teams || []);
+
     // Find all rounds where this team is debating
     (state.rounds || []).forEach(round => {
         (round.debates || []).forEach((debate, idx) => {
             let side = null;
             let teamResults = null;
             let opponentResults = null;
-            
+
             if (debate.gov === teamId) {
                 side = 'Government';
                 teamResults = debate.govResults;
@@ -241,14 +244,14 @@ function syncTeamAssignments(teamId) {
                 teamResults = debate.oppResults;
                 opponentResults = debate.govResults;
             }
-            
+
             if (side) {
-                const opponent = state.teams.find(t => t.id === (side === 'Government' ? debate.opp : debate.gov));
+                const opponent = teamById.get(String(side === 'Government' ? debate.opp : debate.gov));
                 const opponentName = opponent?.name || 'Unknown';
                 const opponentCode = opponent?.code || '';
-                
+
                 // Get team's speakers for this round
-                const teamObj = state.teams.find(t => t.id === teamId);
+                const teamObj = teamById.get(String(teamId));
                 const speakers = teamObj?.speakers || [];
                 
                 // Find which speakers spoke in this round

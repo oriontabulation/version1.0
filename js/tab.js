@@ -29,7 +29,7 @@ const _TAB_META = {
     break:           { icon: '🏆', label: 'Break',            blurb: 'Teams advancing to the knockout stage.' },
     knockout:        { icon: '🔥', label: 'Knockout',         blurb: 'Knockout bracket and elimination rounds.' },
     motions:         { icon: '📋', label: 'Motions',          blurb: 'All round motions and topics.' },
-    portal:          { icon: '📝', label: 'Judge Portal',     blurb: 'Submit and manage ballots for your assigned debates.' },
+    portal:          { icon: '📝', label: 'Portal',     blurb: 'Access judge assignments or team judge feedback.' },
     'admin-dashboard': { icon: '⚙️', label: 'Admin Dashboard', blurb: 'Tournament administration — restricted to admins.' },
 };
 
@@ -58,6 +58,51 @@ function updateNavDropdowns() {
     _rebuildSpeakersNav(cats);
     _rebuildStandingsNav(cats);
     _rebuildOutroundsNav(cats);
+}
+
+function _canShowNavTab(tabId) {
+    const sess = state.auth;
+    const isAuth = !!(sess?.isAuthenticated && sess?.currentUser);
+    const role = sess?.currentUser?.role || 'public';
+    const isAdmin = role === 'admin';
+
+    if (tabId === 'public') return true;
+    if (tabId === 'profile') return isAuth;
+    if (tabId === 'admin-dashboard') return isAdmin;
+    if (['judges', 'import'].includes(tabId)) return isAdmin;
+    if (tabId === 'teams') return isAdmin;
+    if (tabId === 'portal') return isAdmin || role === 'judge' || role === 'team';
+
+    const publishedTabs = ['draw', 'standings', 'speakers', 'break', 'knockout', 'motions', 'results'];
+    if (publishedTabs.includes(tabId)) return true;
+
+    return true;
+}
+
+function _syncNavVisibility() {
+    // Pass 1: show/hide each item based on role/publish state
+    document.querySelectorAll('[data-tab]').forEach(btn => {
+        const tabId = btn.dataset.tab;
+        const visible = _canShowNavTab(tabId);
+        // Standalone triggers (data-tab on the trigger itself) → show/hide entire group
+        if (btn.classList.contains('dropdown-trigger')) {
+            const group = btn.closest('.dropdown-group');
+            if (group) group.style.display = visible ? '' : 'none';
+        } else {
+            btn.style.display = visible ? '' : 'none';
+        }
+    });
+
+    // Pass 2: hide dropdown groups whose trigger has no data-tab (Outrounds, Results, More…)
+    // if every item inside is hidden — prevents phantom empty dropdowns
+    document.querySelectorAll('.dropdown-group').forEach(group => {
+        const trigger = group.querySelector(':scope > .dropdown-trigger');
+        if (!trigger || trigger.dataset.tab) return; // already handled in pass 1
+        const items = group.querySelectorAll('.dropdown-item[data-tab]');
+        if (!items.length) return;
+        const anyVisible = Array.from(items).some(item => item.style.display !== 'none');
+        group.style.display = anyVisible ? '' : 'none';
+    });
 }
 
 // ── Shared category nav builder ────────────────────────────────────────────────
@@ -104,6 +149,14 @@ function _rebuildOutroundsNav(cats) {
 
 window.switchCategoryTab  = switchCategoryTab;
 window.updateNavDropdowns = updateNavDropdowns;
+
+function _roundNumber(round, rounds = state.rounds || []) {
+    if (!round) return '?';
+    const direct = Number(round.round_number);
+    if (Number.isFinite(direct) && direct > 0) return direct;
+    const idx = rounds.findIndex(r => String(r?.id) === String(round.id));
+    return idx >= 0 ? idx + 1 : '?';
+}
 
 
 
@@ -161,6 +214,7 @@ function switchTab(tabId) {
     const sess    = state.auth;
     const isAdmin = sess?.currentUser?.role === 'admin';
     const isJudge = sess?.currentUser?.role === 'judge';
+    const isTeam  = sess?.currentUser?.role === 'team';
     const isAuth  = !!(sess?.isAuthenticated && sess?.currentUser);
 
     let lockedReason = null;
@@ -174,8 +228,7 @@ function switchTab(tabId) {
 
     // Teams tab — admin sees all, team role sees own team, others are blocked
     if (!lockedReason && tabId === 'teams') {
-        const role = sess?.currentUser?.role;
-        if (!isAdmin && role !== 'team') {
+        if (!isAdmin) {
             lockedReason = isAuth ? 'admin-only' : 'login-required';
         }
     }
@@ -189,7 +242,7 @@ function switchTab(tabId) {
     //                     the admin has flipped the public publish toggle)
     //  • Guest / unauth → only visible when the admin has published the tab.
     const publishedTabs = ['draw', 'standings', 'speakers', 'break', 'knockout', 'motions', 'results'];
-    if (!lockedReason && publishedTabs.includes(tabId) && !isAdmin && !isAuth) {
+    if (!lockedReason && publishedTabs.includes(tabId) && !isAdmin && !isJudge) {
         const published = (state.publish || {})[tabId];
         if (!published) {
             lockedReason = 'not-published';
@@ -197,7 +250,7 @@ function switchTab(tabId) {
     }
 
     // Judge portal — requires judge or admin login
-    if (tabId === 'portal' && !isAdmin && !isJudge) {
+    if (tabId === 'portal' && !isAdmin && !isJudge && !isTeam) {
         lockedReason = isAuth ? 'admin-only' : 'login-required';
     }
     // ─────────────────────────────────────────────────────────────────────────
@@ -209,6 +262,12 @@ function switchTab(tabId) {
     const publicNav  = document.querySelector('.dropdown-menu-container');
     if (siteHeader) siteHeader.classList.toggle('nav--hidden', hideChrome);
     if (publicNav)  publicNav.classList.toggle('nav--hidden', hideChrome);
+
+    // :has() fallback classes for Firefox < 121
+    const isPublicTab = tabId === 'public' && !lockedReason;
+    const mainEl = document.querySelector('main');
+    if (mainEl) mainEl.classList.toggle('public-tab-active', isPublicTab);
+    // adm-mode is also set in admin.js._updateMainHeaderForAdmin — both paths converge correctly
 
     // Hide all tab contents + deactivate buttons
     document.querySelectorAll('.tab-content').forEach(tab => {
@@ -307,6 +366,7 @@ function switchTab(tabId) {
 function updateTabsForRole() {
     const isAuth = state.auth?.isAuthenticated && state.auth?.currentUser;
     const role = state.auth?.currentUser?.role || 'public';
+    _syncNavVisibility();
 
     // ── FIX: Move tabNames definition to the top of the function ──
     const tabNames = {
@@ -353,7 +413,10 @@ function updateTabsForRole() {
     };
 
     const tabsContainer = document.querySelector('.tabs');
-    if (!tabsContainer) return;
+    if (!tabsContainer) {
+        updateNavDropdowns();
+        return;
+    }
     tabsContainer.innerHTML = '';
 
     const tabOrder = ['public', 'teams', 'judges', 'standings', 'speakers', 'motions', 'results', 'draw', 'break', 'knockout', 'feedback', 'portal', 'import', 'admin-dashboard'];
@@ -361,7 +424,7 @@ function updateTabsForRole() {
     const mainContent = document.querySelector('main');
 
     tabOrder.forEach(id => {
-        if (tabs[id]) {
+        if (tabs[id] && _canShowNavTab(id)) {
             const btn = document.createElement('button');
             btn.className = 'tab-btn';
             btn.textContent = tabNames[id];
@@ -413,7 +476,7 @@ function renderMotions() {
     const container = document.getElementById('motions');
     if (!container) return;
 
-    const allRounds = [...(state.rounds || [])].sort((a, b) => (b.id || 0) - (a.id || 0));
+    const allRounds = [...(state.rounds || [])].sort((a, b) => _roundNumber(b) - _roundNumber(a));
 
     let html = `
         <div class="section">
@@ -434,7 +497,7 @@ function renderMotions() {
     } else {
         allRounds.forEach(round => {
             if (!round) return;
-            const roundId   = round.id || '?';
+            const roundId   = _roundNumber(round);
             const roundType = round.type || 'prelim';
             const debates   = round.debates || [];
             const isBlinded = round.blinded || false;
@@ -487,7 +550,7 @@ function renderStandings() {
 
     const allRounds = [...(state.rounds || [])]
         .filter(r => r && r.type === 'prelim')
-        .sort((a, b) => (a.id || 0) - (b.id || 0));
+        .sort((a, b) => _roundNumber(a) - _roundNumber(b));
 
     let ranked = [...(state.teams || [])].sort((a, b) =>
         ((b.wins || 0) - (a.wins || 0)) ||
@@ -582,7 +645,7 @@ function buildStandingsTable(ranked, allRounds) {
     `;
 
     allRounds.forEach(round => {
-        html += `<th class="th-center">R${round.id}</th>`;
+        html += `<th class="th-center">R${_roundNumber(round, allRounds)}</th>`;
     });
 
     html += `
@@ -693,7 +756,7 @@ function renderResults() {
     const container = document.getElementById('results');
     if (!container) return;
 
-    const allRounds  = [...(state.rounds || [])].sort((a, b) => (b.id || 0) - (a.id || 0));
+    const allRounds  = [...(state.rounds || [])].sort((a, b) => _roundNumber(b) - _roundNumber(a));
     const hasResults = allRounds.some(r => r.debates?.some(d => d.entered));
 
     let html = `
@@ -732,7 +795,7 @@ function renderResults() {
                 <div class="result-card">
                     <div class="result-card__header">
                         <div>
-                            <h2 class="u-mt-0 u-mb-sm">Round ${round.id} Results</h2>
+                            <h2 class="u-mt-0 u-mb-sm">Round ${_roundNumber(round, allRounds)} Results</h2>
                             <p class="u-text-muted u-mb-0">${completedDebates.length}/${round.debates.length} debates completed</p>
                         </div>
                         ${isBlinded ? '<span class="status-blinded">🔒 BLINDED</span>' : ''}
@@ -1004,3 +1067,4 @@ export {
     renderBreakDisplay,
     switchCategoryTab,
 };
+

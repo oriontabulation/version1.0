@@ -8,17 +8,34 @@
 //   - DOM via el() factory — no user data in innerHTML
 // ============================================================
 
-import { state, addJudgeToCache, removeJudgeFromCache, patchJudge } from './state.js';
+import { state, activeTournament, addJudgeToCache, removeJudgeFromCache, patchJudge } from './state.js';
 import { api } from './api.js';
 import { showNotification, escapeHTML, updatePublicCounts } from './utils.js';
 import { el, emptyState } from './ui/components.js';
 import { registerActions } from './router.js';
 import { getJudgeAssignments, buildTeamMap } from './maps.js';
-import { renderSmartList, VIRTUALIZATION_THRESHOLD } from './ui/virtual-list.js';
 
 // ── Permission helpers ────────────────────────────────────────────────────────
 function _isAdmin() { return !!(state.auth?.isAuthenticated && state.auth?.currentUser?.role === 'admin'); }
 function _myJudgeId() { return state.auth?.currentUser?.associatedId ?? null; }
+
+function _requireActiveTournament() {
+    const tournament = activeTournament();
+    if (!tournament?.id) {
+        showNotification('Create or select a tournament before managing judges.', 'error');
+        window.switchTab?.('admin-dashboard');
+        return null;
+    }
+    return tournament;
+}
+
+async function _reloadJudgesForTournament(tournamentId) {
+    const judges = await api.getJudges(tournamentId);
+    if (String(state.activeTournamentId) === String(tournamentId)) {
+        state.judges = judges;
+    }
+    return judges;
+}
 
 // ── renderJudges ──────────────────────────────────────────────────────────────
 function renderJudges() {
@@ -61,30 +78,53 @@ function _lockedView() {
     );
 }
 
+let _judgeRoleFilter = 'all';
+const JUDGE_ROLES = [
+    { id: 'chair', label: 'Chair' },
+    { id: 'panellist', label: 'Panel/Wing' },
+    { id: 'trainee', label: 'Trainee' },
+];
+
+function _roleLabel(role) {
+    if (role === 'chair') return 'Chair';
+    if (role === 'trainee') return 'Trainee';
+    return 'Panel/Wing';
+}
+
 function _adminScaffold() {
     const teams = state.teams || [];
     const frag = document.createDocumentFragment();
 
     // Add judge form
     const formSec = document.createElement('div');
-    formSec.className = 'section';
-    formSec.innerHTML = `<h2>Add New Judge</h2>
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:15px;margin-bottom:20px;">
-            <input type="text"  id="judge-name"  placeholder="Judge Name"               style="padding:12px;">
-            <input type="email" id="judge-email" placeholder="Email (for private URL)"   style="padding:12px;">
-            <button class="btn btn-primary" style="padding:12px;" data-action="addJudge">Add Judge</button>
+    formSec.className = 'section judge-admin-panel';
+    formSec.innerHTML = `<div class="judge-panel-head">
+            <div>
+                <h2>Add Judge</h2>
+                <p>Names, emails, and conflicts stay together in one compact roster.</p>
+            </div>
+            <span>${(state.judges || []).length} judge${(state.judges || []).length === 1 ? '' : 's'}</span>
+        </div>
+        <div class="judge-add-grid">
+            <input type="text"  id="judge-name"  placeholder="Judge name">
+            <input type="email" id="judge-email" placeholder="Email optional">
+            <select id="judge-role" aria-label="Judge role">
+                <option value="panellist">Panel/Wing</option>
+                <option value="chair">Chair</option>
+                <option value="trainee">Trainee</option>
+            </select>
+            <button class="btn btn-primary" data-action="addJudge">Add Judge</button>
         </div>`;
 
     // Conflict checkboxes
     if (teams.length > 0) {
         const affilDiv = document.createElement('div');
-        affilDiv.style.cssText = 'margin-top:10px;padding:15px;background:#f1f5f9;border-radius:8px;';
+        affilDiv.className = 'judge-conflict-panel';
         const h3 = document.createElement('h3');
-        h3.style.margin = '0 0 10px';
         h3.textContent = 'Conflict Affiliations';
         affilDiv.appendChild(h3);
         const scroll = document.createElement('div');
-        scroll.style.cssText = 'max-height:150px;overflow-y:auto;';
+        scroll.className = 'judge-conflict-list';
         for (const team of teams) {
             const lbl = document.createElement('label');
             lbl.className = 'custom-checkbox-label';
@@ -106,12 +146,32 @@ function _adminScaffold() {
 
     // Judge list section
     const listSec = document.createElement('div');
-    listSec.className = 'section';
+    listSec.className = 'section judge-list-section';
+    const listHead = document.createElement('div');
+    listHead.className = 'judge-list-head';
     const listH = document.createElement('h2');
-    listH.textContent = 'Judges List';
+    listH.textContent = 'Judges';
+    const filters = document.createElement('div');
+    filters.className = 'judge-role-tabs';
+    [
+        { id: 'all', label: 'All' },
+        { id: 'ratings', label: 'Ratings' },
+        { id: 'chair', label: 'Chair' },
+        { id: 'panellist', label: 'Panel/Wing' },
+        { id: 'trainee', label: 'Trainee' },
+    ].forEach(role => {
+        filters.appendChild(el('button', {
+            type: 'button',
+            class: `judge-role-tab ${_judgeRoleFilter === role.id ? 'active' : ''}`,
+            'data-action': 'filterJudgesByRole',
+            'data-args': JSON.stringify([role.id])
+        }, role.label));
+    });
+    listHead.appendChild(listH);
+    listHead.appendChild(filters);
     const listEl = document.createElement('div');
     listEl.id = 'judges-list';
-    listSec.appendChild(listH);
+    listSec.appendChild(listHead);
     listSec.appendChild(listEl);
     frag.appendChild(listSec);
 
@@ -158,19 +218,19 @@ function _judgeProfileSection() {
 }
 
 // ── displayJudges ─────────────────────────────────────────────────────────────
-let _judgesVirtualList = null;
+let _judgeEditModal = null;
+let _judgeEditTeamSignature = '';
 
 function displayJudges() {
     const list = document.getElementById('judges-list');
     if (!list) return;
 
-    const judges = state.judges || [];
+    let judges = [...(state.judges || [])];
     const isAdmin = _isAdmin();
-
-    // Clean up existing virtual list
-    if (_judgesVirtualList) {
-        _judgesVirtualList.destroy();
-        _judgesVirtualList = null;
+    if (isAdmin && _judgeRoleFilter === 'ratings') {
+        judges.sort((a, b) => Number(b.rating || 0) - Number(a.rating || 0) || String(a.name || '').localeCompare(String(b.name || '')));
+    } else if (isAdmin && _judgeRoleFilter !== 'all') {
+        judges = judges.filter(j => (j.role || 'panellist') === _judgeRoleFilter);
     }
 
     list.innerHTML = '';
@@ -179,80 +239,65 @@ function displayJudges() {
         return;
     }
 
-    // Use virtual list for large datasets
-    if (judges.length >= VIRTUALIZATION_THRESHOLD) {
-        // Set a fixed height for the container to enable scrolling
-        list.style.height = '500px';
-        list.style.overflow = 'auto';
-
-        _judgesVirtualList = renderSmartList({
-            container: list,
-            items: judges,
-            itemHeight: 90, // Approximate card height
-            renderItem: (judge, index) => _buildJudgeCard(judge, isAdmin),
-            emptyMessage: 'Add your first judge above.'
-        });
-    } else {
-        // Use regular rendering for small lists
-        list.style.height = '';
-        list.style.overflow = '';
-        for (const judge of judges) {
-            list.appendChild(_buildJudgeCard(judge, isAdmin));
-        }
+    list.style.height = '';
+    list.style.overflow = 'visible';
+    for (const judge of judges) {
+        list.appendChild(_buildJudgeCard(judge, isAdmin));
     }
 }
 
-const _CARD = 'background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:24px;margin-bottom:20px;width:100%;box-sizing:border-box;';
-
 function _buildJudgeCard(judge, isAdmin) {
-    const card = el('div', { id: `judge-${judge.id}`, style: _CARD });
+    const card = el('div', { id: `judge-${judge.id}`, class: 'judge-card' });
 
-    const header = el('div', { style: 'display:flex;align-items:center;gap:12px;' });
+    const header = el('div', { class: 'judge-header' });
+    header.appendChild(el('div', { class: 'judge-avatar' }, (judge.name || '?')[0].toUpperCase()));
 
-    header.appendChild(el('div', {
-        style: 'width:40px;height:40px;border-radius:50%;background:linear-gradient(135deg,#667eea,#764ba2);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:16px;flex-shrink:0;'
-    }, (judge.name || '?')[0].toUpperCase()));
-
-    const info = el('div', { style: 'flex:1;min-width:0;' });
-    info.appendChild(el('div', { style: 'font-size:16px;font-weight:700;color:#1e293b;' }, judge.name || 'Unnamed'));
-    if (judge.email) {
-        info.appendChild(el('div', { style: 'font-size:13px;color:#64748b;margin-top:2px;' }, judge.email));
-    }
+    const info = el('div', { class: 'judge-info' });
+    const nameLine = el('div', { class: 'judge-card__identity' });
+    nameLine.appendChild(el('strong', {}, judge.name || 'Unnamed'));
+    nameLine.appendChild(el('span', { class: `judge-role-badge judge-role-badge--${judge.role || 'panellist'}` }, _roleLabel(judge.role)));
+    if (judge.rating) nameLine.appendChild(el('span', { class: 'judge-rating-badge' }, `${judge.rating} rating`));
+    info.appendChild(nameLine);
+    if (judge.email) info.appendChild(el('small', { class: 'judge-email' }, judge.email));
     header.appendChild(info);
-
-    if (isAdmin) {
-        const actions = el('div', { style: 'display:flex;gap:8px;margin-left:auto;flex-shrink:0;' });
-        actions.appendChild(el('button', {
-            style: 'padding:6px 14px;font-size:13px;border-radius:8px;border:1px solid #e2e8f0;background:#f8fafc;color:#374151;cursor:pointer;font-weight:500;',
-            'data-action': 'showEditJudge',
-            'data-args': JSON.stringify([judge.id])
-        }, '✏️ Edit'));
-        actions.appendChild(el('button', {
-            style: 'padding:6px 14px;font-size:13px;border-radius:8px;border:1px solid #fecaca;background:#fef2f2;color:#dc2626;cursor:pointer;font-weight:500;',
-            'data-action': 'deleteJudge',
-            'data-args': JSON.stringify([judge.id])
-        }, '🗑 Delete'));
-        header.appendChild(actions);
-    }
-
     card.appendChild(header);
 
     const conflicts = judge.judge_conflicts || [];
     if (conflicts.length > 0) {
-        const conflictRow = el('div', {
-            style: 'margin-top:14px;padding-top:14px;border-top:1px solid #e2e8f0;display:flex;flex-wrap:wrap;gap:6px;align-items:center;'
-        });
-        conflictRow.appendChild(el('span', { style: 'font-size:12px;color:#64748b;font-weight:600;' }, 'Conflicts:'));
+        const conflictRow = el('div', { class: 'judge-conflicts' });
+        conflictRow.appendChild(el('span', { class: 'judge-conflicts__label' }, 'Conflicts:'));
         const teamById = buildTeamMap(state.teams || []);
         for (const c of conflicts) {
             const team = teamById.get(String(c.team_id));
-            if (team) {
-                conflictRow.appendChild(el('span', {
-                    style: 'background:#fee2e2;color:#991b1b;padding:2px 10px;border-radius:12px;font-size:12px;font-weight:500;'
-                }, team.name));
-            }
+            if (team) conflictRow.appendChild(el('span', { class: 'conflict-chip' }, team.name));
         }
         card.appendChild(conflictRow);
+    }
+
+    if (isAdmin) {
+        const roleRow = el('div', { class: 'judge-role-toggle-row' });
+        for (const role of JUDGE_ROLES) {
+            roleRow.appendChild(el('button', {
+                type: 'button',
+                class: `judge-role-toggle ${((judge.role || 'panellist') === role.id) ? 'active' : ''}`,
+                'data-action': 'updateJudgeRole',
+                'data-args': JSON.stringify([judge.id, role.id])
+            }, role.label));
+        }
+        card.appendChild(roleRow);
+
+        const actions = el('div', { class: 'adm-card-actions-bordered' });
+        actions.appendChild(el('button', {
+            class: 'btn btn-secondary btn-sm',
+            'data-action': 'showEditJudge',
+            'data-args': JSON.stringify([judge.id])
+        }, '✏️ Edit'));
+        actions.appendChild(el('button', {
+            class: 'btn btn-danger btn-sm',
+            'data-action': 'deleteJudge',
+            'data-args': JSON.stringify([judge.id])
+        }, '🗑 Delete'));
+        card.appendChild(actions);
     }
 
     return card;
@@ -262,11 +307,14 @@ function _buildJudgeCard(judge, isAdmin) {
 async function addJudge() {
     if (!_isAdmin()) { showNotification('Admin access required', 'error'); return; }
 
-const name = document.getElementById('judge-name')?.value.trim();
+    const name = document.getElementById('judge-name')?.value.trim();
     const email = document.getElementById('judge-email')?.value.trim();
-    const tournId = state.activeTournamentId;
+    const role = document.getElementById('judge-role')?.value || 'panellist';
+    const tournament = _requireActiveTournament();
+    const tournId = tournament?.id;
 
     if (!name) { showNotification('Judge name required', 'error'); return; }
+    if (!tournId) return;
 
     const checkedAffils = [...document.querySelectorAll('.judge-affil:checked')].map(cb => cb.value);
 
@@ -274,15 +322,19 @@ const name = document.getElementById('judge-name')?.value.trim();
         const judge = await api.createJudge({
             tournamentId: tournId,
             name,
-            email
+            role,
+            email,
+            affiliations: checkedAffils
         });
         addJudgeToCache({ ...judge, judge_conflicts: checkedAffils.map(id => ({ team_id: id })) });
+        await _reloadJudgesForTournament(tournId);
         displayJudges();
         updatePublicCounts?.();
         showNotification(`Judge "${name}" added`, 'success');
 
         document.getElementById('judge-name').value = '';
         if (document.getElementById('judge-email')) document.getElementById('judge-email').value = '';
+        if (document.getElementById('judge-role')) document.getElementById('judge-role').value = 'panellist';
         document.querySelectorAll('.judge-affil').forEach(cb => cb.checked = false);
     } catch (e) {
         showNotification(`Failed to add judge: ${e.message}`, 'error');
@@ -305,6 +357,100 @@ async function deleteJudge(judgeId) {
 }
 
 // ── showEditJudge / saveEditJudge ─────────────────────────────────────────────
+function _ensureJudgeEditModal() {
+    if (_judgeEditModal) return _judgeEditModal;
+
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.id = 'judge-edit-modal';
+    overlay.style.display = 'none';
+    overlay.onclick = e => { if (e.target === overlay) _hideJudgeEditModal(); };
+
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.style.maxWidth = '620px';
+    modal.innerHTML = `
+        <h2 class="u-mt-0" id="judge-edit-title">Edit Judge</h2>
+        <div style="display:grid;grid-template-columns:1fr;gap:10px;margin-bottom:14px;">
+            <label style="font-size:12px;font-weight:700;color:#64748b;">
+                Name
+                <input type="text" id="edit-judge-name" style="margin-top:4px;padding:10px;border-radius:8px;border:1px solid #e2e8f0;width:100%;box-sizing:border-box;">
+            </label>
+            <label style="font-size:12px;font-weight:700;color:#64748b;">
+                Email
+                <input type="email" id="edit-judge-email" style="margin-top:4px;padding:10px;border-radius:8px;border:1px solid #e2e8f0;width:100%;box-sizing:border-box;">
+            </label>
+            <label style="font-size:12px;font-weight:700;color:#64748b;">
+                Role
+                <select id="edit-judge-role" style="margin-top:4px;padding:10px;border-radius:8px;border:1px solid #e2e8f0;width:100%;box-sizing:border-box;">
+                    <option value="panellist">Panel/Wing</option>
+                    <option value="chair">Chair</option>
+                    <option value="trainee">Trainee</option>
+                </select>
+            </label>
+        </div>
+        <div style="margin-bottom:14px;">
+            <label style="font-size:12px;font-weight:700;color:#64748b;display:block;margin-bottom:8px;">Conflict Affiliations</label>
+            <input type="search" id="edit-judge-affil-search" placeholder="Search teams..." style="width:100%;padding:9px 10px;border-radius:8px;border:1px solid #e2e8f0;margin-bottom:8px;box-sizing:border-box;">
+            <div id="edit-judge-affil-list" style="max-height:220px;overflow:auto;padding:6px 10px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;"></div>
+        </div>
+        <div style="display:flex;gap:10px;justify-content:flex-end;">
+            <button class="btn btn-secondary" id="judge-edit-cancel" type="button">Cancel</button>
+            <button class="btn btn-primary" id="judge-edit-save" type="button">Save</button>
+        </div>`;
+
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+    modal.querySelector('#judge-edit-cancel').addEventListener('click', _hideJudgeEditModal);
+    modal.querySelector('#judge-edit-save').addEventListener('click', () => saveEditJudge(overlay.dataset.judgeId));
+    modal.querySelector('#edit-judge-affil-search').addEventListener('input', e => _filterJudgeAffiliations(e.target.value));
+
+    _judgeEditModal = overlay;
+    return overlay;
+}
+
+function _syncJudgeAffiliationOptions() {
+    const modal = _ensureJudgeEditModal();
+    const list = modal.querySelector('#edit-judge-affil-list');
+    const teams = state.teams || [];
+    const signature = teams.map(t => `${t.id}:${t.name}:${t.code || ''}`).join('|');
+    if (_judgeEditTeamSignature === signature) return;
+
+    _judgeEditTeamSignature = signature;
+    list.innerHTML = '';
+    if (!teams.length) {
+        list.appendChild(el('div', { style: 'padding:16px;text-align:center;color:#94a3b8;font-size:13px;' }, 'No teams available.'));
+        return;
+    }
+
+    for (const team of teams) {
+        const lbl = document.createElement('label');
+        lbl.className = 'judge-edit-affil-row';
+        lbl.dataset.search = `${team.name || ''} ${team.code || ''}`.toLowerCase();
+        lbl.style.cssText = 'display:flex;align-items:center;gap:8px;padding:6px 0;cursor:pointer;font-size:13px;';
+        const chk = document.createElement('input');
+        chk.type = 'checkbox';
+        chk.className = 'edit-judge-affil';
+        chk.value = team.id;
+        const spn = document.createElement('span');
+        spn.textContent = team.code ? `${team.name} (${team.code})` : team.name;
+        lbl.appendChild(chk);
+        lbl.appendChild(spn);
+        list.appendChild(lbl);
+    }
+}
+
+function _filterJudgeAffiliations(query) {
+    const q = String(query || '').trim().toLowerCase();
+    document.querySelectorAll('#edit-judge-affil-list .judge-edit-affil-row').forEach(row => {
+        row.style.display = !q || row.dataset.search.includes(q) ? 'flex' : 'none';
+    });
+}
+
+function _hideJudgeEditModal() {
+    if (_judgeEditModal) _judgeEditModal.style.display = 'none';
+}
+
 function showEditJudge(judgeId) {
     if (!_isAdmin()) { showNotification('Admin access required', 'error'); return; }
     const judge = (state.judges || []).find(j => String(j.id) === String(judgeId));
@@ -315,6 +461,23 @@ function showEditJudge(judgeId) {
     const teams = state.teams || [];
     const conflictIds = new Set((judge.judge_conflicts || []).map(c => String(c.team_id)));
 
+    const modal = _ensureJudgeEditModal();
+    _syncJudgeAffiliationOptions();
+    modal.dataset.judgeId = judgeId;
+    modal.querySelector('#judge-edit-title').textContent = `Edit Judge - ${judge.name || 'Unnamed'}`;
+    modal.querySelector('#edit-judge-name').value = judge.name || '';
+    modal.querySelector('#edit-judge-email').value = judge.email || '';
+    modal.querySelector('#edit-judge-role').value = judge.role || 'panellist';
+    modal.querySelector('#edit-judge-affil-search').value = '';
+    modal.querySelectorAll('.edit-judge-affil').forEach(cb => {
+        cb.checked = conflictIds.has(String(cb.value));
+        cb.closest('.judge-edit-affil-row').style.display = 'flex';
+    });
+    modal.style.display = 'flex';
+    modal.querySelector('#edit-judge-name').focus();
+    return;
+
+    /* eslint-disable no-unreachable */
     card.innerHTML = '';
     const form = el('div', { style: 'background:white;padding:20px;border-radius:12px;border:2px solid #bfdbfe;' });
     const title = el('h3', { style: 'margin-top:0;color:#1e40af;' }, '✏️ Edit Judge — ', judge.name);
@@ -362,25 +525,52 @@ function showEditJudge(judgeId) {
     form.appendChild(btns);
 
     card.appendChild(form);
+    /* eslint-enable no-unreachable */
 }
 
 async function saveEditJudge(judgeId) {
     if (!_isAdmin()) { showNotification('Admin access required', 'error'); return; }
-    const name = document.getElementById(`edit-judge-name-${judgeId}`)?.value.trim();
-    const email = document.getElementById(`edit-judge-email-${judgeId}`)?.value.trim();
+    const modal = _ensureJudgeEditModal();
+    const name = modal.querySelector('#edit-judge-name')?.value.trim();
+    const email = modal.querySelector('#edit-judge-email')?.value.trim();
+    const role = modal.querySelector('#edit-judge-role')?.value || 'panellist';
 
     if (!name) { showNotification('Name required', 'error'); return; }
 
-    const affiliations = [...document.querySelectorAll(`.edit-judge-affil-${judgeId}:checked`)].map(cb => cb.value);
+    const affiliations = [...modal.querySelectorAll('.edit-judge-affil:checked')].map(cb => cb.value);
 
     try {
-        await api.updateJudge(judgeId, { name, email, affiliations });
-        patchJudge(judgeId, { name, email, judge_conflicts: affiliations.map(id => ({ team_id: id })) });
+        await api.updateJudge(judgeId, { name, email, role, affiliations });
+        patchJudge(judgeId, { name, email, role, judge_conflicts: affiliations.map(id => ({ team_id: id })) });
+        _hideJudgeEditModal();
         displayJudges();
         showNotification('Judge updated', 'success');
     } catch (e) {
         showNotification(`Update failed: ${e.message}`, 'error');
     }
+}
+
+async function updateJudgeRole(judgeId, role) {
+    if (!_isAdmin()) { showNotification('Admin access required', 'error'); return; }
+    const safeRole = JUDGE_ROLES.some(r => r.id === role) ? role : 'panellist';
+    try {
+        await api.updateJudge(judgeId, { role: safeRole });
+        patchJudge(judgeId, { role: safeRole });
+        displayJudges();
+        showNotification(`Judge role set to ${_roleLabel(safeRole)}`, 'success');
+    } catch (e) {
+        showNotification(`Role update failed: ${e.message}`, 'error');
+    }
+}
+
+function filterJudgesByRole(role) {
+    _judgeRoleFilter = role || 'all';
+    document.querySelectorAll('.judge-role-tab').forEach(btn => {
+        let args = [];
+        try { args = JSON.parse(btn.dataset.args || '[]'); } catch (_) { args = []; }
+        btn.classList.toggle('active', (args[0] || 'all') === _judgeRoleFilter);
+    });
+    displayJudges();
 }
 
 // ── Register actions ──────────────────────────────────────────────────────────
@@ -389,6 +579,8 @@ registerActions({
     deleteJudge,
     showEditJudge,
     saveEditJudge,
+    updateJudgeRole,
+    filterJudgesByRole,
     displayJudges,
     renderJudges,
 });

@@ -47,8 +47,8 @@ serve(async (req: Request) => {
 
         if (tokenErr || !token) return json({ error: tokenErr?.message || 'Token creation failed' }, 500);
 
-        const siteUrl = Deno.env.get('SITE_URL') || '';
-        return json({ url: `${siteUrl}?team=${token.token}`, tokenId: token.id });
+        const siteUrl = (Deno.env.get('SITE_URL') || '').replace(/\/$/, '');
+        return json({ url: `${siteUrl}/portal.html?team=${token.token}`, tokenId: token.id });
 
     } catch (err) {
         console.error('[generate-team-token]', err);

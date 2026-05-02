@@ -64,9 +64,9 @@ function _handleClick(e) {
         try {
             args = JSON.parse(target.dataset.args);
         } catch {
-            console.error(`[router] Invalid JSON in data-args for action "${action}":`, target.dataset.args);
-            return;
+            args = [target.dataset.args];
         }
+        if (!Array.isArray(args)) args = [args];
     } else if (target.dataset.id !== undefined) {
         args = [target.dataset.id];
     }

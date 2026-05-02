@@ -64,11 +64,18 @@ serve(async (req: Request) => {
             .eq('rounds.tournament_id', row.tournament_id)
             .or(`gov_team_id.eq.${row.team_id},opp_team_id.eq.${row.team_id}`);
 
+        const { data: feedback } = await adminSb
+            .from('feedback')
+            .select('*')
+            .eq('tournament_id', row.tournament_id)
+            .eq('from_team_id', row.team_id);
+
         return json({
             valid: true,
             team,
             tournamentId: row.tournament_id,
-            debates: debates || []
+            debates: debates || [],
+            feedback: feedback || []
         });
 
     } catch (err) {

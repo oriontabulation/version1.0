@@ -45,10 +45,12 @@ import {
     handleLogin, switchAuthTab,
     handleRoleChange,
     renderProfile,
+    renderInactivitySettings,
+    setInactivityTimeoutMinutes,
     signInWithGoogle, signInWithDiscord, signInWithApple,
 } from './supabase-auth.js';
 import {
-    navigate, initRouter,
+    initRouter,
     registerActions, registerTab,
     installDelegatedListener
 } from './router.js';
@@ -141,10 +143,11 @@ registerActions({
     // Auth
     showLoginModal, logout, guestLogin, registerUser, handleLogin,
     switchAuthTab, handleRoleChange, closeAllModals, renderProfile,
+    renderInactivitySettings, setInactivityTimeoutMinutes,
     signInWithGoogle, signInWithDiscord, signInWithApple,
 
     // Nav
-    navigate,
+    navigate: _legacySwitchTab,
     switchTab: _legacySwitchTab, // guarded version — enforces role/publish checks
 
     // Teams
@@ -169,6 +172,7 @@ registerActions({
 
     // Admin
     renderAdminDashboard, adminSwitchSection, adminCreateRound,
+    'admin-section': adminSwitchSection,
     adminTogglePublish, adminPublishAll, adminHideAll, initAdminDashboard,
 
     // Speakers
@@ -206,11 +210,19 @@ registerActions({
 window.switchTab = _legacySwitchTab;
 window.switchCategoryTab = switchCategoryTab;
 window.showNotification = showNotification;
+window.state = state;
 window.updatePublicCounts = updatePublicCounts;
 window.updateHeaderTournamentName = updateHeaderTournamentName;
-window.navigate = navigate;
+window.updateTabsForRole = updateTabsForRole;
+window.updateNavDropdowns = updateNavDropdowns;
+window.navigate = _legacySwitchTab;
 window.showLoginModal = showLoginModal;
+window.logout = logout;
+window.renderInactivitySettings = renderInactivitySettings;
+window.setInactivityTimeoutMinutes = setInactivityTimeoutMinutes;
 window.renderAdminDashboard = renderAdminDashboard;
+window.adminSwitchSection = adminSwitchSection;
+window.adminCreateRound = adminCreateRound;
 window.adminPublishAll = adminPublishAll;
 window.adminHideAll = adminHideAll;
 
@@ -341,6 +353,75 @@ window.syncGlobalSearchForActiveTab = syncGlobalSearchForActiveTab;
 
 // ── Supabase real-time subscription ──────────────────────────────────────────
 let _realtimeChannels = [];
+let _realtimeEpoch = 0;
+const DEFAULT_TOURNAMENT_ID = '__orion_default_tournament__';
+
+function _defaultEmptyTournament() {
+    return {
+        id: DEFAULT_TOURNAMENT_ID,
+        name: 'My Tournament',
+        format: 'standard',
+        created_at: new Date(0).toISOString(),
+        isLocalDefault: true
+    };
+}
+
+function _defaultPublishState() {
+    return {
+        tournament_id: DEFAULT_TOURNAMENT_ID,
+        draw: true,
+        standings: true,
+        speakers: true,
+        break: true,
+        knockout: true,
+        motions: true,
+        results: true
+    };
+}
+
+function _shouldAutoCreateTournamentForCurrentUser() {
+    return state.auth?.isAuthenticated && state.auth.currentUser?.role === 'admin';
+}
+
+async function ensureDefaultTournamentForAdmin() {
+    if (!_shouldAutoCreateTournamentForCurrentUser()) return null;
+
+    let tournaments = [];
+    try {
+        tournaments = await api.getTournaments();
+    } catch (_) {
+        return null;
+    }
+
+    if (tournaments.length) return tournaments[0];
+
+    const created = await api.createTournament('My Tournament').catch(() => null);
+    if (!created) return null;
+
+    const activeId = created.id;
+    const [teams, judges, rounds, publish] = await Promise.all([
+        api.getTeams(activeId).catch(() => []),
+        api.getJudges(activeId).catch(() => []),
+        api.getRounds(activeId).catch(() => []),
+        api.getPublishState(activeId).catch(() => ({}))
+    ]);
+
+    hydrateState({
+        activeTournamentId: activeId,
+        tournaments: [created],
+        teams,
+        judges,
+        rounds,
+        publish
+    });
+    updateHeaderTournamentName();
+    _setupRealtimeSync(activeId);
+    updateTabsForRole();
+    updateNavDropdowns();
+    updatePublicCounts();
+
+    return created;
+}
 
 function _cleanupRealtimeChannels() {
     _realtimeChannels.forEach(ch => { try { supabase.removeChannel(ch); } catch (_) { /* ignore channel cleanup errors */ } });
@@ -362,7 +443,16 @@ function _refreshVisibleRealtimeView() {
     if (!realtimeTabs.has(tabId)) return;
     setTimeout(() => {
         try {
-            if (typeof window.switchTab === 'function') window.switchTab(tabId);
+            const rerender = {
+                draw: renderDraw,
+                standings: renderStandings,
+                speakers: renderSpeakerStandings,
+                break: () => window.renderBreakDisplay?.(),
+                knockout: renderKnockout,
+                results: renderResults,
+                public: updatePublicCounts
+            }[tabId];
+            rerender?.();
             window.updatePublicCounts?.();
         } catch (e) {
             console.warn('[rt] visible view refresh failed:', e);
@@ -372,11 +462,14 @@ function _refreshVisibleRealtimeView() {
 
 function _setupRealtimeSync(tournamentId) {
     _cleanupRealtimeChannels();
+    const epoch = ++_realtimeEpoch;
+    const isCurrentRealtimeContext = () =>
+        epoch === _realtimeEpoch && String(state.activeTournamentId) === String(tournamentId);
 
     const refetchTeams = _debounce(async () => {
         try {
             const teams = await api.getTeams(tournamentId);
-            if (state.activeTournamentId === tournamentId) {
+            if (isCurrentRealtimeContext()) {
                 state.teams = teams;
                 _refreshVisibleRealtimeView();
             }
@@ -386,7 +479,7 @@ function _setupRealtimeSync(tournamentId) {
     const refetchJudges = _debounce(async () => {
         try {
             const judges = await api.getJudges(tournamentId);
-            if (state.activeTournamentId === tournamentId) {
+            if (isCurrentRealtimeContext()) {
                 state.judges = judges;
                 _refreshVisibleRealtimeView();
             }
@@ -396,7 +489,7 @@ function _setupRealtimeSync(tournamentId) {
     const refetchRounds = _debounce(async () => {
         try {
             const rounds = await api.getRounds(tournamentId);
-            if (state.activeTournamentId === tournamentId) {
+            if (isCurrentRealtimeContext()) {
                 state.rounds = rounds;
                 _refreshVisibleRealtimeView();
             }
@@ -409,7 +502,7 @@ function _setupRealtimeSync(tournamentId) {
                 api.getTeams(tournamentId),
                 api.getRounds(tournamentId),
             ]);
-            if (state.activeTournamentId === tournamentId) {
+            if (isCurrentRealtimeContext()) {
                 state.teams  = teams;
                 state.rounds = rounds;
                 _refreshVisibleRealtimeView();
@@ -425,7 +518,7 @@ function _setupRealtimeSync(tournamentId) {
                 api.getRounds(tournamentId).catch(() => state.rounds || []),
                 api.getPublishState(tournamentId).catch(() => state.publish || {}),
             ]);
-            if (state.activeTournamentId === tournamentId) {
+            if (isCurrentRealtimeContext()) {
                 state.teams = teams;
                 state.judges = judges;
                 state.rounds = rounds;
@@ -515,6 +608,7 @@ function _setupRealtimeSync(tournamentId) {
 
 // Exposed so admin.js can re-wire channels after a tournament switch
 window._setupRealtimeSyncForTournament = id => { _cleanupRealtimeChannels(); _setupRealtimeSync(id); };
+window.ensureDefaultTournamentForAdmin = ensureDefaultTournamentForAdmin;
 
 // ── App initialization ────────────────────────────────────────────────────────
 async function init() {
@@ -525,135 +619,141 @@ async function init() {
     try {
         window.__orionStep = 'init-router';
         console.log('[main] Step 1: Init router...');
-        // 0. Init router immediately
         initRouter();
         window.__orionStep = 'restore-session';
         console.log('[main] Step 2: Restore session...');
-    // 0. Init router immediately
-    initRouter();
 
-    // 1. Restore Supabase auth session (BLOCKING — must know who we are first)
-    const isAuthed = await restoreSession();
-    console.log('[main] Auth restored:', isAuthed ? 'YES' : 'NO');
+        // 1. Restore Supabase auth session (blocking — identity affects nav and data visibility)
+        const isAuthed = await restoreSession();
+        console.log('[main] Auth restored:', isAuthed ? 'YES' : 'NO');
 
-    // 2. Restore UI preferences (theme, draw prefs)
-    restoreUIPrefs();
-    updateHeaderControls();
-    updateAdminNavVisibility();
+        // 2. Restore UI preferences (theme, draw prefs)
+        restoreUIPrefs();
+        updateHeaderControls();
+        updateAdminNavVisibility();
 
-    // 3. Load tournament list
-    const tournaments = await api.getTournaments().catch(() => []);
-    if (!tournaments.length) {
-        // First run — create default tournament
-        const tour = await api.createTournament('My Tournament').catch(() => null);
-        if (tour) tournaments.push(tour);
-    }
+        // 3. Load tournament list + active tournament data in parallel (optimistic prefetch)
+        const storedActiveId = localStorage.getItem('orion_active_tournament_id');
+        let [tournaments, prefetched] = await Promise.all([
+            api.getTournaments().catch(() => []),
+            storedActiveId ? Promise.all([
+                api.getTeams(storedActiveId),
+                api.getJudges(storedActiveId),
+                api.getRounds(storedActiveId),
+                api.getPublishState(storedActiveId).catch(() => ({}))
+            ]).catch(() => null) : Promise.resolve(null)
+        ]);
 
-    // 4. Determine active tournament
-    let activeId = localStorage.getItem('orion_active_tournament_id');
-
-    // Validate if it still exists in the loaded list
-    if (!activeId || !tournaments.find(t => t.id === activeId)) {
-        activeId = tournaments[0]?.id;
-    }
-
-    if (!activeId) {
-        showNotification('Could not load tournament data.', 'error');
-        return;
-    }
-
-    // 5. Load active tournament data (BYPASS CACHE for diagnostics)
-    console.log('[main] Active Tournament ID:', activeId);
-
-    const [teams, judges, rounds, publish] = await Promise.all([
-        api.getTeams(activeId),
-        api.getJudges(activeId),
-        api.getRounds(activeId),
-        api.getPublishState(activeId).catch(() => ({}))
-    ]);
-
-    // 6. Hydrate in-memory state cache
-    hydrateState({ activeTournamentId: activeId, tournaments, teams, judges, rounds, publish });
-
-    // 6b. Update header with tournament name
-    updateHeaderTournamentName();
-
-    // 7. Set up real-time subscription
-    _setupRealtimeSync(activeId);
-
-    // 8. Check URL for judge token (portal access via URL param)
-    await checkUrlForJudgeToken();
-
-    // 9. Init subsystems
-    initAdminDashboard();
-    initParticipants();
-    updateTabsForRole();
-    updateNavDropdowns();
-    updatePublicCounts();
-    syncGlobalSearchForActiveTab();
-
-    // 10. Initialize image optimizations
-    initImageOptimizations();
-
-    // 11. Settings button dropdown
-    const settingsBtn = document.getElementById('header-settings-btn');
-    const settingsDropdown = document.getElementById('header-settings-dropdown');
-    const themeContainer = document.getElementById('theme-picker-container');
-    
-    const openSettings = () => {
-        const isOpen = settingsDropdown.classList.contains('open');
-        settingsDropdown.classList.toggle('open');
-        // Render theme picker when opening
-        if (!isOpen && typeof window.renderThemePicker === 'function') {
-            window.renderThemePicker('theme-picker-container');
+        if (!tournaments.length && _shouldAutoCreateTournamentForCurrentUser()) {
+            const tour = await api.createTournament('My Tournament').catch(() => null);
+            if (tour) tournaments.push(tour);
         }
-    };
-    
-    if (settingsBtn && settingsDropdown) {
-        settingsBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            openSettings();
-        });
+
+        if (!tournaments.length) {
+            tournaments = [_defaultEmptyTournament()];
+        }
+
+        // 4. Determine active tournament
+        let activeId = storedActiveId;
+        if (!activeId || !tournaments.find(t => t.id === activeId)) {
+            activeId = tournaments[0]?.id;
+        }
+
+        // 5. Use prefetched data if it matched the resolved tournament, else fetch now
+        console.log('[main] Active Tournament ID:', activeId);
+        const usingDefaultTournament = activeId === DEFAULT_TOURNAMENT_ID;
+        let [teams, judges, rounds, publish] = usingDefaultTournament
+            ? [[], [], [], _defaultPublishState()]
+            : prefetched && storedActiveId === activeId
+                ? prefetched
+                : await Promise.all([
+                    api.getTeams(activeId),
+                    api.getJudges(activeId),
+                    api.getRounds(activeId),
+                    api.getPublishState(activeId).catch(() => ({}))
+                ]);
+
+        // 6. Hydrate in-memory state cache
+        hydrateState({ activeTournamentId: activeId, tournaments, teams, judges, rounds, publish });
+
+        // 6b. Update header with tournament name
+        updateHeaderTournamentName();
+
+        // 7. Set up real-time subscription for persisted tournaments
+        if (!usingDefaultTournament) _setupRealtimeSync(activeId);
+
+        // 8. Check URL for judge token (portal access via URL param)
+        await checkUrlForJudgeToken();
+
+        // 9. Init subsystems
+        initAdminDashboard();
+        initParticipants();
+        updateTabsForRole();
+        updateNavDropdowns();
+        updatePublicCounts();
+        syncGlobalSearchForActiveTab();
+
+        // 10. Initialize image optimizations
+        initImageOptimizations();
+
+        // 11. Settings button dropdown
+        const settingsBtn = document.getElementById('header-settings-btn');
+        const settingsDropdown = document.getElementById('header-settings-dropdown');
+        const themeContainer = document.getElementById('theme-picker-container');
         
-        // Stop propagation on dropdown content
-        settingsDropdown.addEventListener('click', (e) => {
-            e.stopPropagation();
-        });
+        const openSettings = () => {
+            const isOpen = settingsDropdown.classList.contains('open');
+            settingsDropdown.classList.toggle('open');
+            if (!isOpen && typeof window.renderThemePicker === 'function') {
+                window.renderThemePicker('theme-picker-container');
+            }
+            if (!isOpen && typeof window.renderInactivitySettings === 'function') {
+                window.renderInactivitySettings('inactivity-settings-container');
+            }
+        };
         
-        // Handle color input focus - don't close dropdown
-        themeContainer?.addEventListener('focus', () => {
-            settingsDropdown.classList.add('open');
-        }, true);
-        
-        // Close on outside click
+        if (settingsBtn && settingsDropdown) {
+            settingsBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                openSettings();
+            });
+            
+            settingsDropdown.addEventListener('click', (e) => {
+                e.stopPropagation();
+            });
+            
+            themeContainer?.addEventListener('focus', () => {
+                settingsDropdown.classList.add('open');
+            }, true);
+            
+            document.addEventListener('click', (e) => {
+                if (!settingsDropdown.contains(e.target) && e.target !== settingsBtn) {
+                    settingsDropdown.classList.remove('open');
+                }
+            });
+        }
+
+        // Admin settings dropdown close — delegated so it works after lazy render
         document.addEventListener('click', (e) => {
-            if (!settingsDropdown.contains(e.target) && e.target !== settingsBtn) {
-                settingsDropdown.classList.remove('open');
+            const dropdown = document.getElementById('adm-top-settings-dropdown');
+            const btn      = document.getElementById('adm-top-settings-btn');
+            if (dropdown && dropdown.classList.contains('open')) {
+                if (!dropdown.contains(e.target) && e.target !== btn) {
+                    dropdown.classList.remove('open');
+                }
             }
         });
-    }
 
-    // Admin settings dropdown close
-    const admSettingsBtn = document.getElementById('adm-top-settings-btn');
-    const admSettingsDropdown = document.getElementById('adm-top-settings-dropdown');
-    if (admSettingsBtn && admSettingsDropdown) {
-        document.addEventListener('click', (e) => {
-            if (!admSettingsDropdown.contains(e.target) && e.target !== admSettingsBtn) {
-                admSettingsDropdown.classList.remove('open');
-            }
-        });
-    }
-
-    // 10. Restore active tab (sticky navigation)
-    const savedTab = localStorage.getItem('orion_active_tab') || 'public';
-    try {
-        navigate(savedTab);
-    } catch (e) {
-        console.warn('[main] Failed to navigate to saved tab, falling back to public');
-        navigate('public');
-    }
-    window.__orionReady = true;
-    console.log('[main] Init complete, step:', window.__orionStep);
+        // 12. Restore active tab (sticky navigation)
+        const savedTab = localStorage.getItem('orion_active_tab') || 'public';
+        try {
+            _legacySwitchTab(savedTab);
+        } catch (e) {
+            console.warn('[main] Failed to navigate to saved tab, falling back to public');
+            _legacySwitchTab('public');
+        }
+        window.__orionReady = true;
+        console.log('[main] Init complete, step:', window.__orionStep);
     } catch (err) {
         window.__orionStep = 'error';
         console.error('[main] Init error:', err);

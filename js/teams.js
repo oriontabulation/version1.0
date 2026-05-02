@@ -6,19 +6,36 @@
 
 // ============================================================
 
-import { state, addTeamToCache, removeTeamFromCache, patchTeam } from './state.js';
+import { state, activeTournament, removeTeamFromCache, patchTeam } from './state.js';
 import { api } from './api.js';
-import { buildTeamMap } from './maps.js';
 import { showNotification, escapeHTML } from './utils.js';
 import { getCategories, teamMatchesCategory } from './categories.js';
-import { el, replaceChildren, emptyState } from './ui/components.js';
-import { renderSmartList, VIRTUALIZATION_THRESHOLD } from './ui/virtual-list.js';
+import { el, emptyState } from './ui/components.js';
 
 // ── Permission helpers ────────────────────────────────────────────────────────
 function _isAdmin() { return !!(state.auth?.isAuthenticated && state.auth?.currentUser?.role === 'admin'); }
 function _myTeamId() { return state.auth?.currentUser?.associatedId ?? null; }
 
 let _teamsListCategory = null;
+const _CARD = 'background:white;border:1px solid #e2e8f0;border-radius:12px;padding:18px;margin-bottom:16px;';
+
+function _requireActiveTournament() {
+    const tournament = activeTournament();
+    if (!tournament?.id) {
+        showNotification('Create or select a tournament before managing teams.', 'error');
+        window.switchTab?.('admin-dashboard');
+        return null;
+    }
+    return tournament;
+}
+
+async function _reloadTeamsForTournament(tournamentId) {
+    const teams = await api.getTeams(tournamentId);
+    if (String(state.activeTournamentId) === String(tournamentId)) {
+        state.teams = teams;
+    }
+    return teams;
+}
 
 // ── renderTeams ───────────────────────────────────────────────────────────────
 export function renderTeams() {
@@ -162,43 +179,32 @@ export function displayTeams() {
         return;
     }
 
-    // Use virtual list for large datasets
-    if (teams.length >= VIRTUALIZATION_THRESHOLD) {
-        // Set a fixed height for the container to enable scrolling
-        list.style.height = '600px';
-        list.style.overflow = 'auto';
-
-        _teamsVirtualList = renderSmartList({
-            container: list,
-            items: teams,
-            itemHeight: 140, // Approximate card height
-            renderItem: (team, index) => _buildTeamCard(team, isAdmin, cats),
-            emptyMessage: isAdmin ? 'Add your first team above.' : 'Your team profile was not found. Contact the admin.'
-        });
-    } else {
-        // Use regular rendering for small lists
-        list.style.height = '';
-        list.style.overflow = '';
-        list.innerHTML = '';
-        for (const team of teams) {
-            list.appendChild(_buildTeamCard(team, isAdmin, cats));
-        }
+    list.style.height = '';
+    list.style.overflow = 'visible';
+    list.style.display = 'grid';
+    list.style.gridTemplateColumns = 'repeat(auto-fit, minmax(min(100%, 320px), 1fr))';
+    list.style.gap = '16px';
+    list.innerHTML = '';
+    for (const team of teams) {
+        list.appendChild(_buildTeamCard(team, isAdmin, cats));
     }
 }
 
-const _CARD = 'background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:24px;margin-bottom:20px;width:100%;box-sizing:border-box;';
-
 function _buildTeamCard(team, isAdmin, cats = []) {
-    const card = el('div', { id: `team-${team.id}`, style: _CARD + (team.broke ? 'border-left:4px solid #10b981;' : team.eliminated ? 'border-left:4px solid #dc2626;opacity:0.8;' : '') });
+    let cardClass = 'team-card';
+    if (team.broke) cardClass += ' breaking';
+    else if (team.eliminated) cardClass += ' eliminated';
+
+    const card = el('div', { id: `team-${team.id}`, class: cardClass });
 
     // ── Header row ──
-    const header = el('div', { style: 'display:flex;align-items:center;gap:8px;flex-wrap:wrap;' });
-    header.appendChild(el('strong', { style: 'font-size:16px;color:#0f172a;' }, team.name));
-    if (team.code) header.appendChild(el('span', { style: 'background:#f1f5f9;color:#475569;font-size:12px;font-weight:600;padding:2px 8px;border-radius:6px;' }, team.code));
-    if (team.broke) header.appendChild(el('span', { style: 'background:#d1fae5;color:#065f46;font-size:11px;font-weight:700;padding:2px 8px;border-radius:6px;' }, `🏆 Seed ${team.seed || '?'}`));
-    if (team.eliminated) header.appendChild(el('span', { style: 'background:#fee2e2;color:#991b1b;font-size:11px;font-weight:700;padding:2px 8px;border-radius:6px;' }, 'Eliminated'));
+    const header = el('div', { class: 'team-header' });
+    header.appendChild(el('strong', { class: 'team-card__name' }, team.name));
+    if (team.code) header.appendChild(el('span', { class: 'team-code' }, team.code));
+    if (team.broke) header.appendChild(el('span', { class: 'badge badge-success' }, `🏆 Seed ${team.seed || '?'}`));
+    if (team.eliminated) header.appendChild(el('span', { class: 'badge badge-danger' }, 'Eliminated'));
 
-    // Category badges
+    // Category badges (dynamic colors stay inline)
     if (cats.length > 0 && team.categories?.length > 0) {
         for (const catId of team.categories) {
             const cat = cats.find(c => c.id === catId);
@@ -206,33 +212,35 @@ function _buildTeamCard(team, isAdmin, cats = []) {
         }
     }
 
-    // W/L + admin actions grouped at right
-    const right = el('div', { style: 'margin-left:auto;display:flex;align-items:center;gap:8px;flex-shrink:0;' });
+    // W/L pushed to right
     if (team.wins != null || team.losses != null) {
         const w = team.wins ?? 0, l = team.losses ?? 0;
-        right.appendChild(el('span', { style: 'font-size:13px;color:#64748b;white-space:nowrap;' }, `${w}W – ${l}L`));
+        header.appendChild(el('span', { class: 'team-wl' }, `${w}W – ${l}L`));
     }
-    if (isAdmin) {
-        right.appendChild(el('button', {
-            style: 'padding:6px 14px;font-size:13px;border-radius:8px;border:1px solid #e2e8f0;background:#f8fafc;color:#374151;cursor:pointer;font-weight:500;',
-            'data-action': 'showEditTeam', 'data-args': JSON.stringify([team.id])
-        }, '✏️ Edit'));
-        right.appendChild(el('button', {
-            style: 'padding:6px 14px;font-size:13px;border-radius:8px;border:1px solid #fecaca;background:#fef2f2;color:#dc2626;cursor:pointer;font-weight:500;',
-            'data-action': 'deleteTeam', 'data-args': JSON.stringify([team.id])
-        }, '🗑 Delete'));
-    }
-    header.appendChild(right);
     card.appendChild(header);
 
     // ── Speakers ──
     const speakers = (team.speakers || []).filter(s => s.name);
     if (speakers.length > 0) {
-        const row = el('div', { style: 'display:flex;flex-wrap:wrap;gap:6px;margin-top:12px;' });
+        const row = el('div', { class: 'team-speakers' });
         for (const s of speakers) {
-            row.appendChild(el('span', { style: 'background:#f8fafc;border:1px solid #e2e8f0;color:#334155;font-size:12px;padding:3px 10px;border-radius:12px;' }, s.name + (s.email ? ` · ${s.email}` : '')));
+            row.appendChild(el('span', { class: 'team-speaker-chip' }, s.name + (s.email ? ` · ${s.email}` : '')));
         }
         card.appendChild(row);
+    }
+
+    // ── Admin actions ──
+    if (isAdmin) {
+        const actions = el('div', { class: 'adm-card-actions-bordered' });
+        actions.appendChild(el('button', {
+            class: 'btn btn-secondary btn-sm',
+            'data-action': 'showEditTeam', 'data-args': JSON.stringify([team.id])
+        }, '✏️ Edit'));
+        actions.appendChild(el('button', {
+            class: 'btn btn-danger btn-sm',
+            'data-action': 'deleteTeam', 'data-args': JSON.stringify([team.id])
+        }, '🗑 Delete'));
+        card.appendChild(actions);
     }
 
     return card;
@@ -254,19 +262,19 @@ export async function addTeam() {
     }
     
     const catId = document.getElementById('add-team-category')?.value || null;
-    const tournId = state.activeTournamentId;
+    const tournament = _requireActiveTournament();
+    const tournId = tournament?.id;
 
     if (!name) { showNotification('Team name is required', 'error'); return; }
-    if (!tournId) { showNotification('No active tournament. State: ' + JSON.stringify(state), 'error'); return; }
+    if (!tournId) return;
 
     try {
-        const team = await api.createTeam({
+        await api.createTeam({
             tournamentId: tournId,
             name, code, email, speakers,
             categories: catId ? [catId] : []
         });
-
-        addTeamToCache({ ...team, speakers });
+        await _reloadTeamsForTournament(tournId);
         displayTeams();
         showNotification(`Team "${name}" added`, 'success');
 
@@ -289,8 +297,11 @@ export async function deleteTeam(teamId) {
     if (!confirm('Delete this team? This cannot be undone.')) return;
 
     try {
+        const tournament = _requireActiveTournament();
+        if (!tournament?.id) return;
         await api.deleteTeam(teamId);
         removeTeamFromCache(teamId);
+        await _reloadTeamsForTournament(tournament.id);
         displayTeams();
         showNotification('Team deleted', 'info');
         window.updateNavDropdowns?.();

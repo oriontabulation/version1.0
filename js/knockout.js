@@ -4,14 +4,84 @@
 // ============================================
 
 import { state, save, activeTournament } from './state.js';
-import { showNotification, escapeHTML, closeAllModals } from './utils.js';
+import { showNotification, escapeHTML, closeAllModals, teamCode } from './utils.js';
 import { renderStandings } from './tab.js';
+import { buildConflictMap, buildTeamMap, hasConflict } from './maps.js';
 
 // ── Constants ────────────────────────────────────────────────────────────────
 const BP_TEAMS_PER_ROOM = 4;
 const WSDC_TEAMS_PER_ROOM = 2;
 const CHAR_CODE_A = 65;
 const MAX_BREAK_SIZE = 100;
+
+// Module-level O(1) team lookup — rebuild at start of each render entry point
+let _teamById = null;
+const _getTeam = id => { if (!_teamById) _teamById = buildTeamMap(state.teams || []); return _teamById.get(String(id)) ?? null; };
+
+function _teamDisplayName(team) {
+    if (!team) return '';
+    let prefs = {};
+    try { prefs = JSON.parse(localStorage.getItem('orion_draw_prefs') || '{}'); } catch (_) { /* ignore */ }
+    return prefs.display === 'codes' ? teamCode(team) : (team.name || '');
+}
+
+function _teamDisplayHtml(team) {
+    return escapeHTML(_teamDisplayName(team));
+}
+
+function _pairingTeamIds(pairing, bp) {
+    return bp
+        ? [pairing.og, pairing.oo, pairing.cg, pairing.co].filter(Boolean)
+        : [pairing.gov, pairing.opp].filter(Boolean);
+}
+
+function _allocateOutroundPanels(stages, bp) {
+    const judges = [...(state.judges || [])].filter(j => j.available !== false);
+    if (!judges.length) return;
+    const conflictMap = buildConflictMap(judges);
+    const previous = {};
+    (state.rounds || []).forEach(round => {
+        (round.debates || []).forEach(debate => {
+            (debate.panel || []).forEach(p => {
+                previous[p.id] = (previous[p.id] || 0) + 1;
+            });
+        });
+    });
+    const ordered = judges.sort((a, b) =>
+        (b.rating || 5) - (a.rating || 5) ||
+        (previous[a.id] || 0) - (previous[b.id] || 0)
+    );
+
+    stages.forEach(stage => {
+        const used = new Set();
+        (stage.pairings || []).forEach(pairing => {
+            const teams = _pairingTeamIds(pairing, bp);
+            const panelSize = bp ? 5 : 3;
+            pairing.panel = [];
+            while (pairing.panel.length < panelSize) {
+                const judge = ordered.find(j =>
+                    !used.has(j.id) &&
+                    !pairing.panel.some(p => String(p.id) === String(j.id)) &&
+                    teams.every(teamId => !hasConflict(conflictMap, j.id, teamId))
+                ) || ordered.find(j =>
+                    !used.has(j.id) &&
+                    !pairing.panel.some(p => String(p.id) === String(j.id))
+                );
+                if (!judge) break;
+                pairing.panel.push({ id: judge.id, name: judge.name, role: pairing.panel.length === 0 ? 'chair' : 'wing' });
+                used.add(judge.id);
+            }
+        });
+    });
+}
+
+function _panelHtml(pairing) {
+    const panel = pairing.panel || [];
+    if (!panel.length) return '<div style="font-size:12px;color:#ef4444;font-style:italic;margin-bottom:10px;">No panel allocated</div>';
+    return `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">
+        ${panel.map(p => `<span class="dnd-judge-chip"><span class="chip-role ${p.role === 'chair' ? 'chair' : ''}">${escapeHTML(p.role || 'wing')}</span>${escapeHTML(p.name || '')}</span>`).join('')}
+    </div>`;
+}
 
 // ── Validation helpers ────────────────────────────────────────────────────────
 
@@ -267,7 +337,7 @@ function displayBreakingTeams() {
                         : '—';
                     return `<tr>
                         <td style="padding:12px;"><strong style="background:#f59e0b;color:white;padding:4px 12px;border-radius:40px;">#${team.seed}</strong></td>
-                        <td style="padding:12px;"><strong>${escapeHTML(team.name)}</strong></td>
+                        <td style="padding:12px;"><strong>${_teamDisplayHtml(team)}</strong></td>
                         <td style="padding:12px;">${escapeHTML(team.code || '')}</td>
                         <td style="padding:12px;text-align:center;">${team.wins || 0}</td>
                         <td style="padding:12px;text-align:center;">${(team.total || 0).toFixed(1)}</td>
@@ -509,6 +579,7 @@ function generateKnockout() {
     if (R > 0) {
         _placeReservedTeams(stages, reserved, bp);
     }
+    _allocateOutroundPanels(stages, bp);
 
     state.teams.forEach(t => {
         if (t.tournamentWins === undefined) t.tournamentWins = 0;
@@ -692,7 +763,7 @@ function _renderBPPairingCard(p, roundIdx, pIdx, isCurrent, isAdmin, hideReserve
     const canDrag  = isAdmin && !p.entered;
 
     const advancers = p.entered
-        ? [p.first, p.second].map(id => state.teams.find(t => t.id == id)?.name).filter(Boolean)
+        ? [p.first, p.second].map(id => _teamDisplayName(state.teams.find(t => t.id == id))).filter(Boolean)
         : [];
 
     const seedStr = cells.filter(c => c.seed).map(c => `#${c.seed}`).join(' · ');
@@ -729,7 +800,7 @@ function _renderBPPairingCard(p, roundIdx, pIdx, isCurrent, isAdmin, hideReserve
                     ${dragProps}>
                     <div style="font-size:9px;font-weight:900;letter-spacing:0.8px;color:${c.govSide ? '#1d4ed8' : '#b91c1c'};margin-bottom:3px;">${c.label}</div>
                     <div style="font-weight:700;font-size:13px;line-height:1.3;">
-                        ${c.team ? escapeHTML(c.team.name) : '<span style="color:#94a3b8;font-weight:400;font-size:12px;">TBD</span>'}
+                        ${c.team ? _teamDisplayHtml(c.team) : '<span style="color:#94a3b8;font-weight:400;font-size:12px;">TBD</span>'}
                     </div>
                     ${c.seed ? `<div style="font-size:10px;color:#94a3b8;margin-top:2px;">Seed #${c.seed}</div>` : ''}
                     ${c.place ? `<div style="font-size:11px;font-weight:700;margin-top:4px;color:#374151;">${c.place}</div>` : ''}
@@ -737,6 +808,7 @@ function _renderBPPairingCard(p, roundIdx, pIdx, isCurrent, isAdmin, hideReserve
                 </div>`;
             }).join('')}
         </div>
+        ${_panelHtml(p)}
         ${canEnter ? `
         <button onclick="window.enterKnockoutResult(${roundIdx},${pIdx})" class="primary" style="width:100%;padding:10px;">
             ✏️ Enter Results
@@ -755,8 +827,8 @@ function _renderWSDCPairingCard(p, roundIdx, pIdx, isCurrent, isAdmin, hideReser
     const opp        = (hideReserved && rawOpp?.reserved) ? null : rawOpp;
     const winnerTeam = p.winner ? state.teams.find(t => t.id === p.winner) : null;
 
-    const govName = gov ? escapeHTML(gov.name) : '<span style="color:#94a3b8">TBD</span>';
-    const oppName = opp ? escapeHTML(opp.name) : '<span style="color:#94a3b8">TBD</span>';
+    const govName = gov ? _teamDisplayHtml(gov) : '<span style="color:#94a3b8">TBD</span>';
+    const oppName = opp ? _teamDisplayHtml(opp) : '<span style="color:#94a3b8">TBD</span>';
     const govSeed = (hideReserved && rawGov?.reserved) ? null : p.govSeed;
     const oppSeed = (hideReserved && rawOpp?.reserved) ? null : p.oppSeed;
     const canSwap = isAdmin && !p.entered && gov && opp;
@@ -804,13 +876,14 @@ function _renderWSDCPairingCard(p, roundIdx, pIdx, isCurrent, isAdmin, hideReser
             <div style="font-weight:700;color:#64748b;">VS</div>
             ${_wsdcSlot('opp', opp, oppName, oppSeed, p.winner === p.opp && !!p.opp)}
         </div>
+        ${_panelHtml(p)}
         ${isAdmin && !p.entered && isCurrent && gov && opp ? `
         <button onclick="window.enterKnockoutResult(${roundIdx},${pIdx})" class="primary" style="width:100%;padding:10px;">
             Select Winner
         </button>` : ''}
         ${p.entered && winnerTeam ? `
         <div style="margin-top:8px;padding:8px;background:#e6f4ea;border-radius:8px;text-align:center;font-size:13px;">
-            <strong>${escapeHTML(winnerTeam.name)}</strong> advances
+            <strong>${_teamDisplayHtml(winnerTeam)}</strong> advances
         </div>` : ''}
     </div>`;
 }
@@ -1038,7 +1111,7 @@ function _enterBPResult(roundIndex, pairingIndex) {
                 style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px;background:#f8fafc;border-radius:10px;border:2px solid #e2e8f0;cursor:pointer;transition:all 0.15s;user-select:none;gap:12px;">
                 <div style="min-width:0;flex:1;">
                     <div style="font-size:9px;font-weight:900;letter-spacing:.6px;color:${s.gov ? '#1d4ed8' : '#b91c1c'};">${s.label}</div>
-                    <div style="font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHTML(s.team.name)}</div>
+                    <div style="font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${_teamDisplayHtml(s.team)}</div>
                     <div style="font-size:11px;color:#94a3b8;">Seed #${s.seed || '?'}</div>
                 </div>
                 <div id="bp-badge-${s.key}" style="font-size:22px;opacity:.25;">${isLastRound ? '🏆' : '✅'}</div>
@@ -1121,14 +1194,14 @@ function _enterWSDCResult(roundIndex, pairingIndex) {
                 <input type="radio" name="ko-winner" value="${gov.id}" style="width:20px;height:20px;">
                 <div>
                     <div style="font-size:9px;font-weight:900;color:#1d4ed8;letter-spacing:.6px;">GOV</div>
-                    <strong>${escapeHTML(gov.name)}</strong> <span style="color:#64748b;">Seed #${pairing.govSeed || '?'}</span>
+                    <strong>${_teamDisplayHtml(gov)}</strong> <span style="color:#64748b;">Seed #${pairing.govSeed || '?'}</span>
                 </div>
             </label>
             <label style="display:flex;align-items:center;gap:10px;padding:15px;background:#f8fafc;border-radius:8px;cursor:pointer;">
                 <input type="radio" name="ko-winner" value="${opp.id}" style="width:20px;height:20px;">
                 <div>
                     <div style="font-size:9px;font-weight:900;color:#b91c1c;letter-spacing:.6px;">OPP</div>
-                    <strong>${escapeHTML(opp.name)}</strong> <span style="color:#64748b;">Seed #${pairing.oppSeed || '?'}</span>
+                    <strong>${_teamDisplayHtml(opp)}</strong> <span style="color:#64748b;">Seed #${pairing.oppSeed || '?'}</span>
                 </div>
             </label>
         </div>
