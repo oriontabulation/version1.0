@@ -139,6 +139,7 @@ function _judgePillHtml(debate, emoji = '⚖️') {
     if (!debate || !debate.panel || debate.panel.length === 0) {
         return `<span style="font-size:11px;color:#94a3b8;font-style:italic;">No judges</span>`;
     }
+    _normalizePanelRoles(debate);
     
     const isJudge = state.auth?.currentUser?.role === 'judge';
     const isAdmin = state.auth?.currentUser?.role === 'admin';
@@ -180,6 +181,38 @@ function _judgePillHtml(debate, emoji = '⚖️') {
 
 
 // ─── CSS — injected once into <head>, not on every render ────────────────────
+function _normalizePanelRoles(debate) {
+    if (!Array.isArray(debate?.panel)) return;
+    debate.panel.forEach((entry, index) => {
+        if (!entry) return;
+        if (index === 0) entry.role = 'chair';
+        else if (!entry.role || entry.role === 'chair') entry.role = 'wing';
+    });
+}
+
+function _moveJudgeToPanelFront(debate, judgeId) {
+    if (!Array.isArray(debate?.panel)) return false;
+    const idx = debate.panel.findIndex(p => String(p.id) === String(judgeId));
+    if (idx <= 0) {
+        _normalizePanelRoles(debate);
+        return idx === 0;
+    }
+    const [entry] = debate.panel.splice(idx, 1);
+    debate.panel.unshift(entry);
+    _normalizePanelRoles(debate);
+    return true;
+}
+
+function _moveChairToWingPosition(debate, judgeId) {
+    if (!Array.isArray(debate?.panel) || debate.panel.length <= 1) return false;
+    const idx = debate.panel.findIndex(p => String(p.id) === String(judgeId));
+    if (idx !== 0) return false;
+    const [entry] = debate.panel.splice(idx, 1);
+    debate.panel.splice(1, 0, entry);
+    _normalizePanelRoles(debate);
+    return true;
+}
+
 let _cssInjected = false;
 function _injectDrawCSS() {
     if (_cssInjected) return;
@@ -791,6 +824,7 @@ function renderBPDebateCard(round, debate, roundIdx, debateIdx) {
     const freeJudges  = availableJudges.filter(j => !round.debates.some((d,di)=>di!==debateIdx&&(d.panel||[]).some(p=>p.id==j.id)));
     const otherJudges = availableJudges.filter(j =>  round.debates.some((d,di)=>di!==debateIdx&&(d.panel||[]).some(p=>p.id==j.id)));
 
+    _normalizePanelRoles(debate);
     const judgeChips = (debate.panel||[]).map(p => {
         const j = (state.judges||[]).find(j=>j.id==p.id);
         if (!j) return '';
@@ -941,6 +975,7 @@ function renderDebateCard(round, debate, roundIdx, debateIdx, previousMeetings) 
         return inOther;
     });
 
+    _normalizePanelRoles(debate);
     const judgeChips = (debate.panel || []).map(p => {
         const j = (state.judges||[]).find(j => j.id == p.id);
         if (!j) return '';
@@ -1779,6 +1814,7 @@ export function dndJudgeDragOver(event, toRound, toDebate) {
     const round = state.rounds[toRound];
     const debate = round?.debates[toDebate];
     if (!debate) return;
+    _normalizePanelRoles(debate);
 
     const panelEntry = (debate.panel || []).find(p => String(p.id) === String(window._dnd.judgeId));
     if (panelEntry) {
@@ -1815,10 +1851,7 @@ export async function dndJudgeDrop(event, toRound, toDebate) {
 
     // ── Same room: promote dropped judge to chair ─────────────────────────────
     if (fromRound === toRound && fromDebate === toDebate) {
-        const entry = (toDebateObj.panel || []).find(p => String(p.id) === String(judgeId));
-        if (entry && entry.role !== 'chair' && toDebateObj.panel.length > 1) {
-            toDebateObj.panel.forEach(p => { if (p.role === 'chair') p.role = 'wing'; });
-            entry.role = 'chair';
+        if (_moveJudgeToPanelFront(toDebateObj, judgeId)) {
             saveNow();
             try {
                 await _persistDebate(round, toDebateObj);
@@ -1850,9 +1883,7 @@ export async function dndJudgeDrop(event, toRound, toDebate) {
     // Remove from source panel
     if (fromDebateObj) {
         fromDebateObj.panel = (fromDebateObj.panel || []).filter(p => String(p.id) !== String(judgeId));
-        if (fromDebateObj.panel.length > 0 && !fromDebateObj.panel.some(p => p.role === 'chair')) {
-            fromDebateObj.panel[0].role = 'chair';
-        }
+        _normalizePanelRoles(fromDebateObj);
     }
 
     // Add to target panel
@@ -1860,15 +1891,14 @@ export async function dndJudgeDrop(event, toRound, toDebate) {
     if (!toDebateObj.panel.some(p => String(p.id) === String(judgeId))) {
         toDebateObj.panel.push({ id: judgeId, role: toDebateObj.panel.length === 0 ? 'chair' : 'wing' });
     }
+    _normalizePanelRoles(toDebateObj);
 
     // Anti-double-booking safety net: strip from any other debate in this round
     round.debates.forEach((d, dIdx) => {
         if (dIdx === toDebate) return;
         const before = d.panel?.length || 0;
         d.panel = (d.panel || []).filter(p => String(p.id) !== String(judgeId));
-        if (d.panel.length !== before && d.panel.length > 0 && !d.panel.some(p => p.role === 'chair')) {
-            d.panel[0].role = 'chair';
-        }
+        if (d.panel.length !== before) _normalizePanelRoles(d);
     });
 
     saveNow();
@@ -2182,6 +2212,7 @@ async function _reloadRoundsFromSupabase() {
 
 async function _persistDebate(round, debate) {
     if (!_isPersistedStandardRound(round) || !debate?.id) return false;
+    _normalizePanelRoles(debate);
     await api.updateDebate(debate.id, {
         gov_team_id: debate.gov ?? null,
         opp_team_id: debate.opp ?? null,
@@ -2296,6 +2327,7 @@ function showJudgeManagement(roundIdx, debateIdx) {
     modal.className = 'modal-overlay';
     modal.style.cssText = 'position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 9999; overflow-y: auto; padding: 20px;';
 
+    _normalizePanelRoles(debate);
     const currentPanel = debate.panel || [];
 
     // Build a map of judgeId → { debateIdx, roomName, role } for every other debate in this round
@@ -2485,10 +2517,7 @@ export async function addJudgeToPanel(roundIdx, debateIdx, judgeId) {
         const was = d.panel.find(p => p.id === judgeId);
         if (was) {
             d.panel = d.panel.filter(p => p.id !== judgeId);
-            // Re-assign chair if needed
-            if (d.panel.length > 0 && !d.panel.some(p => p.role === 'chair')) {
-                d.panel[0].role = 'chair';
-            }
+            _normalizePanelRoles(d);
         }
     });
 
@@ -2497,6 +2526,7 @@ export async function addJudgeToPanel(roundIdx, debateIdx, judgeId) {
 
     const role = debate.panel.length === 0 ? 'chair' : 'wing';
     debate.panel.push({ id: judgeId, role });
+    _normalizePanelRoles(debate);
 
     saveNow();
     try {
@@ -2514,11 +2544,7 @@ export async function removeJudgeFromPanel(roundIdx, debateIdx, judgeId) {
     const debate = round.debates[debateIdx];
 
     debate.panel = debate.panel.filter(p => p.id !== judgeId);
-
-    // Promote first wing to chair if chair was removed
-    if (debate.panel.length > 0 && !debate.panel.some(p => p.role === 'chair')) {
-        debate.panel[0].role = 'chair';
-    }
+    _normalizePanelRoles(debate);
 
     saveNow();
     try {
@@ -2543,21 +2569,17 @@ export async function toggleJudgeRole(roundIdx, debateIdx, judgeId) {
     if (!entry) return;
 
     const j = (state.judges || []).find(j => String(j.id) === String(judgeId));
+    _normalizePanelRoles(debate);
 
-    if (entry.role === 'chair') {
+    if ((debate.panel || [])[0] && String(debate.panel[0].id) === String(judgeId)) {
         if (debate.panel.length <= 1) {
-            showNotification('Cannot demote — panel only has one judge', 'info');
+            showNotification('Cannot move chair — panel only has one judge', 'info');
             return;
         }
-        // Demote to wing; promote first other member to chair
-        entry.role = 'wing';
-        const nextChair = debate.panel.find(p => String(p.id) !== String(judgeId));
-        if (nextChair) nextChair.role = 'chair';
+        _moveChairToWingPosition(debate, judgeId);
         showNotification(`${j?.name || 'Judge'} demoted to wing`, 'info');
     } else {
-        // Promote to chair; demote current chair to wing
-        debate.panel.forEach(p => { if (p.role === 'chair') p.role = 'wing'; });
-        entry.role = 'chair';
+        _moveJudgeToPanelFront(debate, judgeId);
         showNotification(`${j?.name || 'Judge'} promoted to chair`, 'success');
     }
 
@@ -2581,9 +2603,7 @@ export async function moveJudgeToPanel(roundIdx, fromDebateIdx, toDebateIdx, jud
 
     // Remove from source panel
     fromDebate.panel = (fromDebate.panel || []).filter(p => p.id !== judgeId);
-    if (fromDebate.panel.length > 0 && !fromDebate.panel.some(p => p.role === 'chair')) {
-        fromDebate.panel[0].role = 'chair';
-    }
+    _normalizePanelRoles(fromDebate);
 
     // Add to destination panel
     if (!toDebate.panel) toDebate.panel = [];
@@ -2591,6 +2611,7 @@ export async function moveJudgeToPanel(roundIdx, fromDebateIdx, toDebateIdx, jud
         const role = toDebate.panel.length === 0 ? 'chair' : 'wing';
         toDebate.panel.push({ id: judgeId, role });
     }
+    _normalizePanelRoles(toDebate);
 
     saveNow();
     try {
@@ -5251,6 +5272,7 @@ export function renderRoundCard(round, actualRoundIdx, previousMeetings) {
                         const opp = (state.teams||[]).find(t=>t.id==debate.opp);
                         teamsHtml = `${escapeHTML(gov?.name||'TBD')} vs ${escapeHTML(opp?.name||'TBD')}`;
                     }
+                    _normalizePanelRoles(debate);
                     const panel = debate.panel || [];
                     const chairEntry     = panel.find(p => p.role === 'chair');
                     const wingEntries    = panel.filter(p => p.role !== 'chair' && p.role !== 'trainee');
@@ -5316,6 +5338,7 @@ function renderRoundMiniTable(round) {
             const opp = (state.teams||[]).find(t=>t.id==debate.opp);
             teamsHtml = `${escapeHTML(getDisplayName(gov))} vs ${escapeHTML(getDisplayName(opp))}`;
         }
+        _normalizePanelRoles(debate);
         const panel = debate.panel || [];
         const chairEntry     = panel.find(p => p.role === 'chair');
         const wingEntries    = panel.filter(p => p.role !== 'chair' && p.role !== 'trainee');

@@ -14,7 +14,6 @@ import { showNotification, escapeHTML, updatePublicCounts } from './utils.js';
 import { el, emptyState } from './ui/components.js';
 import { registerActions } from './router.js';
 import { getJudgeAssignments, buildTeamMap } from './maps.js';
-import { renderSmartList, VIRTUALIZATION_THRESHOLD } from './ui/virtual-list.js';
 
 // ── Permission helpers ────────────────────────────────────────────────────────
 function _isAdmin() { return !!(state.auth?.isAuthenticated && state.auth?.currentUser?.role === 'admin'); }
@@ -79,6 +78,19 @@ function _lockedView() {
     );
 }
 
+let _judgeRoleFilter = 'all';
+const JUDGE_ROLES = [
+    { id: 'chair', label: 'Chair' },
+    { id: 'panellist', label: 'Panel/Wing' },
+    { id: 'trainee', label: 'Trainee' },
+];
+
+function _roleLabel(role) {
+    if (role === 'chair') return 'Chair';
+    if (role === 'trainee') return 'Trainee';
+    return 'Panel/Wing';
+}
+
 function _adminScaffold() {
     const teams = state.teams || [];
     const frag = document.createDocumentFragment();
@@ -96,6 +108,11 @@ function _adminScaffold() {
         <div class="judge-add-grid">
             <input type="text"  id="judge-name"  placeholder="Judge name">
             <input type="email" id="judge-email" placeholder="Email optional">
+            <select id="judge-role" aria-label="Judge role">
+                <option value="panellist">Panel/Wing</option>
+                <option value="chair">Chair</option>
+                <option value="trainee">Trainee</option>
+            </select>
             <button class="btn btn-primary" data-action="addJudge">Add Judge</button>
         </div>`;
 
@@ -130,11 +147,31 @@ function _adminScaffold() {
     // Judge list section
     const listSec = document.createElement('div');
     listSec.className = 'section judge-list-section';
+    const listHead = document.createElement('div');
+    listHead.className = 'judge-list-head';
     const listH = document.createElement('h2');
     listH.textContent = 'Judges';
+    const filters = document.createElement('div');
+    filters.className = 'judge-role-tabs';
+    [
+        { id: 'all', label: 'All' },
+        { id: 'ratings', label: 'Ratings' },
+        { id: 'chair', label: 'Chair' },
+        { id: 'panellist', label: 'Panel/Wing' },
+        { id: 'trainee', label: 'Trainee' },
+    ].forEach(role => {
+        filters.appendChild(el('button', {
+            type: 'button',
+            class: `judge-role-tab ${_judgeRoleFilter === role.id ? 'active' : ''}`,
+            'data-action': 'filterJudgesByRole',
+            'data-args': JSON.stringify([role.id])
+        }, role.label));
+    });
+    listHead.appendChild(listH);
+    listHead.appendChild(filters);
     const listEl = document.createElement('div');
     listEl.id = 'judges-list';
-    listSec.appendChild(listH);
+    listSec.appendChild(listHead);
     listSec.appendChild(listEl);
     frag.appendChild(listSec);
 
@@ -181,7 +218,6 @@ function _judgeProfileSection() {
 }
 
 // ── displayJudges ─────────────────────────────────────────────────────────────
-let _judgesVirtualList = null;
 let _judgeEditModal = null;
 let _judgeEditTeamSignature = '';
 
@@ -189,13 +225,12 @@ function displayJudges() {
     const list = document.getElementById('judges-list');
     if (!list) return;
 
-    const judges = state.judges || [];
+    let judges = [...(state.judges || [])];
     const isAdmin = _isAdmin();
-
-    // Clean up existing virtual list
-    if (_judgesVirtualList) {
-        _judgesVirtualList.destroy();
-        _judgesVirtualList = null;
+    if (isAdmin && _judgeRoleFilter === 'ratings') {
+        judges.sort((a, b) => Number(b.rating || 0) - Number(a.rating || 0) || String(a.name || '').localeCompare(String(b.name || '')));
+    } else if (isAdmin && _judgeRoleFilter !== 'all') {
+        judges = judges.filter(j => (j.role || 'panellist') === _judgeRoleFilter);
     }
 
     list.innerHTML = '';
@@ -204,26 +239,10 @@ function displayJudges() {
         return;
     }
 
-    // Use virtual list for large datasets
-    if (judges.length >= VIRTUALIZATION_THRESHOLD) {
-        // Set a fixed height for the container to enable scrolling
-        list.style.height = '500px';
-        list.style.overflow = 'auto';
-
-        _judgesVirtualList = renderSmartList({
-            container: list,
-            items: judges,
-            itemHeight: 90, // Approximate card height
-            renderItem: (judge, index) => _buildJudgeCard(judge, isAdmin),
-            emptyMessage: 'Add your first judge above.'
-        });
-    } else {
-        // Use regular rendering for small lists
-        list.style.height = '';
-        list.style.overflow = '';
-        for (const judge of judges) {
-            list.appendChild(_buildJudgeCard(judge, isAdmin));
-        }
+    list.style.height = '';
+    list.style.overflow = 'visible';
+    for (const judge of judges) {
+        list.appendChild(_buildJudgeCard(judge, isAdmin));
     }
 }
 
@@ -234,7 +253,11 @@ function _buildJudgeCard(judge, isAdmin) {
     header.appendChild(el('div', { class: 'judge-avatar' }, (judge.name || '?')[0].toUpperCase()));
 
     const info = el('div', { class: 'judge-info' });
-    info.appendChild(el('strong', {}, judge.name || 'Unnamed'));
+    const nameLine = el('div', { class: 'judge-card__identity' });
+    nameLine.appendChild(el('strong', {}, judge.name || 'Unnamed'));
+    nameLine.appendChild(el('span', { class: `judge-role-badge judge-role-badge--${judge.role || 'panellist'}` }, _roleLabel(judge.role)));
+    if (judge.rating) nameLine.appendChild(el('span', { class: 'judge-rating-badge' }, `${judge.rating} rating`));
+    info.appendChild(nameLine);
     if (judge.email) info.appendChild(el('small', { class: 'judge-email' }, judge.email));
     header.appendChild(info);
     card.appendChild(header);
@@ -252,6 +275,17 @@ function _buildJudgeCard(judge, isAdmin) {
     }
 
     if (isAdmin) {
+        const roleRow = el('div', { class: 'judge-role-toggle-row' });
+        for (const role of JUDGE_ROLES) {
+            roleRow.appendChild(el('button', {
+                type: 'button',
+                class: `judge-role-toggle ${((judge.role || 'panellist') === role.id) ? 'active' : ''}`,
+                'data-action': 'updateJudgeRole',
+                'data-args': JSON.stringify([judge.id, role.id])
+            }, role.label));
+        }
+        card.appendChild(roleRow);
+
         const actions = el('div', { class: 'adm-card-actions-bordered' });
         actions.appendChild(el('button', {
             class: 'btn btn-secondary btn-sm',
@@ -275,6 +309,7 @@ async function addJudge() {
 
     const name = document.getElementById('judge-name')?.value.trim();
     const email = document.getElementById('judge-email')?.value.trim();
+    const role = document.getElementById('judge-role')?.value || 'panellist';
     const tournament = _requireActiveTournament();
     const tournId = tournament?.id;
 
@@ -287,6 +322,7 @@ async function addJudge() {
         const judge = await api.createJudge({
             tournamentId: tournId,
             name,
+            role,
             email,
             affiliations: checkedAffils
         });
@@ -298,6 +334,7 @@ async function addJudge() {
 
         document.getElementById('judge-name').value = '';
         if (document.getElementById('judge-email')) document.getElementById('judge-email').value = '';
+        if (document.getElementById('judge-role')) document.getElementById('judge-role').value = 'panellist';
         document.querySelectorAll('.judge-affil').forEach(cb => cb.checked = false);
     } catch (e) {
         showNotification(`Failed to add judge: ${e.message}`, 'error');
@@ -342,6 +379,14 @@ function _ensureJudgeEditModal() {
             <label style="font-size:12px;font-weight:700;color:#64748b;">
                 Email
                 <input type="email" id="edit-judge-email" style="margin-top:4px;padding:10px;border-radius:8px;border:1px solid #e2e8f0;width:100%;box-sizing:border-box;">
+            </label>
+            <label style="font-size:12px;font-weight:700;color:#64748b;">
+                Role
+                <select id="edit-judge-role" style="margin-top:4px;padding:10px;border-radius:8px;border:1px solid #e2e8f0;width:100%;box-sizing:border-box;">
+                    <option value="panellist">Panel/Wing</option>
+                    <option value="chair">Chair</option>
+                    <option value="trainee">Trainee</option>
+                </select>
             </label>
         </div>
         <div style="margin-bottom:14px;">
@@ -422,6 +467,7 @@ function showEditJudge(judgeId) {
     modal.querySelector('#judge-edit-title').textContent = `Edit Judge - ${judge.name || 'Unnamed'}`;
     modal.querySelector('#edit-judge-name').value = judge.name || '';
     modal.querySelector('#edit-judge-email').value = judge.email || '';
+    modal.querySelector('#edit-judge-role').value = judge.role || 'panellist';
     modal.querySelector('#edit-judge-affil-search').value = '';
     modal.querySelectorAll('.edit-judge-affil').forEach(cb => {
         cb.checked = conflictIds.has(String(cb.value));
@@ -487,14 +533,15 @@ async function saveEditJudge(judgeId) {
     const modal = _ensureJudgeEditModal();
     const name = modal.querySelector('#edit-judge-name')?.value.trim();
     const email = modal.querySelector('#edit-judge-email')?.value.trim();
+    const role = modal.querySelector('#edit-judge-role')?.value || 'panellist';
 
     if (!name) { showNotification('Name required', 'error'); return; }
 
     const affiliations = [...modal.querySelectorAll('.edit-judge-affil:checked')].map(cb => cb.value);
 
     try {
-        await api.updateJudge(judgeId, { name, email, affiliations });
-        patchJudge(judgeId, { name, email, judge_conflicts: affiliations.map(id => ({ team_id: id })) });
+        await api.updateJudge(judgeId, { name, email, role, affiliations });
+        patchJudge(judgeId, { name, email, role, judge_conflicts: affiliations.map(id => ({ team_id: id })) });
         _hideJudgeEditModal();
         displayJudges();
         showNotification('Judge updated', 'success');
@@ -503,12 +550,37 @@ async function saveEditJudge(judgeId) {
     }
 }
 
+async function updateJudgeRole(judgeId, role) {
+    if (!_isAdmin()) { showNotification('Admin access required', 'error'); return; }
+    const safeRole = JUDGE_ROLES.some(r => r.id === role) ? role : 'panellist';
+    try {
+        await api.updateJudge(judgeId, { role: safeRole });
+        patchJudge(judgeId, { role: safeRole });
+        displayJudges();
+        showNotification(`Judge role set to ${_roleLabel(safeRole)}`, 'success');
+    } catch (e) {
+        showNotification(`Role update failed: ${e.message}`, 'error');
+    }
+}
+
+function filterJudgesByRole(role) {
+    _judgeRoleFilter = role || 'all';
+    document.querySelectorAll('.judge-role-tab').forEach(btn => {
+        let args = [];
+        try { args = JSON.parse(btn.dataset.args || '[]'); } catch (_) { args = []; }
+        btn.classList.toggle('active', (args[0] || 'all') === _judgeRoleFilter);
+    });
+    displayJudges();
+}
+
 // ── Register actions ──────────────────────────────────────────────────────────
 registerActions({
     addJudge,
     deleteJudge,
     showEditJudge,
     saveEditJudge,
+    updateJudgeRole,
+    filterJudgesByRole,
     displayJudges,
     renderJudges,
 });

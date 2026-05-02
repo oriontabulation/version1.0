@@ -354,6 +354,30 @@ window.syncGlobalSearchForActiveTab = syncGlobalSearchForActiveTab;
 // ── Supabase real-time subscription ──────────────────────────────────────────
 let _realtimeChannels = [];
 let _realtimeEpoch = 0;
+const DEFAULT_TOURNAMENT_ID = '__orion_default_tournament__';
+
+function _defaultEmptyTournament() {
+    return {
+        id: DEFAULT_TOURNAMENT_ID,
+        name: 'My Tournament',
+        format: 'standard',
+        created_at: new Date(0).toISOString(),
+        isLocalDefault: true
+    };
+}
+
+function _defaultPublishState() {
+    return {
+        tournament_id: DEFAULT_TOURNAMENT_ID,
+        draw: true,
+        standings: true,
+        speakers: true,
+        break: true,
+        knockout: true,
+        motions: true,
+        results: true
+    };
+}
 
 function _shouldAutoCreateTournamentForCurrentUser() {
     return state.auth?.isAuthenticated && state.auth.currentUser?.role === 'admin';
@@ -625,37 +649,29 @@ async function init() {
             if (tour) tournaments.push(tour);
         }
 
+        if (!tournaments.length) {
+            tournaments = [_defaultEmptyTournament()];
+        }
+
         // 4. Determine active tournament
         let activeId = storedActiveId;
         if (!activeId || !tournaments.find(t => t.id === activeId)) {
             activeId = tournaments[0]?.id;
         }
 
-        if (!activeId) {
-            initAdminDashboard();
-            initParticipants();
-            updateTabsForRole();
-            updateNavDropdowns();
-            updatePublicCounts();
-            syncGlobalSearchForActiveTab();
-            initImageOptimizations();
-            window.__orionReady = true;
-            if (!_shouldAutoCreateTournamentForCurrentUser()) {
-                showNotification('No published tournament is available yet.', 'info');
-            }
-            return;
-        }
-
         // 5. Use prefetched data if it matched the resolved tournament, else fetch now
         console.log('[main] Active Tournament ID:', activeId);
-        let [teams, judges, rounds, publish] = prefetched && storedActiveId === activeId
-            ? prefetched
-            : await Promise.all([
-                api.getTeams(activeId),
-                api.getJudges(activeId),
-                api.getRounds(activeId),
-                api.getPublishState(activeId).catch(() => ({}))
-            ]);
+        const usingDefaultTournament = activeId === DEFAULT_TOURNAMENT_ID;
+        let [teams, judges, rounds, publish] = usingDefaultTournament
+            ? [[], [], [], _defaultPublishState()]
+            : prefetched && storedActiveId === activeId
+                ? prefetched
+                : await Promise.all([
+                    api.getTeams(activeId),
+                    api.getJudges(activeId),
+                    api.getRounds(activeId),
+                    api.getPublishState(activeId).catch(() => ({}))
+                ]);
 
         // 6. Hydrate in-memory state cache
         hydrateState({ activeTournamentId: activeId, tournaments, teams, judges, rounds, publish });
@@ -663,8 +679,8 @@ async function init() {
         // 6b. Update header with tournament name
         updateHeaderTournamentName();
 
-        // 7. Set up real-time subscription
-        _setupRealtimeSync(activeId);
+        // 7. Set up real-time subscription for persisted tournaments
+        if (!usingDefaultTournament) _setupRealtimeSync(activeId);
 
         // 8. Check URL for judge token (portal access via URL param)
         await checkUrlForJudgeToken();

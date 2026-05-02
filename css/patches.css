@@ -2085,16 +2085,35 @@ font-style: italic;
 .team-card.eliminated { border-left: 4px solid #dc2626; opacity: 0.75; }
 
 .team-header {
-    display: flex;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
     align-items: center;
-    gap: 10px;
+    gap: 12px;
     margin-bottom: 12px;
     padding-bottom: 12px;
     border-bottom: 1px solid var(--color-border);
 }
 
-.team-name { font-size: 16px; font-weight: 700; color: var(--color-dark); flex: 1; }
-.team-code { color: #64748b; font-size: 13px; margin-left: 6px; }
+.team-card__name,
+.team-name {
+    color: var(--color-dark);
+    font-size: 16px;
+    font-weight: 700;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.team-code {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 999px;
+    color: #475569;
+    font-size: 12px;
+    font-weight: 800;
+    margin-left: 0;
+    padding: 3px 10px;
+    white-space: nowrap;
+}
 
 .team-speakers {
     display: flex;
@@ -2139,7 +2158,94 @@ font-style: italic;
     border-bottom: 1px solid var(--color-border);
 }
 
-.judge-info { flex: 1; }
+.judge-info { flex: 1; min-width: 0; }
+
+.judge-card__identity {
+    align-items: center;
+    display: grid;
+    gap: 10px;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+}
+
+.judge-card__identity strong {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.judge-role-badge,
+.judge-rating-badge {
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 800;
+    padding: 3px 9px;
+    white-space: nowrap;
+}
+
+.judge-role-badge--chair {
+    background: #dbeafe;
+    border: 1px solid #bfdbfe;
+    color: #1d4ed8;
+}
+
+.judge-role-badge--panellist {
+    background: #f1f5f9;
+    border: 1px solid #e2e8f0;
+    color: #475569;
+}
+
+.judge-role-badge--trainee {
+    background: #fef3c7;
+    border: 1px solid #fde68a;
+    color: #92400e;
+}
+
+.judge-rating-badge {
+    background: #f5f3ff;
+    border: 1px solid #ddd6fe;
+    color: #6d28d9;
+}
+
+.judge-role-toggle-row,
+.judge-role-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.judge-role-toggle-row {
+    margin-top: 12px;
+}
+
+.judge-role-toggle,
+.judge-role-tab {
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 999px;
+    color: #475569;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 800;
+    padding: 6px 10px;
+}
+
+.judge-role-toggle.active,
+.judge-role-tab.active {
+    background: #1e293b;
+    border-color: #1e293b;
+    color: #fff;
+}
+
+.judge-list-head {
+    align-items: center;
+    display: flex;
+    gap: 12px;
+    justify-content: space-between;
+    margin-bottom: 14px;
+}
+
+.judge-list-head h2 {
+    margin: 0;
+}
 
 .judge-avatar {
     width: 36px;
@@ -2153,6 +2259,46 @@ font-style: italic;
     font-weight: 700;
     font-size: 14px;
     flex-shrink: 0;
+}
+
+.judge-add-grid {
+    display: grid;
+    gap: 10px;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+}
+
+.judge-add-grid input,
+.judge-add-grid select {
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    font-size: 14px;
+    padding: 10px 12px;
+}
+
+.judge-conflict-list {
+    display: grid;
+    gap: 6px;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    max-height: none;
+    overflow: visible;
+}
+
+@media (max-width: 680px) {
+    .team-header,
+    .judge-card__identity {
+        grid-template-columns: 1fr;
+        align-items: flex-start;
+    }
+
+    .judge-list-head {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .team-card,
+    .judge-card {
+        padding: 18px;
+    }
 }
 
 
@@ -3364,11 +3510,11 @@ body.theme-dark .header-user-name {
 .judge-panel-head h2 { margin: 0 0 4px; font-size: 18px; }
 .judge-panel-head p { margin: 0; color: #64748b; font-size: 13px; }
 .judge-panel-head span { border: 1px solid #e2e8f0; border-radius: 999px; color: #475569; font-size: 12px; font-weight: 700; padding: 4px 10px; white-space: nowrap; }
-.judge-add-grid { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(180px, 1fr) auto; gap: 10px; }
-.judge-add-grid input, .spk-add-row input, .spk-add-row select { border: 1px solid #e2e8f0; border-radius: 8px; font-size: 13px; padding: 9px 11px; }
+.judge-add-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; }
+.judge-add-grid input, .judge-add-grid select, .spk-add-row input, .spk-add-row select { border: 1px solid #e2e8f0; border-radius: 8px; font-size: 13px; padding: 9px 11px; }
 .judge-conflict-panel { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; margin-top: 12px; padding: 12px; }
 .judge-conflict-panel h3 { color: #475569; font-size: 12px; margin: 0 0 8px; text-transform: uppercase; }
-.judge-conflict-list { display: grid; gap: 4px 12px; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); max-height: 130px; overflow: auto; }
+.judge-conflict-list { display: grid; gap: 4px 12px; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); max-height: none; overflow: visible; }
 .spk-admin-panel { border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 14px; background: #fff; }
 .spk-admin-panel summary { align-items: center; cursor: pointer; display: flex; gap: 12px; justify-content: space-between; list-style: none; padding: 12px 14px; }
 .spk-admin-panel summary span { color: #1e293b; font-size: 14px; font-weight: 800; }
@@ -3386,9 +3532,9 @@ body.theme-dark .header-user-name {
 @media (max-width: 760px) { .judge-add-grid, .spk-add-row { grid-template-columns: 1fr; } }
 
 /* ── Team card (admin list) ─────────────────────────────────────────────────── */
-.team-header { flex-wrap: wrap; }
+.team-header { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 12px; }
 .team-card__name { color: var(--text-primary, #0f172a); font-size: 15px; font-weight: 700; }
-.team-wl { margin-left: auto; font-size: 13px; color: var(--text-muted, #64748b); font-weight: 500; white-space: nowrap; flex-shrink: 0; }
+.team-wl { margin-left: 0; font-size: 13px; color: var(--text-muted, #64748b); font-weight: 500; white-space: nowrap; flex-shrink: 0; }
 .team-speakers { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
 .team-speaker-chip { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; color: #334155; font-size: 12px; padding: 3px 10px; }
 
