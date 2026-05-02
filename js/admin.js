@@ -8,6 +8,7 @@
 import { state, activeTournament, switchTournamentCache, save, saveNow } from './state.js';
 import { api } from './api.js';
 import { showNotification, escapeHTML, closeAllModals } from './utils.js';
+import { updateTabsForRole, updateNavDropdowns } from './tab.js';
 import { displayAdminRounds } from './draw.js';
 // renderRoundMiniTable will be assigned via window after load
 import { calculateBreak } from './knockout.js';
@@ -551,6 +552,7 @@ async function adminSwitchTournament(id) {
         s.tournaments[id].rounds  = rounds;
         s.tournaments[id].publish = publish;
         s.activeTournamentId = id;
+        window._setupRealtimeSyncForTournament?.(id);
 
         // Debugging logs to help diagnose issues when switching tournaments
         console.debug('[admin] switched tournament', id, {
@@ -2030,26 +2032,54 @@ export function adminConfirmBreak() {
 // Backward-compat alias
 export function adminCalculateBreak() { adminConfirmBreak(); }
 
-export function adminTogglePublish(tabId) {
+export async function adminTogglePublish(tabId) {
     if (!state?.publish) return;
-    state.publish[tabId] = !state.publish[tabId];
-    save();
+    const tid = state.activeTournamentId;
+    const newVal = !state.publish[tabId];
+    state.publish[tabId] = newVal;
     adminSwitchSection('publish');
-    showNotification(`${tabId} ${state.publish[tabId]?'published':'hidden'}`, state.publish[tabId]?'success':'info');
+    updateTabsForRole();
+    updateNavDropdowns();
+    try {
+        await api.setPublish(tid, tabId, newVal);
+        showNotification(`${tabId} ${newVal ? 'published' : 'hidden'}`, newVal ? 'success' : 'info');
+    } catch (err) {
+        state.publish[tabId] = !newVal;
+        adminSwitchSection('publish');
+        updateTabsForRole();
+        updateNavDropdowns();
+        showNotification(`Failed: ${err.message}`, 'error');
+    }
 }
 
-export function adminPublishAll() {
+export async function adminPublishAll() {
     if (!state?.publish) return;
-    ['draw','standings','speakers','break','knockout','motions','results'].forEach(t=>state.publish[t]=true);
-    save(); adminSwitchSection('publish');
-    showNotification('All tabs published','success');
+    const tid = state.activeTournamentId;
+    ['draw','standings','speakers','break','knockout','motions','results'].forEach(t => state.publish[t] = true);
+    adminSwitchSection('publish');
+    updateTabsForRole();
+    updateNavDropdowns();
+    try {
+        await api.publishAll(tid);
+        showNotification('All tabs published', 'success');
+    } catch (err) {
+        showNotification(`Failed: ${err.message}`, 'error');
+    }
 }
 
-export function adminHideAll() {
+export async function adminHideAll() {
     if (!state) return;
+    const tid = state.activeTournamentId;
     state.publish = {};
-    save(); adminSwitchSection('publish');
-    showNotification('All tabs hidden','info');
+    adminSwitchSection('publish');
+    updateTabsForRole();
+    updateNavDropdowns();
+    try {
+        await api.hideAll(tid);
+        showNotification('All tabs hidden', 'info');
+    } catch (err) {
+        showNotification(`Failed: ${err.message}`, 'error');
+    }
 }
 
 function adminDeleteRound(id) {

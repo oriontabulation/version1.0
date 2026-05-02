@@ -61,23 +61,24 @@ function _renderLocked(container) {
 
 function _renderAdminScaffold(container) {
     const cats = getCategories();
-    // Add form section
     const formSection = document.createElement('div');
     formSection.className = 'section';
     formSection.innerHTML = `
-        <h2 style="margin:0 0 16px;">Add New Team</h2>
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:12px;">
-            <input type="text"  id="team-name"     placeholder="Team Name *"                          style="padding:12px;">
-            <input type="text"  id="team-code"     placeholder="Code (e.g. SEN)"                      style="padding:12px;">
-            <input type="email" id="team-email"    placeholder="Team Email (optional)"              style="padding:12px;">
-        </div>
+        <h2 style="margin:0 0 20px;">Add New Team</h2>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:16px;">
-            <input type="text"  id="speaker1-name" placeholder="Speaker 1 Name (optional)"          style="padding:12px;">
-            <input type="email" id="speaker1-email" placeholder="Speaker 1 Email (optional)"        style="padding:12px;">
-            <input type="text"  id="speaker2-name" placeholder="Speaker 2 Name (optional)"          style="padding:12px;">
-            <input type="email" id="speaker2-email" placeholder="Speaker 2 Email (optional)"        style="padding:12px;">
+            <input type="text"  id="team-name"  placeholder="Team Name *"          style="padding:11px 12px;border:1px solid #e2e8f0;border-radius:8px;font-size:14px;">
+            <input type="text"  id="team-code"  placeholder="Code (e.g. SEN)"       style="padding:11px 12px;border:1px solid #e2e8f0;border-radius:8px;font-size:14px;">
+            <input type="email" id="team-email" placeholder="Team Email (optional)" style="padding:11px 12px;border:1px solid #e2e8f0;border-radius:8px;font-size:14px;">
         </div>
-        <button class="btn btn-primary" style="padding:12px;" data-action="addTeam">Add Team</button>`;
+        <div style="font-size:13px;font-weight:600;color:#475569;margin-bottom:8px;">Speakers (up to 5)</div>
+        <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px;">
+            ${[1,2,3,4,5].map(n => `
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+                <input type="text"  id="speaker${n}-name"  placeholder="Speaker ${n} Name"  style="padding:9px 12px;border:1px solid #e2e8f0;border-radius:8px;font-size:13px;">
+                <input type="email" id="speaker${n}-email" placeholder="Speaker ${n} Email" style="padding:9px 12px;border:1px solid #e2e8f0;border-radius:8px;font-size:13px;">
+            </div>`).join('')}
+        </div>
+        <button class="btn btn-primary" style="padding:11px 24px;font-size:14px;" data-action="addTeam">Add Team</button>`;
 
     // Category filter if applicable
     const listSection = document.createElement('div');
@@ -185,66 +186,54 @@ export function displayTeams() {
     }
 }
 
-function _buildTeamCard(team, isAdmin, cats = []) {
-    const card = el('div', {
-        class: `team-card${team.broke ? ' breaking' : ''}${team.eliminated ? ' eliminated' : ''}`,
-        id: `team-${team.id}`
-    });
+const _CARD = 'background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:24px;margin-bottom:20px;width:100%;box-sizing:border-box;';
 
-    // Header
-    const header = el('div', { class: 'team-header' });
-    const namePart = el('div', { class: 'team-name' });
-    const nameEl = el('strong', {}, team.name);
-    const codeEl = team.code ? el('span', { class: 'team-code' }, team.code) : null;
-    namePart.appendChild(nameEl);
-    if (codeEl) namePart.appendChild(codeEl);
-    if (team.broke) namePart.appendChild(el('span', { class: 'mine-badge' }, `🏆 Seed ${team.seed || '?'}`));
-    if (team.eliminated) namePart.appendChild(el('span', { class: 'badge badge-danger' }, 'Eliminated'));
-    header.appendChild(namePart);
+function _buildTeamCard(team, isAdmin, cats = []) {
+    const card = el('div', { id: `team-${team.id}`, style: _CARD + (team.broke ? 'border-left:4px solid #10b981;' : team.eliminated ? 'border-left:4px solid #dc2626;opacity:0.8;' : '') });
+
+    // ── Header row ──
+    const header = el('div', { style: 'display:flex;align-items:center;gap:8px;flex-wrap:wrap;' });
+    header.appendChild(el('strong', { style: 'font-size:16px;color:#0f172a;' }, team.name));
+    if (team.code) header.appendChild(el('span', { style: 'background:#f1f5f9;color:#475569;font-size:12px;font-weight:600;padding:2px 8px;border-radius:6px;' }, team.code));
+    if (team.broke) header.appendChild(el('span', { style: 'background:#d1fae5;color:#065f46;font-size:11px;font-weight:700;padding:2px 8px;border-radius:6px;' }, `🏆 Seed ${team.seed || '?'}`));
+    if (team.eliminated) header.appendChild(el('span', { style: 'background:#fee2e2;color:#991b1b;font-size:11px;font-weight:700;padding:2px 8px;border-radius:6px;' }, 'Eliminated'));
 
     // Category badges
     if (cats.length > 0 && team.categories?.length > 0) {
         for (const catId of team.categories) {
             const cat = cats.find(c => c.id === catId);
-            if (cat) {
-                const b = el('span', {
-                    style: `background:${cat.color}22;color:${cat.color};border:1px solid ${cat.color}44;border-radius:12px;padding:2px 8px;font-size:11px;font-weight:700;margin-left:4px;`
-                }, `${cat.icon || ''} `, cat.name);
-                namePart.appendChild(b);
-            }
+            if (cat) header.appendChild(el('span', { style: `background:${cat.color}22;color:${cat.color};border:1px solid ${cat.color}44;border-radius:10px;padding:2px 8px;font-size:11px;font-weight:700;` }, `${cat.icon || ''}${cat.name}`));
         }
     }
 
+    // W/L + admin actions grouped at right
+    const right = el('div', { style: 'margin-left:auto;display:flex;align-items:center;gap:8px;flex-shrink:0;' });
+    if (team.wins != null || team.losses != null) {
+        const w = team.wins ?? 0, l = team.losses ?? 0;
+        right.appendChild(el('span', { style: 'font-size:13px;color:#64748b;white-space:nowrap;' }, `${w}W – ${l}L`));
+    }
+    if (isAdmin) {
+        right.appendChild(el('button', {
+            style: 'padding:6px 14px;font-size:13px;border-radius:8px;border:1px solid #e2e8f0;background:#f8fafc;color:#374151;cursor:pointer;font-weight:500;',
+            'data-action': 'showEditTeam', 'data-args': JSON.stringify([team.id])
+        }, '✏️ Edit'));
+        right.appendChild(el('button', {
+            style: 'padding:6px 14px;font-size:13px;border-radius:8px;border:1px solid #fecaca;background:#fef2f2;color:#dc2626;cursor:pointer;font-weight:500;',
+            'data-action': 'deleteTeam', 'data-args': JSON.stringify([team.id])
+        }, '🗑 Delete'));
+    }
+    header.appendChild(right);
     card.appendChild(header);
 
-    // Speakers
-    const speakers = team.speakers || [];
+    // ── Speakers ──
+    const speakers = (team.speakers || []).filter(s => s.name);
     if (speakers.length > 0) {
-        const spkEl = el('div', { class: 'team-speakers' },
-            ...speakers.map(s => {
-                const name = s.name || s;
-                const email = s.email;
-                const content = email ? `${name} (${email})` : name;
-                return el('span', {}, content);
-            })
-        );
-        card.appendChild(spkEl);
+        const row = el('div', { style: 'display:flex;flex-wrap:wrap;gap:6px;margin-top:12px;' });
+        for (const s of speakers) {
+            row.appendChild(el('span', { style: 'background:#f8fafc;border:1px solid #e2e8f0;color:#334155;font-size:12px;padding:3px 10px;border-radius:12px;' }, s.name + (s.email ? ` · ${s.email}` : '')));
+        }
+        card.appendChild(row);
     }
-
-    // Actions - always show for now to debug
-    const actions = el('div', { 
-        style: 'display:flex;gap:10px;margin-top:16px;padding-top:12px;border-top:1px solid var(--color-border);'
-    });
-    // Check if admin - show edit/delete only if admin
-    if (isAdmin) {
-        actions.innerHTML = `
-            <button class="btn btn-secondary" style="padding:8px 16px;font-size:13px;border-radius:8px;cursor:pointer;" data-action="showEditTeam" data-args='["${team.id}"]'>✏️ Edit</button>
-            <button style="padding:8px 16px;font-size:13px;border-radius:8px;background:#ef4444;color:white;border:none;cursor:pointer;" data-action="deleteTeam" data-args='["${team.id}"]'>🗑 Delete</button>
-        `;
-    } else {
-        actions.innerHTML = `<span style="color:#94a3b8;font-size:12px;">Admin only</span>`;
-    }
-    card.appendChild(actions);
 
     return card;
 }
@@ -257,14 +246,12 @@ export async function addTeam() {
     const code = document.getElementById('team-code')?.value.trim().toUpperCase();
     const email = document.getElementById('team-email')?.value.trim();
     
-    const spk1Name = document.getElementById('speaker1-name')?.value.trim();
-    const spk1Email = document.getElementById('speaker1-email')?.value.trim();
-    const spk2Name = document.getElementById('speaker2-name')?.value.trim();
-    const spk2Email = document.getElementById('speaker2-email')?.value.trim();
-    
     const speakers = [];
-    if (spk1Name) speakers.push({ name: spk1Name, email: spk1Email || null, position: 1 });
-    if (spk2Name) speakers.push({ name: spk2Name, email: spk2Email || null, position: 2 });
+    for (let n = 1; n <= 5; n++) {
+        const name = document.getElementById(`speaker${n}-name`)?.value.trim();
+        const email = document.getElementById(`speaker${n}-email`)?.value.trim();
+        if (name) speakers.push({ name, email: email || null, position: n });
+    }
     
     const catId = document.getElementById('add-team-category')?.value || null;
     const tournId = state.activeTournamentId;
@@ -284,7 +271,10 @@ export async function addTeam() {
         showNotification(`Team "${name}" added`, 'success');
 
         // Clear form
-        ['team-name', 'team-code', 'team-email', 'speaker1-name', 'speaker1-email', 'speaker2-name', 'speaker2-email'].forEach(id => {
+        ['team-name','team-code','team-email',
+         'speaker1-name','speaker1-email','speaker2-name','speaker2-email',
+         'speaker3-name','speaker3-email','speaker4-name','speaker4-email',
+         'speaker5-name','speaker5-email'].forEach(id => {
             const el = document.getElementById(id); if (el) el.value = '';
         });
         window.updateNavDropdowns?.();
@@ -318,59 +308,47 @@ export function showEditTeam(teamId) {
     if (!card) return;
 
     const speakers = team.speakers || [];
-    const spk1 = speakers[0] || {};
-    const spk2 = speakers[1] || {};
+    const INP = 'width:100%;padding:9px 12px;border:1px solid #e2e8f0;border-radius:8px;font-size:13px;box-sizing:border-box;';
 
-    // Build edit form safely
     card.innerHTML = '';
-    const form = el('div', { style: 'background:white;padding:20px;border-radius:12px;border:2px solid #bfdbfe;' });
+    card.style.cssText = _CARD + 'border:2px solid #bfdbfe;';
 
-    const title = el('h3', { style: 'margin-top:0;color:#1e40af;' }, `✏️ Edit — `, team.name);
-    form.appendChild(title);
+    const title = el('h3', { style: 'margin:0 0 16px;color:#1e40af;font-size:16px;' }, `✏️ Edit — ${escapeHTML(team.name)}`);
+    card.appendChild(title);
 
-    const grid = el('div', { style: 'display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:16px;' });
-
-    const fields = [
-        ['edit-team-name-' + teamId, 'text', 'Team Name', team.name],
-        ['edit-team-code-' + teamId, 'text', 'Code', team.code || ''],
-        ['edit-team-email-' + teamId, 'email', 'Email', team.email || ''],
-    ];
-
-    for (const [id, type, placeholder, value] of fields) {
-        const group = el('div');
-        const lbl = el('label', { style: 'font-size:13px;font-weight:600;color:#374151;display:block;margin-bottom:4px;' }, placeholder);
-        const inp = el('input', { type, id, style: 'width:100%;padding:8px;border-radius:6px;border:1px solid #e2e8f0;box-sizing:border-box;' });
-        inp.value = value;
-        group.appendChild(lbl);
-        group.appendChild(inp);
-        grid.appendChild(group);
-    }
+    // Team fields
+    const grid = el('div', { style: 'display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:16px;' });
+    [['edit-team-name-'+teamId,'text','Team Name *', team.name],
+     ['edit-team-code-'+teamId,'text','Code',         team.code||''],
+     ['edit-team-email-'+teamId,'email','Email',       team.email||'']
+    ].forEach(([id,type,ph,val]) => {
+        const inp = el('input', { type, id, placeholder: ph, style: INP });
+        inp.value = val;
+        grid.appendChild(inp);
+    });
+    card.appendChild(grid);
 
     // Speaker fields
-    const speakerFields = [
-        ['edit-spk1-name-' + teamId, 'edit-spk1-email-' + teamId, 'Speaker 1', spk1.name || '', spk1.email || ''],
-        ['edit-spk2-name-' + teamId, 'edit-spk2-email-' + teamId, 'Speaker 2', spk2.name || '', spk2.email || ''],
-    ];
-
-    for (const [nameId, emailId, label, nameVal, emailVal] of speakerFields) {
-        const group = el('div', { style: 'display:flex;gap:8px;' });
-        const nameInp = el('input', { type: 'text', id: nameId, placeholder: label + ' Name', style: 'flex:1;padding:8px;border-radius:6px;border:1px solid #e2e8f0;' });
-        nameInp.value = nameVal;
-        const emailInp = el('input', { type: 'email', id: emailId, placeholder: label + ' Email', style: 'flex:1;padding:8px;border-radius:6px;border:1px solid #e2e8f0;' });
-        emailInp.value = emailVal;
-        group.appendChild(nameInp);
-        group.appendChild(emailInp);
-        grid.appendChild(group);
+    const spkLabel = el('div', { style: 'font-size:13px;font-weight:600;color:#475569;margin-bottom:8px;' }, 'Speakers');
+    card.appendChild(spkLabel);
+    const spkGrid = el('div', { style: 'display:flex;flex-direction:column;gap:8px;margin-bottom:16px;' });
+    for (let n = 1; n <= 5; n++) {
+        const s = speakers[n-1] || {};
+        const row = el('div', { style: 'display:grid;grid-template-columns:1fr 1fr;gap:8px;' });
+        const ni = el('input', { type: 'text',  id: `edit-spk${n}-name-${teamId}`,  placeholder: `Speaker ${n} Name`,  style: INP });
+        const ei = el('input', { type: 'email', id: `edit-spk${n}-email-${teamId}`, placeholder: `Speaker ${n} Email`, style: INP });
+        ni.value = s.name  || '';
+        ei.value = s.email || '';
+        row.appendChild(ni);
+        row.appendChild(ei);
+        spkGrid.appendChild(row);
     }
-
-    form.appendChild(grid);
+    card.appendChild(spkGrid);
 
     const btns = el('div', { style: 'display:flex;gap:10px;' });
-    btns.appendChild(el('button', { class: 'btn btn-primary', style: 'padding:10px 20px;', 'data-action': 'saveEditTeam', 'data-args': JSON.stringify([teamId]) }, '💾 Save'));
-    btns.appendChild(el('button', { class: 'btn btn-secondary', style: 'padding:10px 20px;', 'data-action': 'displayTeams' }, 'Cancel'));
-    form.appendChild(btns);
-
-    card.appendChild(form);
+    btns.appendChild(el('button', { class: 'btn btn-primary',   style: 'padding:9px 20px;', 'data-action': 'saveEditTeam',  'data-args': JSON.stringify([teamId]) }, '💾 Save'));
+    btns.appendChild(el('button', { class: 'btn btn-secondary', style: 'padding:9px 20px;', 'data-action': 'displayTeams' }, 'Cancel'));
+    card.appendChild(btns);
 }
 
 export async function saveEditTeam(teamId) {
@@ -378,18 +356,16 @@ export async function saveEditTeam(teamId) {
     const team = (state.teams || []).find(t => String(t.id) === String(teamId));
     if (!team) return;
 
-    const name = document.getElementById(`edit-team-name-${teamId}`)?.value.trim();
-    const code = document.getElementById(`edit-team-code-${teamId}`)?.value.trim().toUpperCase();
+    const name  = document.getElementById(`edit-team-name-${teamId}`)?.value.trim();
+    const code  = document.getElementById(`edit-team-code-${teamId}`)?.value.trim().toUpperCase();
     const email = document.getElementById(`edit-team-email-${teamId}`)?.value.trim();
 
-    const spk1Name = document.getElementById(`edit-spk1-name-${teamId}`)?.value.trim();
-    const spk1Email = document.getElementById(`edit-spk1-email-${teamId}`)?.value.trim();
-    const spk2Name = document.getElementById(`edit-spk2-name-${teamId}`)?.value.trim();
-    const spk2Email = document.getElementById(`edit-spk2-email-${teamId}`)?.value.trim();
-
     const speakers = [];
-    if (spk1Name) speakers.push({ name: spk1Name, email: spk1Email || null, position: 1 });
-    if (spk2Name) speakers.push({ name: spk2Name, email: spk2Email || null, position: 2 });
+    for (let n = 1; n <= 5; n++) {
+        const sName  = document.getElementById(`edit-spk${n}-name-${teamId}`)?.value.trim();
+        const sEmail = document.getElementById(`edit-spk${n}-email-${teamId}`)?.value.trim();
+        if (sName) speakers.push({ name: sName, email: sEmail || null, position: n });
+    }
 
     if (!name) { showNotification('Team name required', 'error'); return; }
 

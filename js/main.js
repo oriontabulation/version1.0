@@ -341,38 +341,138 @@ window.syncGlobalSearchForActiveTab = syncGlobalSearchForActiveTab;
 
 
 // ── Supabase real-time subscription ──────────────────────────────────────────
-function _setupRealtimeSync(tournamentId) {
-    supabase
-        .channel(`debates:${tournamentId}`)
-        .on('postgres_changes', {
-            event: 'UPDATE',
-            schema: 'public',
-            table: 'debates',
-            filter: `tournament_id=eq.${tournamentId}`
-        }, payload => {
-            const debate = payload.new;
-            const roundId = debate.round_id;
-            patchDebate(roundId, debate.id, debate);
-            const { updateRoomStatus } = window._drawDomHelpers || {};
-            if (updateRoomStatus) updateRoomStatus(debate.id, debate.entered);
-        })
-        .subscribe();
+let _realtimeChannels = [];
 
-    supabase
-        .channel(`publish:${tournamentId}`)
-        .on('postgres_changes', {
-            event: 'UPDATE',
-            schema: 'public',
-            table: 'tournament_publish',
-            filter: `tournament_id=eq.${tournamentId}`
-        }, payload => {
-            const { tournament_id, ...flags } = payload.new;
-            state.publish = flags;
-            updateTabsForRole();
-            updateNavDropdowns();
-        })
-        .subscribe();
+function _cleanupRealtimeChannels() {
+    _realtimeChannels.forEach(ch => { try { supabase.removeChannel(ch); } catch (_) {} });
+    _realtimeChannels = [];
 }
+
+function _debounce(fn, ms) {
+    let t;
+    return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); };
+}
+
+function _setupRealtimeSync(tournamentId) {
+    _cleanupRealtimeChannels();
+
+    const refetchTeams = _debounce(async () => {
+        try {
+            const teams = await api.getTeams(tournamentId);
+            if (state.activeTournamentId === tournamentId) state.teams = teams;
+        } catch (e) { console.warn('[rt] teams refetch:', e); }
+    }, 400);
+
+    const refetchJudges = _debounce(async () => {
+        try {
+            const judges = await api.getJudges(tournamentId);
+            if (state.activeTournamentId === tournamentId) state.judges = judges;
+        } catch (e) { console.warn('[rt] judges refetch:', e); }
+    }, 400);
+
+    const refetchRounds = _debounce(async () => {
+        try {
+            const rounds = await api.getRounds(tournamentId);
+            if (state.activeTournamentId === tournamentId) state.rounds = rounds;
+        } catch (e) { console.warn('[rt] rounds refetch:', e); }
+    }, 400);
+
+    const refetchTeamsAndRounds = _debounce(async () => {
+        try {
+            const [teams, rounds] = await Promise.all([
+                api.getTeams(tournamentId),
+                api.getRounds(tournamentId),
+            ]);
+            if (state.activeTournamentId === tournamentId) {
+                state.teams  = teams;
+                state.rounds = rounds;
+            }
+        } catch (e) { console.warn('[rt] teams+rounds refetch:', e); }
+    }, 400);
+
+    _realtimeChannels = [
+        // Teams row changes
+        supabase.channel(`rt-teams-${tournamentId}`)
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'teams',
+                filter: `tournament_id=eq.${tournamentId}` }, refetchTeams)
+            .subscribe(),
+
+        // Speaker changes (embedded inside teams objects)
+        supabase.channel(`rt-speakers-${tournamentId}`)
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'speakers',
+                filter: `tournament_id=eq.${tournamentId}` }, refetchTeams)
+            .subscribe(),
+
+        // Judge row changes
+        supabase.channel(`rt-judges-${tournamentId}`)
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'judges',
+                filter: `tournament_id=eq.${tournamentId}` }, refetchJudges)
+            .subscribe(),
+
+        // Judge conflict changes — no tournament_id column, filter by known judge IDs
+        supabase.channel(`rt-judge-conflicts`)
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'judge_conflicts' },
+                payload => {
+                    const jid = payload.new?.judge_id ?? payload.old?.judge_id;
+                    if ((state.judges || []).some(j => String(j.id) === String(jid)))
+                        refetchJudges();
+                })
+            .subscribe(),
+
+        // Round row changes
+        supabase.channel(`rt-rounds-${tournamentId}`)
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'rounds',
+                filter: `tournament_id=eq.${tournamentId}` }, refetchRounds)
+            .subscribe(),
+
+        // Debate changes — fast DOM patch for ballot-entry status; full refetch otherwise
+        supabase.channel(`rt-debates-${tournamentId}`)
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'debates',
+                filter: `tournament_id=eq.${tournamentId}` }, payload => {
+                if (payload.eventType === 'UPDATE') {
+                    const d = payload.new;
+                    patchDebate(d.round_id, d.id, d);
+                    window._drawDomHelpers?.updateRoomStatus(d.id, d.entered);
+                } else {
+                    refetchRounds();
+                }
+            })
+            .subscribe(),
+
+        // Debate judge assignments — no tournament_id, filter by known debate IDs
+        supabase.channel(`rt-debate-judges`)
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'debate_judges' },
+                payload => {
+                    const did = payload.new?.debate_id ?? payload.old?.debate_id;
+                    const rounds = state.rounds || [];
+                    if (rounds.some(r => (r.debates || []).some(d => String(d.id) === String(did))))
+                        refetchRounds();
+                })
+            .subscribe(),
+
+        // Ballot changes — edge function updates team stats after insert, so refetch both
+        supabase.channel(`rt-ballots-${tournamentId}`)
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'ballots',
+                filter: `tournament_id=eq.${tournamentId}` }, refetchTeamsAndRounds)
+            .subscribe(),
+
+        // Publish flag changes
+        supabase.channel(`rt-publish-${tournamentId}`)
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'tournament_publish',
+                filter: `tournament_id=eq.${tournamentId}` }, payload => {
+                if (payload.new) {
+                    const { tournament_id, ...flags } = payload.new;
+                    state.publish = flags;
+                    updateTabsForRole();
+                    updateNavDropdowns();
+                }
+            })
+            .subscribe(),
+    ];
+}
+
+// Exposed so admin.js can re-wire channels after a tournament switch
+window._setupRealtimeSyncForTournament = id => { _cleanupRealtimeChannels(); _setupRealtimeSync(id); };
 
 // ── App initialization ────────────────────────────────────────────────────────
 async function init() {

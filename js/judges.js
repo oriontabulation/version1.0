@@ -202,50 +202,57 @@ function displayJudges() {
     }
 }
 
-function _buildJudgeCard(judge, isAdmin) {
-    const card = el('div', {
-        class: 'judge-card',
-        id: `judge-${judge.id}`
-    });
+const _CARD = 'background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:24px;margin-bottom:20px;width:100%;box-sizing:border-box;';
 
-    const header = el('div', { class: 'judge-header' });
-    const avatar = el('div', { class: 'judge-avatar' }, (judge.name || '?')[0].toUpperCase());
-    const info = el('div', { class: 'judge-info' });
-    info.appendChild(el('strong', {}, judge.name));
-    header.appendChild(avatar);
+function _buildJudgeCard(judge, isAdmin) {
+    const card = el('div', { id: `judge-${judge.id}`, style: _CARD });
+
+    const header = el('div', { style: 'display:flex;align-items:center;gap:12px;' });
+
+    header.appendChild(el('div', {
+        style: 'width:40px;height:40px;border-radius:50%;background:linear-gradient(135deg,#667eea,#764ba2);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:16px;flex-shrink:0;'
+    }, (judge.name || '?')[0].toUpperCase()));
+
+    const info = el('div', { style: 'flex:1;min-width:0;' });
+    info.appendChild(el('div', { style: 'font-size:16px;font-weight:700;color:#1e293b;' }, judge.name || 'Unnamed'));
+    if (judge.email) {
+        info.appendChild(el('div', { style: 'font-size:13px;color:#64748b;margin-top:2px;' }, judge.email));
+    }
     header.appendChild(info);
 
     if (isAdmin) {
-        const actions = el('div', { style: 'margin-left:auto;display:flex;gap:8px;' });
-        actions.appendChild(el('button', { 
-            class: 'btn btn-secondary btn-sm', 
-            'data-action': 'showEditJudge', 
-            'data-args': JSON.stringify([judge.id]) 
+        const actions = el('div', { style: 'display:flex;gap:8px;margin-left:auto;flex-shrink:0;' });
+        actions.appendChild(el('button', {
+            style: 'padding:6px 14px;font-size:13px;border-radius:8px;border:1px solid #e2e8f0;background:#f8fafc;color:#374151;cursor:pointer;font-weight:500;',
+            'data-action': 'showEditJudge',
+            'data-args': JSON.stringify([judge.id])
         }, '✏️ Edit'));
-        actions.appendChild(el('button', { 
-            class: 'btn btn-danger btn-sm',
-            'data-action': 'deleteJudge', 
-            'data-args': JSON.stringify([judge.id]) 
+        actions.appendChild(el('button', {
+            style: 'padding:6px 14px;font-size:13px;border-radius:8px;border:1px solid #fecaca;background:#fef2f2;color:#dc2626;cursor:pointer;font-weight:500;',
+            'data-action': 'deleteJudge',
+            'data-args': JSON.stringify([judge.id])
         }, '🗑 Delete'));
         header.appendChild(actions);
     }
 
     card.appendChild(header);
 
-    // Conflict affiliations
     const conflicts = judge.judge_conflicts || [];
     if (conflicts.length > 0) {
-        const conflictDiv = el('div', { style: 'margin-top:10px;font-size:12px;color:#64748b;' }, 'Conflicts: ');
+        const conflictRow = el('div', {
+            style: 'margin-top:14px;padding-top:14px;border-top:1px solid #e2e8f0;display:flex;flex-wrap:wrap;gap:6px;align-items:center;'
+        });
+        conflictRow.appendChild(el('span', { style: 'font-size:12px;color:#64748b;font-weight:600;' }, 'Conflicts:'));
         const teamById = buildTeamMap(state.teams || []);
         for (const c of conflicts) {
             const team = teamById.get(String(c.team_id));
             if (team) {
-                conflictDiv.appendChild(el('span', {
-                    style: 'background:#fee2e2;color:#991b1b;padding:2px 8px;border-radius:12px;margin-left:4px;font-size:11px;'
+                conflictRow.appendChild(el('span', {
+                    style: 'background:#fee2e2;color:#991b1b;padding:2px 10px;border-radius:12px;font-size:12px;font-weight:500;'
                 }, team.name));
             }
         }
-        card.appendChild(conflictDiv);
+        card.appendChild(conflictRow);
     }
 
     return card;

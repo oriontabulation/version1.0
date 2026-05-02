@@ -6,11 +6,12 @@
 /* ── Shell ── */
 .adm-shell {
     background: var(--t-bg, #f1f5f9);
-    min-height: 100vh;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
     font-family: 'Inter', system-ui, sans-serif;
     box-sizing: border-box;
-    /* Ensure shell starts from the very top — main.css hides the
-       outer header/nav in admin-mode so nothing sits above this */
     position: relative;
 }
 
@@ -30,10 +31,8 @@
     background: var(--t-header-bg, var(--cosmic-deep, #0f172a));
     border-bottom: 3px solid var(--t-header-bdr, rgba(249,115,22,0.6));
     padding: 14px 24px;
-    position: sticky;
-    top: 0;
-    z-index: 1000;
     flex-shrink: 0;
+    z-index: 1000;
     color: white;
 }
 .adm-topbar .header-container {
@@ -255,7 +254,9 @@
 /* ── Layout ── */
 .adm-layout {
     display: flex;
-    min-height: 100vh;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
 }
 
 /* ── Sidebar ── */
@@ -266,7 +267,7 @@
     border-right: 1px solid var(--t-border, #e2e8f0);
     padding: 16px 0;
     overflow-y: auto;
-    display: block;
+    height: 100%;
 }
 
 /* ── Content Area ── */
@@ -275,7 +276,8 @@
     min-width: 0;
     padding: 24px;
     background: var(--t-bg, #f1f5f9);
-    min-height: 100vh;
+    overflow-y: auto;
+    height: 100%;
 }
 
 .adm-nav-item {
@@ -767,6 +769,9 @@
 
 /* Mobile: sidebar becomes a slide-in drawer */
 @media (max-width: 768px) {
+    /* ── Shell: revert to natural scroll on mobile ── */
+    .adm-shell { height: auto; min-height: 100vh; overflow: visible; }
+
     /* ── Topbar ── */
     .adm-topbar { padding: 10px 12px; }
     .adm-topbar .header-container { gap: 8px; }
@@ -789,8 +794,8 @@
     .adm-chip-label { font-size: 12px; }
 
     /* ── Layout: stack vertically ── */
-    .adm-layout { flex-direction: column; min-height: auto; }
-    .adm-body { padding: 16px; min-height: auto; }
+    .adm-layout { flex-direction: column; min-height: auto; overflow: visible; height: auto; }
+    .adm-body { padding: 16px; min-height: auto; overflow-y: visible; height: auto; }
 
     /* ── Sidebar: hide desktop sticky, show as drawer ── */
     .adm-sidebar {
@@ -846,6 +851,8 @@
         border-bottom: none !important;
     }
 }
+
+@media (max-width: 768px) {
     .adm-sidebar.adm-sidebar--open { transform: translateX(0) !important; }
 
     /* Nav items revert to standard vertical layout inside the drawer */
@@ -1553,10 +1560,4 @@ body.admin-mode main {
 }
 body.admin-mode .adm-shell {
     min-height: 100vh;
-}
-@media (min-width: 769px) {
-    .adm-sidebar,
-    .adm-sidebar-overlay {
-        display: none !important;
-    }
 }
