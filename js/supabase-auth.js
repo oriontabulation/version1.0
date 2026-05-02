@@ -170,6 +170,9 @@ async function handleLogin() {
                 isOfflineMode = false;
                 _refreshAuthDependentUI();
                 _lastManualSignInAt = Date.now();
+                if (state.auth.currentUser?.role === 'admin' && typeof window.ensureDefaultTournamentForAdmin === 'function') {
+                    await window.ensureDefaultTournamentForAdmin().catch(() => null);
+                }
                 closeAllModals();
                 const role = state.auth.currentUser?.role;
                 if (typeof window.switchTab === 'function') {
@@ -197,8 +200,7 @@ async function handleLogin() {
                     isLocal: true
                 };
                 state.auth.isAuthenticated = true;
-                updateHeaderControls();
-                updateAdminNavVisibility();
+                _refreshAuthDependentUI();
                 closeAllModals();
                 showNotification('Logged in (offline mode)', 'info');
                 return;
@@ -258,8 +260,7 @@ async function registerUser() {
                 isLocal: true
             };
             state.auth.isAuthenticated = true;
-            updateHeaderControls();
-            updateAdminNavVisibility();
+            _refreshAuthDependentUI();
             showNotification('Account created! (offline mode)', 'success');
             closeAllModals();
             return;
@@ -307,8 +308,7 @@ async function registerUser() {
                 isLocal: true
             };
             state.auth.isAuthenticated = true;
-            updateHeaderControls();
-            updateAdminNavVisibility();
+            _refreshAuthDependentUI();
             showNotification('Account created! (offline mode)', 'success');
             closeAllModals();
             return;
@@ -343,8 +343,7 @@ async function logout() {
     state.auth.lastActivity = Date.now();
     isOfflineMode = false;
 
-    updateHeaderControls();
-    updateAdminNavVisibility();
+    _refreshAuthDependentUI();
     if (typeof window.switchTab === 'function') window.switchTab('public');
     showNotification('Logged out successfully', 'info');
     setTimeout(() => { _explicitLogoutInProgress = false; }, 1000);
@@ -355,8 +354,7 @@ function guestLogin() {
     _authApplyGeneration++;
     state.auth.currentUser = { role: 'public', name: 'Guest' };
     state.auth.isAuthenticated = false;
-    updateHeaderControls();
-    updateAdminNavVisibility();
+    _refreshAuthDependentUI();
     closeAllModals();
     if (typeof window.switchTab === 'function') window.switchTab('public');
     showNotification('Browsing as guest', 'info');
@@ -442,7 +440,7 @@ async function _handleAuthStateChange(event, session) {
             if (state.auth.currentUser) {
                 state.auth.currentUser.role = newRole;
             }
-            updateAdminNavVisibility();
+            _refreshAuthDependentUI();
         }
     }
 }
@@ -801,7 +799,7 @@ function showLoginModal() {
     <button onclick="closeAllModals()" style="position:absolute;top:12px;right:12px;background:none;border:none;font-size:24px;cursor:pointer;color:#64748b;z-index:10;">&times;</button>
     <div class="auth-inner">
         <div class="auth-logo-wrap">
-            <img src="IMG/logo.png" alt="Orion logo" class="auth-logo">
+            <img src="/logo.png" alt="Orion logo" class="auth-logo">
             <p class="auth-brand">Tournament Management</p>
         </div>
         <div class="auth-tabs">

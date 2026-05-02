@@ -74,21 +74,34 @@ function _canShowNavTab(tabId) {
     if (tabId === 'portal') return isAdmin || role === 'judge' || role === 'team';
 
     const publishedTabs = ['draw', 'standings', 'speakers', 'break', 'knockout', 'motions', 'results'];
-    if (publishedTabs.includes(tabId)) return isAdmin || role === 'judge' || !!state.publish?.[tabId];
+    if (publishedTabs.includes(tabId)) return true;
 
     return true;
 }
 
 function _syncNavVisibility() {
+    // Pass 1: show/hide each item based on role/publish state
     document.querySelectorAll('[data-tab]').forEach(btn => {
         const tabId = btn.dataset.tab;
         const visible = _canShowNavTab(tabId);
-        const directGroup = btn.classList.contains('dropdown-trigger') ? btn.closest('.dropdown-group') : null;
-        if (directGroup && btn.dataset.tab) {
-            directGroup.style.display = visible ? '' : 'none';
+        // Standalone triggers (data-tab on the trigger itself) → show/hide entire group
+        if (btn.classList.contains('dropdown-trigger')) {
+            const group = btn.closest('.dropdown-group');
+            if (group) group.style.display = visible ? '' : 'none';
         } else {
             btn.style.display = visible ? '' : 'none';
         }
+    });
+
+    // Pass 2: hide dropdown groups whose trigger has no data-tab (Outrounds, Results, More…)
+    // if every item inside is hidden — prevents phantom empty dropdowns
+    document.querySelectorAll('.dropdown-group').forEach(group => {
+        const trigger = group.querySelector(':scope > .dropdown-trigger');
+        if (!trigger || trigger.dataset.tab) return; // already handled in pass 1
+        const items = group.querySelectorAll('.dropdown-item[data-tab]');
+        if (!items.length) return;
+        const anyVisible = Array.from(items).some(item => item.style.display !== 'none');
+        group.style.display = anyVisible ? '' : 'none';
     });
 }
 
@@ -136,6 +149,14 @@ function _rebuildOutroundsNav(cats) {
 
 window.switchCategoryTab  = switchCategoryTab;
 window.updateNavDropdowns = updateNavDropdowns;
+
+function _roundNumber(round, rounds = state.rounds || []) {
+    if (!round) return '?';
+    const direct = Number(round.round_number);
+    if (Number.isFinite(direct) && direct > 0) return direct;
+    const idx = rounds.findIndex(r => String(r?.id) === String(round.id));
+    return idx >= 0 ? idx + 1 : '?';
+}
 
 
 
@@ -241,6 +262,12 @@ function switchTab(tabId) {
     const publicNav  = document.querySelector('.dropdown-menu-container');
     if (siteHeader) siteHeader.classList.toggle('nav--hidden', hideChrome);
     if (publicNav)  publicNav.classList.toggle('nav--hidden', hideChrome);
+
+    // :has() fallback classes for Firefox < 121
+    const isPublicTab = tabId === 'public' && !lockedReason;
+    const mainEl = document.querySelector('main');
+    if (mainEl) mainEl.classList.toggle('public-tab-active', isPublicTab);
+    // adm-mode is also set in admin.js._updateMainHeaderForAdmin — both paths converge correctly
 
     // Hide all tab contents + deactivate buttons
     document.querySelectorAll('.tab-content').forEach(tab => {
@@ -449,7 +476,7 @@ function renderMotions() {
     const container = document.getElementById('motions');
     if (!container) return;
 
-    const allRounds = [...(state.rounds || [])].sort((a, b) => (b.id || 0) - (a.id || 0));
+    const allRounds = [...(state.rounds || [])].sort((a, b) => _roundNumber(b) - _roundNumber(a));
 
     let html = `
         <div class="section">
@@ -470,7 +497,7 @@ function renderMotions() {
     } else {
         allRounds.forEach(round => {
             if (!round) return;
-            const roundId   = round.id || '?';
+            const roundId   = _roundNumber(round);
             const roundType = round.type || 'prelim';
             const debates   = round.debates || [];
             const isBlinded = round.blinded || false;
@@ -523,7 +550,7 @@ function renderStandings() {
 
     const allRounds = [...(state.rounds || [])]
         .filter(r => r && r.type === 'prelim')
-        .sort((a, b) => (a.id || 0) - (b.id || 0));
+        .sort((a, b) => _roundNumber(a) - _roundNumber(b));
 
     let ranked = [...(state.teams || [])].sort((a, b) =>
         ((b.wins || 0) - (a.wins || 0)) ||
@@ -618,7 +645,7 @@ function buildStandingsTable(ranked, allRounds) {
     `;
 
     allRounds.forEach(round => {
-        html += `<th class="th-center">R${round.id}</th>`;
+        html += `<th class="th-center">R${_roundNumber(round, allRounds)}</th>`;
     });
 
     html += `
@@ -729,7 +756,7 @@ function renderResults() {
     const container = document.getElementById('results');
     if (!container) return;
 
-    const allRounds  = [...(state.rounds || [])].sort((a, b) => (b.id || 0) - (a.id || 0));
+    const allRounds  = [...(state.rounds || [])].sort((a, b) => _roundNumber(b) - _roundNumber(a));
     const hasResults = allRounds.some(r => r.debates?.some(d => d.entered));
 
     let html = `
@@ -768,7 +795,7 @@ function renderResults() {
                 <div class="result-card">
                     <div class="result-card__header">
                         <div>
-                            <h2 class="u-mt-0 u-mb-sm">Round ${round.id} Results</h2>
+                            <h2 class="u-mt-0 u-mb-sm">Round ${_roundNumber(round, allRounds)} Results</h2>
                             <p class="u-text-muted u-mb-0">${completedDebates.length}/${round.debates.length} debates completed</p>
                         </div>
                         ${isBlinded ? '<span class="status-blinded">🔒 BLINDED</span>' : ''}

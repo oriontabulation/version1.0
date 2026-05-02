@@ -6,7 +6,7 @@
 
 // ============================================================
 
-import { state, addTeamToCache, removeTeamFromCache, patchTeam } from './state.js';
+import { state, activeTournament, removeTeamFromCache, patchTeam } from './state.js';
 import { api } from './api.js';
 import { showNotification, escapeHTML } from './utils.js';
 import { getCategories, teamMatchesCategory } from './categories.js';
@@ -18,6 +18,24 @@ function _myTeamId() { return state.auth?.currentUser?.associatedId ?? null; }
 
 let _teamsListCategory = null;
 const _CARD = 'background:white;border:1px solid #e2e8f0;border-radius:12px;padding:18px;margin-bottom:16px;';
+
+function _requireActiveTournament() {
+    const tournament = activeTournament();
+    if (!tournament?.id) {
+        showNotification('Create or select a tournament before managing teams.', 'error');
+        window.switchTab?.('admin-dashboard');
+        return null;
+    }
+    return tournament;
+}
+
+async function _reloadTeamsForTournament(tournamentId) {
+    const teams = await api.getTeams(tournamentId);
+    if (String(state.activeTournamentId) === String(tournamentId)) {
+        state.teams = teams;
+    }
+    return teams;
+}
 
 // ── renderTeams ───────────────────────────────────────────────────────────────
 export function renderTeams() {
@@ -244,19 +262,19 @@ export async function addTeam() {
     }
     
     const catId = document.getElementById('add-team-category')?.value || null;
-    const tournId = state.activeTournamentId;
+    const tournament = _requireActiveTournament();
+    const tournId = tournament?.id;
 
     if (!name) { showNotification('Team name is required', 'error'); return; }
-    if (!tournId) { showNotification('No active tournament. State: ' + JSON.stringify(state), 'error'); return; }
+    if (!tournId) return;
 
     try {
-        const team = await api.createTeam({
+        await api.createTeam({
             tournamentId: tournId,
             name, code, email, speakers,
             categories: catId ? [catId] : []
         });
-
-        addTeamToCache({ ...team, speakers });
+        await _reloadTeamsForTournament(tournId);
         displayTeams();
         showNotification(`Team "${name}" added`, 'success');
 
@@ -279,8 +297,11 @@ export async function deleteTeam(teamId) {
     if (!confirm('Delete this team? This cannot be undone.')) return;
 
     try {
+        const tournament = _requireActiveTournament();
+        if (!tournament?.id) return;
         await api.deleteTeam(teamId);
         removeTeamFromCache(teamId);
+        await _reloadTeamsForTournament(tournament.id);
         displayTeams();
         showNotification('Team deleted', 'info');
         window.updateNavDropdowns?.();

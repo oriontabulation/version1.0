@@ -8,11 +8,21 @@
 //   - preview rendering uses DOM methods for team/judge names
 // ============================================================
 
-import { state }                          from './state.js';
+import { state, activeTournament }        from './state.js';
 import { api }                            from './api.js';
 import { buildTeamByNameMap }             from './maps.js';
 import { showNotification, escapeHTML }   from './utils.js';
 import { registerActions }                from './router.js';
+
+function _requireActiveTournamentForImport() {
+    const tournament = activeTournament();
+    if (!tournament?.id) {
+        showNotification('Create or select a tournament before importing registrations.', 'error');
+        window.switchTab?.('admin-dashboard');
+        return null;
+    }
+    return tournament;
+}
 
 // ── renderImport ─────────────────────────────────────────────────────
 export function renderImport() {
@@ -148,7 +158,13 @@ export function previewJudges() {
     if (!text) { preview.style.display = 'none'; return; }
 
     const lines = text.split('\n').filter(l => l.trim());
-    const parsed = lines.map(_parseJudgeLine).filter(Boolean);
+    const parsed = lines
+        .map(_parseJudgeLine)
+        .filter(Boolean)
+        .map(judge => ({
+            ...judge,
+            affiliations: judge.affiliations || judge.conflicts || []
+        }));
     if (!parsed.length) {
         preview.style.display = 'none';
         return;
@@ -273,8 +289,9 @@ export async function importTeams() {
     const parsed = lines.map(_parseTeamLine).filter(Boolean);
     if (!parsed.length) { showNotification('No valid teams found — check the format', 'error'); return; }
 
-    const tournId = state.activeTournamentId;
-    if (!tournId) { showNotification('No active tournament', 'error'); return; }
+    const tournament = _requireActiveTournamentForImport();
+    const tournId = tournament?.id;
+    if (!tournId) return;
 
     showNotification(`Importing ${parsed.length} teams…`, 'info');
 
@@ -287,9 +304,10 @@ export async function importTeams() {
 
         if (result.imported > 0) {
             clearTeamImport();
-            // Reload teams into cache
             const teams = await api.getTeams(tournId);
-            state.teams = teams;
+            if (String(state.activeTournamentId) === String(tournId)) {
+                state.teams = teams;
+            }
             window.updateNavDropdowns?.();
         }
     } catch (e) {
@@ -306,13 +324,15 @@ export async function importJudges() {
     const parsed = lines.map(_parseJudgeLine).filter(Boolean);
     if (!parsed.length) { showNotification('No valid judges found', 'error'); return; }
 
-    const tournId   = state.activeTournamentId;
+    const tournament = _requireActiveTournamentForImport();
+    const tournId = tournament?.id;
+    if (!tournId) return;
     const teamByName = buildTeamByNameMap(state.teams || []);
 
     showNotification(`Importing ${parsed.length} judges…`, 'info');
 
     try {
-        const result = await api.bulkCreateJudges(tournId, parsed);
+        const result = await api.bulkCreateJudges(tournId, parsed, teamByName);
         showNotification(
             `✅ Imported ${result.imported} judge(s)${result.skipped ? ` (${result.skipped} skipped)` : ''}`,
             result.imported > 0 ? 'success' : 'error'

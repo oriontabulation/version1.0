@@ -4,7 +4,7 @@
 // ============================================
 
 import { save, saveNow} from './supabase-sync.js';
-import { state, watch, switchTournamentCache } from './state.js';
+import { state, watch, switchTournamentCache, hydrateState } from './state.js';
 import { api } from './api.js';
 import { showNotification, escapeHTML, closeAllModals, getPreviousMeetings, teamCode } from './utils.js';
 import { hasConflict, buildConflictMap, buildTeamMap } from './maps.js';
@@ -60,17 +60,16 @@ function showTournamentRequiredPrompt() {
         btn.textContent = 'Creating...';
         try {
             const t = await api.createTournament('Placeholder Tournament');
-            state.tournaments[t.id] = {
-                ...t,
+            const tournaments = await api.getTournaments().catch(() => []);
+            localStorage.setItem('orion_active_tournament_id', t.id);
+            hydrateState({
+                activeTournamentId: t.id,
+                tournaments,
                 teams: [],
                 judges: [],
                 rounds: [],
-                publish: {},
-                feedback: [],
-                judgeTokens: {},
-                roomURLs: {}
-            };
-            localStorage.setItem('orion_active_tournament_id', t.id);
+                publish: {}
+            });
             switchTournamentCache(t.id, { teams: [], judges: [], rounds: [], publish: {} });
             window._setupRealtimeSyncForTournament?.(t.id);
             overlay.remove();
@@ -469,7 +468,7 @@ window._submitNewRound = function() {
 
 function renderKnockoutBracket(rounds) {
     // Sort rounds by ID
-    const sortedRounds = [...rounds].sort((a, b) => a.id - b.id);
+    const sortedRounds = [...rounds].sort((a, b) => Number(roundNumber(a)) - Number(roundNumber(b)));
     
     // Get the latest round
     const latestRound = sortedRounds[sortedRounds.length - 1];
@@ -488,7 +487,7 @@ function renderKnockoutBracket(rounds) {
             debates: debates,
             motion: round.motion,
             isComplete: debates.every(d => d.entered),
-            isLatest: round.id === latestRound.id
+            isLatest: String(round.id) === String(latestRound.id)
         };
     });
     
@@ -910,7 +909,8 @@ function renderDebateCard(round, debate, roundIdx, debateIdx, previousMeetings) 
 
     // Rematch detection — count only rounds that came BEFORE this one (lower id)
     // so round 2 can never show "3rd meeting" due to future pairings being included
-    const priorMeetings = (state.rounds || []).filter(r => r.id < round.id).reduce((count, r) => {
+    const currentRoundNumber = Number(roundNumber(round));
+    const priorMeetings = (state.rounds || []).filter(r => Number(roundNumber(r)) < currentRoundNumber).reduce((count, r) => {
         const met = (r.debates || []).some(d =>
             (d.gov === debate.gov && d.opp === debate.opp) ||
             (d.gov === debate.opp && d.opp === debate.gov)
@@ -1086,12 +1086,23 @@ function renderDebateCard(round, debate, roundIdx, debateIdx, previousMeetings) 
 }
 
 
-export function toggleBlindRound(roundIdx) {
+export async function toggleBlindRound(roundIdx) {
     const round = state.rounds[roundIdx];
     if (!round) return;
     
     round.blinded = !round.blinded;
     saveNow();
+    if (_isPersistedStandardRound(round)) {
+        try {
+            await api.updateRound(round.id, { blinded: !!round.blinded });
+            await _reloadRoundsFromSupabase();
+        } catch (error) {
+            round.blinded = !round.blinded;
+            saveNow();
+            showNotification(`Failed to update blind status: ${error.message}`, 'error');
+            return;
+        }
+    }
     displayRounds();
     renderStandings();
     
@@ -1105,7 +1116,7 @@ export function toggleBlindRound(roundIdx) {
 // REDRAW ROUND (SWAP TEAMS)
 // ============================================
 
-export function redrawRound(roundIdx) {
+export async function redrawRound(roundIdx) {
     const round = state.rounds[roundIdx];
     if (!round) return;
     
@@ -1163,6 +1174,29 @@ export function redrawRound(roundIdx) {
     // Reset rooms to default names so stale custom names don't persist
     round.rooms = debates.map((_, i) => `Room ${i + 1}`);
     saveNow();
+    if (_isPersistedStandardRound(round)) {
+        try {
+            const createdDebates = await api.replaceRoundDebates(
+                round.id,
+                state.activeTournamentId,
+                debates.map((d, i) => ({
+                    gov: d.gov,
+                    opp: d.opp,
+                    roomName: round.rooms?.[i] || `Room ${i + 1}`
+                }))
+            );
+            await Promise.all(createdDebates.map((created, i) =>
+                api.assignJudgesToDebate(
+                    created.id,
+                    (debates[i]?.panel || []).map(p => ({ judgeId: p.id, role: p.role || 'panellist' }))
+                )
+            ));
+            await _reloadRoundsFromSupabase();
+        } catch (error) {
+            showNotification(`Failed to persist redraw: ${error.message}`, 'error');
+            return;
+        }
+    }
     displayRounds();
     
     showNotification(isKnockout ? 'Round redrawn with bracket seeding' : '🎲 Round redrawn with fresh random pairings', 'success');
@@ -1172,7 +1206,7 @@ export function redrawRound(roundIdx) {
 // SWAP TEAMS IN DEBATE
 // ============================================
 
-export function swapTeams(roundIdx, debateIdx) {
+export async function swapTeams(roundIdx, debateIdx) {
     const round = state.rounds[roundIdx];
     const debate = round.debates[debateIdx];
     
@@ -1193,6 +1227,12 @@ export function swapTeams(roundIdx, debateIdx) {
     debate.sidesPending = false;
     
     saveNow();
+    try {
+        await _persistDebate(round, debate);
+    } catch (error) {
+        showNotification(`Failed to persist team swap: ${error.message}`, 'error');
+        return;
+    }
     displayRounds();
     showNotification('Teams swapped successfully', 'success');
 }
@@ -1523,7 +1563,7 @@ function showAssignTeamsModal(roundIdx, debateIdx) {
     document.body.appendChild(modal);
 }
 
-function executeAssignTeams(roundIdx, debateIdx) {
+async function executeAssignTeams(roundIdx, debateIdx) {
     const round  = state.rounds[roundIdx];
     const debate = round.debates[debateIdx];
     const sid    = v => (v === null || v === undefined) ? null : String(v);
@@ -1594,6 +1634,15 @@ function executeAssignTeams(roundIdx, debateIdx) {
     debate.sidesPending   = round.sideMethod === 'manual';
 
     saveNow();
+    try {
+        const touched = [debate];
+        if (govParsed.type === 'move') touched.push(round.debates[govParsed.srcDIdx]);
+        if (oppParsed.type === 'move') touched.push(round.debates[oppParsed.srcDIdx]);
+        await _persistDebates(round, touched);
+    } catch (error) {
+        showNotification(`Failed to persist team assignment: ${error.message}`, 'error');
+        return;
+    }
     closeAllModals();
     displayRounds();
     showNotification(
@@ -1602,7 +1651,7 @@ function executeAssignTeams(roundIdx, debateIdx) {
     );
 }
 
-export function executeMoveTeam(roundIdx, debateIdx) {
+export async function executeMoveTeam(roundIdx, debateIdx) {
     const round = state.rounds[roundIdx];
     const srcDebate = round.debates[debateIdx];
 
@@ -1631,6 +1680,12 @@ export function executeMoveTeam(roundIdx, debateIdx) {
         srcDebate.sidesPending = false;
 
         saveNow();
+        try {
+            await _persistDebate(round, srcDebate);
+        } catch (error) {
+            showNotification(`Failed to persist team move: ${error.message}`, 'error');
+            return;
+        }
         closeAllModals();
         displayRounds();
         showNotification(`✅ ${movingTeam?.name} removed · ${freeTeam.name} → ${srcRoomLabel} as ${movingSide}`, 'success');
@@ -1659,6 +1714,12 @@ export function executeMoveTeam(roundIdx, debateIdx) {
     tgtDebate.sidesPending = false;
 
     saveNow();
+    try {
+        await _persistDebates(round, [srcDebate, tgtDebate]);
+    } catch (error) {
+        showNotification(`Failed to persist team move: ${error.message}`, 'error');
+        return;
+    }
     closeAllModals();
     displayRounds();
 
@@ -1736,7 +1797,7 @@ export function dndJudgeDragOver(event, toRound, toDebate) {
     event.dataTransfer.dropEffect = 'move';
 }
 
-export function dndJudgeDrop(event, toRound, toDebate) {
+export async function dndJudgeDrop(event, toRound, toDebate) {
     event.preventDefault();
     event.currentTarget.classList.remove('drag-over', 'drag-over-conflict', 'drag-over-promote');
 
@@ -1759,6 +1820,12 @@ export function dndJudgeDrop(event, toRound, toDebate) {
             toDebateObj.panel.forEach(p => { if (p.role === 'chair') p.role = 'wing'; });
             entry.role = 'chair';
             saveNow();
+            try {
+                await _persistDebate(round, toDebateObj);
+            } catch (error) {
+                showNotification(`Failed to persist judge role: ${error.message}`, 'error');
+                return;
+            }
             displayRounds();
             showNotification(`${judge?.name || 'Judge'} promoted to chair`, 'success');
         }
@@ -1805,6 +1872,12 @@ export function dndJudgeDrop(event, toRound, toDebate) {
     });
 
     saveNow();
+    try {
+        await _persistDebates(round, [fromDebateObj, toDebateObj]);
+    } catch (error) {
+        showNotification(`Failed to persist judge move: ${error.message}`, 'error');
+        return;
+    }
     displayRounds();
     showNotification(`${judge?.name} moved → ${toRoomLabel}${conflict ? ' (conflict noted)' : ''}`, conflict ? 'warning' : 'success');
 }
@@ -1847,7 +1920,7 @@ export function dndTeamDragOver(event, toRound, toDebate, toSide) {
     event.dataTransfer.dropEffect = 'move';
 }
 
-export function dndTeamDrop(event, toRound, toDebate, toSide) {
+export async function dndTeamDrop(event, toRound, toDebate, toSide) {
     event.preventDefault();
     event.currentTarget.classList.remove('drag-over', 'drag-over-warn');
 
@@ -1913,6 +1986,12 @@ export function dndTeamDrop(event, toRound, toDebate, toSide) {
     tgtDebate.attendance[toSide] = true;
 
     saveNow();
+    try {
+        await _persistDebates(round, [srcDebate, tgtDebate]);
+    } catch (error) {
+        showNotification(`Failed to persist team drag move: ${error.message}`, 'error');
+        return;
+    }
     displayRounds();
 
     const actionLabel = isCrossRoom
@@ -2076,6 +2155,52 @@ function nextRoundNumber() {
         .map(r => Number(r.round_number ?? r.id))
         .filter(Number.isFinite);
     return nums.length ? Math.max(...nums) + 1 : 1;
+}
+
+function roundNumber(round) {
+    if (!round) return '?';
+    const direct = Number(round.round_number);
+    if (Number.isFinite(direct) && direct > 0) return direct;
+    const idx = (state.rounds || []).findIndex(r => String(r?.id) === String(round.id));
+    return idx >= 0 ? idx + 1 : '?';
+}
+
+function _isPersistedStandardRound(round) {
+    return !!(state.activeTournamentId && round?.id && !round?.format && !isBP() && !isSpeech());
+}
+
+function _roomNameForDebate(round, debate) {
+    const idx = (round?.debates || []).findIndex(d => d === debate || String(d?.id) === String(debate?.id));
+    return round?.rooms?.[idx] || `Room ${idx + 1}`;
+}
+
+async function _reloadRoundsFromSupabase() {
+    if (!state.activeTournamentId) return;
+    const freshRounds = await api.getRounds(state.activeTournamentId);
+    if (state.activeTournamentId) state.rounds = freshRounds;
+}
+
+async function _persistDebate(round, debate) {
+    if (!_isPersistedStandardRound(round) || !debate?.id) return false;
+    await api.updateDebate(debate.id, {
+        gov_team_id: debate.gov ?? null,
+        opp_team_id: debate.opp ?? null,
+        room_name: _roomNameForDebate(round, debate)
+    });
+    await api.assignJudgesToDebate(
+        debate.id,
+        (debate.panel || []).map(p => ({ judgeId: p.id, role: p.role || 'panellist' }))
+    );
+    return true;
+}
+
+async function _persistDebates(round, debates) {
+    let touched = false;
+    for (const debate of debates.filter(Boolean)) {
+        touched = (await _persistDebate(round, debate)) || touched;
+    }
+    if (touched) await _reloadRoundsFromSupabase();
+    return touched;
 }
 
 // ============================================
@@ -2347,7 +2472,7 @@ function showJudgeManagement(roundIdx, debateIdx) {
 // ADD/REMOVE/MOVE JUDGE FROM PANEL
 // ============================================
 
-export function addJudgeToPanel(roundIdx, debateIdx, judgeId) {
+export async function addJudgeToPanel(roundIdx, debateIdx, judgeId) {
     const round = state.rounds[roundIdx];
     const debate = round.debates[debateIdx];
 
@@ -2374,11 +2499,17 @@ export function addJudgeToPanel(roundIdx, debateIdx, judgeId) {
     debate.panel.push({ id: judgeId, role });
 
     saveNow();
+    try {
+        await _persistDebates(round, round.debates);
+    } catch (error) {
+        showNotification(`Failed to persist judge assignment: ${error.message}`, 'error');
+        return;
+    }
     closeAllModals();
     setTimeout(() => showJudgeManagement(roundIdx, debateIdx), 100);
 }
 
-export function removeJudgeFromPanel(roundIdx, debateIdx, judgeId) {
+export async function removeJudgeFromPanel(roundIdx, debateIdx, judgeId) {
     const round = state.rounds[roundIdx];
     const debate = round.debates[debateIdx];
 
@@ -2390,12 +2521,18 @@ export function removeJudgeFromPanel(roundIdx, debateIdx, judgeId) {
     }
 
     saveNow();
+    try {
+        await _persistDebate(round, debate);
+    } catch (error) {
+        showNotification(`Failed to persist judge removal: ${error.message}`, 'error');
+        return;
+    }
     closeAllModals();
     setTimeout(() => showJudgeManagement(roundIdx, debateIdx), 100);
 }
 
 // Toggle a judge's role (chair ↔ wing) within their current panel
-export function toggleJudgeRole(roundIdx, debateIdx, judgeId) {
+export async function toggleJudgeRole(roundIdx, debateIdx, judgeId) {
     const isAdmin = state.auth?.currentUser?.role === 'admin';
     if (!isAdmin) return;
     const round  = state.rounds?.[roundIdx];
@@ -2425,11 +2562,17 @@ export function toggleJudgeRole(roundIdx, debateIdx, judgeId) {
     }
 
     saveNow();
+    try {
+        await _persistDebate(round, debate);
+    } catch (error) {
+        showNotification(`Failed to persist judge role: ${error.message}`, 'error');
+        return;
+    }
     displayRounds();
 }
 
 // Move a judge from one debate panel to another within the same round
-export function moveJudgeToPanel(roundIdx, fromDebateIdx, toDebateIdx, judgeId) {
+export async function moveJudgeToPanel(roundIdx, fromDebateIdx, toDebateIdx, judgeId) {
     const round = state.rounds[roundIdx];
     const fromDebate = round.debates[fromDebateIdx];
     const toDebate = round.debates[toDebateIdx];
@@ -2450,6 +2593,12 @@ export function moveJudgeToPanel(roundIdx, fromDebateIdx, toDebateIdx, judgeId) 
     }
 
     saveNow();
+    try {
+        await _persistDebates(round, [fromDebate, toDebate]);
+    } catch (error) {
+        showNotification(`Failed to persist judge move: ${error.message}`, 'error');
+        return;
+    }
     closeAllModals();
     setTimeout(() => showJudgeManagement(roundIdx, toDebateIdx), 100);
 }
@@ -2662,7 +2811,7 @@ export function showEnterResults(roundIdx, debateIdx) {
                     <h2 style="margin:0;color:#0f172a;font-size:15px;font-weight:800;letter-spacing:-0.01em;">Enter Results</h2>
                     <button onclick="window.closeAllModals()" style="background:none;border:none;cursor:pointer;color:#94a3b8;font-size:18px;line-height:1;padding:0 2px;">✕</button>
                 </div>
-                <p style="margin:0;color:#64748b;font-size:11px;font-weight:500;">Round ${round.id} · ${escapeHTML(roomLabel)}: ${escapeHTML(round.motion)}</p>
+                <p style="margin:0;color:#64748b;font-size:11px;font-weight:500;">Round ${_roundNum(round)} · ${escapeHTML(roomLabel)}: ${escapeHTML(round.motion)}</p>
                 <div style="margin:6px 0 0;display:flex;align-items:center;gap:6px;font-size:11px;">
                     <span style="background:#eff6ff;color:#1e40af;padding:2px 7px;border-radius:6px;font-weight:700;">${escapeHTML(gov.name)}</span>
                     <span style="color:#94a3b8;font-weight:700;font-size:10px;">VS</span>
@@ -2982,7 +3131,7 @@ function checkDuplicateSpeakers(side, includeReply = false) {
 // SUBMIT RESULTS 
 // ============================================
 
-export function submitResults(roundIdx, debateIdx) {
+export async function submitResults(roundIdx, debateIdx) {
     const round = state.rounds[roundIdx];
     const debate = round.debates[debateIdx];
     const gov = state.teams.find(t => t.id === debate.gov);
@@ -3147,6 +3296,76 @@ export function submitResults(roundIdx, debateIdx) {
         const govWon = govTotal > oppTotal;
         const winner = govWon ? gov : opp;
         const loser = govWon ? opp : gov;
+
+        if (_isPersistedStandardRound(round) && (isJudge || isAdmin)) {
+            const findSpeakerId = (team, speakerName) => {
+                const speaker = (team.speakers || []).find(s => s.name?.toLowerCase() === speakerName.toLowerCase());
+                return speaker?.id || null;
+            };
+
+            const speakerScores = [];
+            for (let i = 0; i < 3; i++) {
+                const govSpeakerId = findSpeakerId(gov, govSpeakers[i]);
+                const oppSpeakerId = findSpeakerId(opp, oppSpeakers[i]);
+                if (!govSpeakerId || !oppSpeakerId) {
+                    throw new Error('All ballot speakers must already exist on the team roster for persisted submissions.');
+                }
+                speakerScores.push({ speakerId: govSpeakerId, score: govScores[i], isReply: false });
+                speakerScores.push({ speakerId: oppSpeakerId, score: oppScores[i], isReply: false });
+            }
+            if (!disableReply) {
+                const govReplyId = findSpeakerId(gov, govReply);
+                const oppReplyId = findSpeakerId(opp, oppReply);
+                if (!govReplyId || !oppReplyId) {
+                    throw new Error('Reply speakers must already exist on the team roster for persisted submissions.');
+                }
+                speakerScores.push({ speakerId: govReplyId, score: govReplyScore, isReply: true });
+                speakerScores.push({ speakerId: oppReplyId, score: oppReplyScore, isReply: true });
+            }
+
+            if (isAdmin) {
+                await api.replaceBallotAsAdmin({
+                    debateId: debate.id,
+                    tournamentId: state.activeTournamentId,
+                    winnerSide: govWon ? 'gov' : 'opp',
+                    govTotal,
+                    oppTotal,
+                    speakerScores
+                });
+            } else {
+                if (debate.entered) {
+                    throw new Error('This ballot has already been submitted. Use an admin override workflow to replace it.');
+                }
+                await api.submitBallot({
+                    debateId: debate.id,
+                    tournamentId: state.activeTournamentId,
+                    winnerSide: govWon ? 'gov' : 'opp',
+                    govTotal,
+                    oppTotal,
+                    speakerScores
+                });
+            }
+
+            const [teams, rounds] = await Promise.all([
+                api.getTeams(state.activeTournamentId),
+                api.getRounds(state.activeTournamentId)
+            ]);
+            if (state.activeTournamentId) {
+                state.teams = teams;
+                state.rounds = rounds;
+            }
+            closeAllModals();
+            renderDraw();
+            renderStandings();
+            if (typeof window.renderSpeakerStandings === 'function') {
+                setTimeout(() => window.renderSpeakerStandings(), 100);
+            }
+            showNotification(
+                `✅ Ballot submitted! Winner: ${winner.name} (${Math.max(govTotal, oppTotal).toFixed(1)} - ${Math.min(govTotal, oppTotal).toFixed(1)})`,
+                'success'
+            );
+            return;
+        }
 
         // ── Auto-create any new speakers typed into the ballot 
         const ensureSpeaker = (team, name) => {
@@ -3482,7 +3701,7 @@ function showSpeechEnterResults(roundIdx, debateIdx) {
         '<div style="background:white;border-radius:14px;max-width:450px;width:100%;max-height:85vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.3)">' +
         '<div style="padding:14px 18px;border-bottom:1px solid #e2e8f0;border-radius:14px 14px 0 0;flex-shrink:0;">' +
         '<h2 style="margin:0 0 4px;color:#1e293b;font-size:16px">Speech Scores</h2>' +
-        '<p style="margin:0;color:#64748b;font-size:11px">Round ' + round.id + ' · ' + escapeHTML(roomLabel) + (round.motion ? ' · ' + escapeHTML(round.motion) : '') + '</p>' +
+        '<p style="margin:0;color:#64748b;font-size:11px">Round ' + _roundNum(round) + ' · ' + escapeHTML(roomLabel) + (round.motion ? ' · ' + escapeHTML(round.motion) : '') + '</p>' +
         '</div>' +
         '<div style="padding:14px 18px;overflow-y:auto;flex:1;">' +
         '<div id="speech-score-error" style="display:none;background:#fee2e2;color:#991b1b;padding:8px 10px;border-radius:6px;margin-bottom:10px;font-weight:600;font-size:12px"></div>' +
@@ -3625,7 +3844,7 @@ function showBPEnterResults(roundIdx, debateIdx) {
     modal.innerHTML = `
     <div style="background:white;border-radius:16px;max-width:650px;width:100%;max-height:85vh;display:flex;flex-direction:column;box-shadow:0 25px 50px -12px rgba(0,0,0,0.25), 0 0 0 1px rgba(255,255,255,0.2);overflow:hidden;transform:translateY(0);animation:slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);">
         <div style="padding:14px 18px;border-bottom:1px solid #f1f5f9;position:sticky;top:0;background:rgba(255,255,255,0.95);backdrop-filter:blur(8px);z-index:10;">
-            <h2 style="margin:0 0 4px;color:#0f172a;font-size:16px;font-weight:800;letter-spacing:-0.02em;">BP Ballot — Round ${round.id} · ${escapeHTML(roomLabel)}</h2>
+            <h2 style="margin:0 0 4px;color:#0f172a;font-size:16px;font-weight:800;letter-spacing:-0.02em;">BP Ballot — Round ${_roundNum(round)} · ${escapeHTML(roomLabel)}</h2>
             <p style="margin:0;color:#64748b;font-size:11px;font-weight:500;">${escapeHTML(round.motion||'')}</p>
         </div>
         <div style="padding:14px 18px;overflow-y:auto;flex:1;">
@@ -3897,7 +4116,7 @@ function viewDebateDetails(roundIdx, debateIdx) {
         <div style="background: white; border-radius: 16px; max-width: 700px; width: 100%; max-height: 90vh; display: flex; flex-direction: column; box-shadow: 0 20px 60px rgba(0,0,0,0.3);">
             <div style="padding: 24px; border-bottom: 1px solid #e2e8f0; flex-shrink: 0;">
                 <h2 style="margin: 0 0 8px 0; color: #1e293b;">📊 Debate Results</h2>
-                <p style="margin: 0; color: #64748b; font-size: 14px;">Round ${round.id}: ${escapeHTML(round.motion)}</p>
+                <p style="margin: 0; color: #64748b; font-size: 14px;">Round ${_roundNum(round)}: ${escapeHTML(round.motion)}</p>
             </div>
             
             <div style="padding: 24px; overflow-y: auto; flex: 1;">
@@ -4007,7 +4226,7 @@ function showEditMotionModal(roundIdx) {
     modal.innerHTML = `
         <div style="background:white;border-radius:16px;max-width:560px;width:100%;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.3);">
             <div style="padding:24px;border-bottom:1px solid #e2e8f0;flex-shrink:0;">
-                <h2 style="margin:0 0 4px;color:#1e293b;">Edit Round ${round.id} Motion</h2>
+                <h2 style="margin:0 0 4px;color:#1e293b;">Edit Round ${_roundNum(round)} Motion</h2>
                 <p style="margin:0;color:#64748b;font-size:14px;">Update the motion and optional info slide for this round.</p>
             </div>
             <div style="padding:24px;overflow-y:auto;flex:1;">
@@ -4042,7 +4261,7 @@ window._saveMotion = function(roundIdx) {
     displayRounds();
     // Also refresh motions tab if visible
     if (typeof window.renderMotions === 'function') window.renderMotions();
-    showNotification(`✅ Round ${round.id} motion updated`, 'success');
+    showNotification(`✅ Round ${_roundNum(round)} motion updated`, 'success');
 };
 
 window.showEditMotionModal = showEditMotionModal;
@@ -4184,7 +4403,7 @@ function displayAdminRounds() {
         return `<div style="background:white;border:1px solid #e2e8f0;border-radius:10px;margin-bottom:10px;overflow:hidden">
             <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:#f8fafc;border-bottom:1px solid #e2e8f0;gap:10px;flex-wrap:wrap">
                 <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-                    <strong>Round ${round.id}</strong>
+                    <strong>Round ${_roundNum(round)}</strong>
                     ${round.type==='knockout'?'<span style="background:#fee2e2;color:#991b1b;padding:1px 8px;border-radius:20px;font-size:11px;font-weight:700">KO</span>':''}
                     ${round.blinded?'<span style="background:#f1f5f9;color:#475569;padding:1px 8px;border-radius:20px;font-size:11px;font-weight:700">Blind</span>':''}
                     ${round.motion?`<span style="font-size:12px;color:#64748b;font-style:italic">${escapeHTML(round.motion.substring(0,60))}${round.motion.length>60?'…':''}</span>`:''}
@@ -4357,7 +4576,7 @@ document.addEventListener('DOMContentLoaded', _backfillRoomNames);
 
 // Register all interactive functions on window so inline onclick handlers work
 // ── Rename a room inline ──────────────────────────────────────────────────────
-function renameRoom(roundIdx, debateIdx) {
+async function renameRoom(roundIdx, debateIdx) {
     const round = (state.rounds || [])[roundIdx];
     if (!round) return;
     const current = round.rooms?.[debateIdx] || `Room ${debateIdx + 1}`;
@@ -4370,12 +4589,18 @@ function renameRoom(roundIdx, debateIdx) {
     }
     round.rooms[debateIdx] = next.trim();
     saveNow();
+    try {
+        await _persistDebate(round, round.debates?.[debateIdx]);
+    } catch (error) {
+        showNotification(`Failed to rename room: ${error.message}`, 'error');
+        return;
+    }
     showNotification(`Room renamed to "${next.trim()}"`, 'success');
     displayRounds();
 }
 
 // ── Delete a single debate/room from a round ──────────────────────────────────
-function deleteDebate(roundIdx, debateIdx) {
+async function deleteDebate(roundIdx, debateIdx) {
     const round = (state.rounds || [])[roundIdx];
     if (!round) return;
     const roomLabel = round.rooms?.[debateIdx] || `Room ${debateIdx + 1}`;
@@ -4385,13 +4610,23 @@ function deleteDebate(roundIdx, debateIdx) {
     } else {
         if (!confirm(`Delete "${roomLabel}"? The two teams will be unassigned.`)) return;
     }
+    const removed = round.debates?.[debateIdx];
     round.debates.splice(debateIdx, 1);
     if (Array.isArray(round.rooms)) round.rooms.splice(debateIdx, 1);
     saveNow();
+    try {
+        if (_isPersistedStandardRound(round) && removed?.id) {
+            await api.deleteDebate(removed.id);
+            await _reloadRoundsFromSupabase();
+        }
+    } catch (error) {
+        showNotification(`Failed to delete debate: ${error.message}`, 'error');
+        return;
+    }
     showNotification(`${roomLabel} removed`, 'info');
     displayRounds();
 }
-function addDebate(roundIdx, debateIdx) {
+async function addDebate(roundIdx, debateIdx) {
     const round = (state.rounds || [])[roundIdx];
     if (!round) return;
 
@@ -4421,6 +4656,22 @@ function addDebate(roundIdx, debateIdx) {
     }
 
     saveNow();
+    try {
+        if (_isPersistedStandardRound(round)) {
+            const [created] = await api.createDebates([{
+                roundId: round.id,
+                tournamentId: state.activeTournamentId,
+                govTeamId: null,
+                oppTeamId: null,
+                roomName: newRoomLabel
+            }]);
+            await api.assignJudgesToDebate(created.id, []);
+            await _reloadRoundsFromSupabase();
+        }
+    } catch (error) {
+        showNotification(`Failed to add debate: ${error.message}`, 'error');
+        return;
+    }
     showNotification(`${newRoomLabel} added`, 'info');
     displayRounds();
 }
@@ -4453,6 +4704,22 @@ window._toggleRoundSettings = function(roundId) {
 };
 window._closeRoundSettings = function() {
     document.querySelectorAll('.round-settings-menu').forEach(m => { m.style.display = 'none'; });
+};
+window._editRoundMotion = async function(roundId) {
+    const round = (state.rounds || []).find(r => r.id === roundId);
+    const current = round?.motion || '';
+    const motion = window.prompt('Set motion for this round:', current);
+    if (motion === null) return;
+    const trimmed = motion.trim();
+    if (round) round.motion = trimmed;
+    renderDraw();
+    try {
+        await api.updateRound(roundId, { motion: trimmed });
+    } catch (e) {
+        if (round) round.motion = current;
+        renderDraw();
+        alert('Failed to save motion: ' + (e.message || e));
+    }
 };
 if (!window._roundSettingsListenerBound) {
     document.addEventListener('click', () => {
@@ -4774,7 +5041,9 @@ export function createRound(params) {
         })
         .catch(error => {
             console.error('[draw] persist round failed:', error);
-            showNotification(`Round created locally, but Supabase save failed: ${error.message}`, 'error');
+            state.rounds = (state.rounds || []).filter(r => String(r.id) !== String(roundId));
+            displayRounds();
+            showNotification(`Round save failed and was rolled back: ${error.message}`, 'error');
         });
 
     const label = isKnockout ? 'Knockout' : isRoundRobin ? 'Round Robin' : (method||'random').charAt(0).toUpperCase()+(method||'random').slice(1);
@@ -4893,7 +5162,7 @@ export function displayRounds() {
                                   : 'background:#fff;border-color:#e2e8f0;color:#334155';
                 return `<button class="draw-jump-pill" style="${clr}"
                             onclick="document.getElementById('round-card-${r.id}')?.scrollIntoView({behavior:'smooth',block:'start'})">
-                            R${r.id}${done?' ✓':''}
+                            R${roundNumber(r)}${done?' ✓':''}
                         </button>`;
             }).join('');
         } else {
@@ -4934,10 +5203,10 @@ export function renderRoundCard(round, actualRoundIdx, previousMeetings) {
 
     return `
     <div id="round-card-${round.id}" class="round-card-wrap">
-        <div class="round-card-hdr" onclick="window._toggleRoundCard(${round.id})">
+        <div class="round-card-hdr" onclick="window._toggleRoundCard('${round.id}')">
             <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;flex:1;min-width:0">
                 <span id="round-chevron-${round.id}" class="round-chevron${isOpen?' open':''}">▶</span>
-                <strong style="font-size:16px;color:#1e293b">Round ${round.id}</strong>
+                <strong style="font-size:16px;color:#1e293b">Round ${round.round_number ?? actualRoundIdx + 1}</strong>
                 ${round.type==='knockout'?'<span style="background:#fee2e2;color:#991b1b;padding:2px 10px;border-radius:20px;font-size:11px;font-weight:700">🏆 KNOCKOUT</span>':''}
                 ${isBlinded?'<span style="background:#f1f5f9;color:#475569;padding:2px 10px;border-radius:20px;font-size:11px;font-weight:700">🔒 BLIND</span>':''}
                 ${isNoReply?'<span style="background:#fff7ed;color:#c2410c;padding:2px 10px;border-radius:20px;font-size:11px;font-weight:700">🚫 NO REPLY</span>':''}
@@ -4946,15 +5215,16 @@ export function renderRoundCard(round, actualRoundIdx, previousMeetings) {
             <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap" onclick="event.stopPropagation()">
                 <span style="${badgeStyle};padding:4px 12px;border-radius:20px;font-size:12px;font-weight:700">${entered}/${total} results</span>
                 ${isAdmin ? `<div class="round-settings-wrap" style="position:relative; display:inline-block;">
-                    <button class="draw-settings-trigger adm-btn secondary sm" onclick="window._toggleRoundSettings(${round.id})"
+                    <button class="draw-settings-trigger adm-btn secondary sm" onclick="window._toggleRoundSettings('${round.id}')"
                             title="Round settings">⚙️ Draw Settings</button>
                     <div id="round-settings-${round.id}" class="round-settings-menu" style="display:none">
                         <button class="draw-settings-item" onclick="window.allocateJudgesForRound(${actualRoundIdx});window._closeRoundSettings()">Re-allocate Judges</button>
                         <button class="draw-settings-item" onclick="window.redrawRound(${actualRoundIdx})" ${entered>0?'disabled title="Results already entered"':''}>🔀 Redraw</button>
                         <button class="draw-settings-item" onclick="window.addDebate(${actualRoundIdx},${total-1});window._closeRoundSettings()">Add Room</button>
-                        <button class="draw-settings-item" onclick="window._showRepeatMeetingsReport(${round.id})">🔄 Repeat Meetings</button>
+                        <button class="draw-settings-item" onclick="window._showRepeatMeetingsReport('${round.id}')">🔄 Repeat Meetings</button>
+                        <button class="draw-settings-item" onclick="window._editRoundMotion('${round.id}');window._closeRoundSettings()">📝 Set Motion</button>
                         <button class="draw-settings-item" onclick="window.toggleTeamNamesDisplay();window._closeRoundSettings()">${_displayMode === 'codes' ? '👁 Show Names' : '🙈 Hide Names'}</button>
-                        <button class="draw-settings-item danger" onclick="window._closeRoundSettings();window.adminDeleteRound(${round.id})">Delete Round</button>
+                        <button class="draw-settings-item danger" onclick="window._closeRoundSettings();window.adminDeleteRound('${round.id}')">Delete Round</button>
                     </div>
                 </div>` : ''}
             </div>
@@ -5012,6 +5282,10 @@ export function renderRoundCard(round, actualRoundIdx, previousMeetings) {
     </div>`;
 }
 
+function _roundNum(round) {
+    return roundNumber(round);
+}
+
 function renderRoundMiniTable(round) {
     const debates = round.debates || [];
     const rooms = round.rooms || [];
@@ -5066,7 +5340,7 @@ function renderRoundMiniTable(round) {
     return `
     <div style="margin-bottom:16px;">
         <div style="background:#f8fafc;padding:8px 12px;border-radius:6px 6px 0 0;border:1px solid #e2e8f0;border-bottom:none;">
-            <strong style="font-size:14px;color:#1e293b;">Round ${round.id}</strong>
+            <strong style="font-size:14px;color:#1e293b;">Round ${_roundNum(round)}</strong>
             ${round.type==='knockout'?'<span style="background:#fee2e2;color:#991b1b;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;margin-left:8px;">🏆 KO</span>':''}
             ${round.blinded?'<span style="background:#f1f5f9;color:#475569;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;margin-left:8px;">🔒 Blind</span>':''}
             <span style="font-size:12px;color:#64748b;margin-left:12px;">${debates.filter(d=>d.entered).length}/${debates.length} results</span>
@@ -5178,7 +5452,7 @@ window._showRepeatMeetingsReport = function(roundId) {
     overlay.innerHTML = `
         <div style="background:white;border-radius:16px;padding:24px;max-width:520px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.2)">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-                <h3 style="margin:0;font-size:17px">🔄 Repeat Meetings — Round ${round.id}</h3>
+                <h3 style="margin:0;font-size:17px">🔄 Repeat Meetings — Round ${_roundNum(round)}</h3>
                 <button onclick="this.closest('[style*=fixed]').remove()"
                     style="background:none;border:none;font-size:20px;cursor:pointer;color:#64748b;padding:0 4px">✕</button>
             </div>
@@ -5220,7 +5494,7 @@ window.allocateJudgesForRound = function(roundIdx) {
     allocateJudgesToDebates(round.debates, round.type === 'knockout');
     saveNow();
     displayRounds();
-    showNotification(`Judges reallocated for Round ${round.id}`, 'success');
+    showNotification(`Judges reallocated for Round ${_roundNum(round)}`, 'success');
 };
 
 // Set judge quality rating (1-10)

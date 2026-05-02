@@ -15,6 +15,18 @@ function _withoutEmail(row) {
     return copy;
 }
 
+async function _insertSpeakersResilient(rows, ctx) {
+    if (!rows.length) return null;
+    const inserted = await supabase.from('speakers').insert(rows);
+    if (!inserted.error) return null;
+
+    const fallback = await supabase.from('speakers').insert(rows.map(_withoutEmail));
+    if (fallback.error) {
+        return `${ctx}: ${fallback.error.message || inserted.error.message}`;
+    }
+    return `${ctx}: some speaker emails could not be stored`;
+}
+
 export const api = {
 
     // ── Auth ──────────────────────────────────────────────────────────────
@@ -255,12 +267,18 @@ export const api = {
             (toInsert[i].categories || []).forEach(cid => categoryRows.push({ team_id: team.id, category_id: cid }));
         });
 
-        await Promise.all([
-            speakerRows.length ? supabase.from('speakers').insert(speakerRows) : Promise.resolve(),
-            categoryRows.length ? supabase.from('team_categories').insert(categoryRows) : Promise.resolve(),
-        ]);
+        const errors = [];
+        const speakerError = await _insertSpeakersResilient(speakerRows, 'speakers');
+        if (speakerError) errors.push({ name: 'speakers', error: speakerError });
 
-        return { imported: insertedTeams.length, skipped, errors: [] };
+        if (categoryRows.length) {
+            const categoryInsert = await supabase.from('team_categories').insert(categoryRows);
+            if (categoryInsert.error) {
+                errors.push({ name: 'categories', error: categoryInsert.error.message });
+            }
+        }
+
+        return { imported: insertedTeams.length, skipped, errors };
     },
 
     // ── Judges ────────────────────────────────────────────────────────────
@@ -356,7 +374,7 @@ export const api = {
 
         const conflictRows = [];
         insertedJudges.forEach((judge, i) => {
-            (toInsert[i].affiliations || [])
+            ((toInsert[i].affiliations || toInsert[i].conflicts || []))
                 .map(name => teamByNameMap[name]?.id)
                 .filter(Boolean)
                 .forEach(tid => conflictRows.push({ judge_id: judge.id, team_id: tid }));
@@ -381,18 +399,82 @@ export const api = {
         const debateIds = allDebates.map(d => d.id);
         const djRes = await supabase.from('debate_judges').select('*, judges(id,name,role)').in('debate_id', debateIds);
         const allJudges = _ok(djRes, 'getRounds.judges');
+        const [teamsRes, speakersRes, ballotsRes] = await Promise.all([
+            supabase.from('teams').select('id,name').eq('tournament_id', tournamentId),
+            supabase.from('speakers').select('id,name,team_id,position').eq('tournament_id', tournamentId),
+            supabase.from('ballots')
+                .select('id, debate_id, winner_side, gov_total, opp_total, submitted_at, ballot_speaker_scores(speaker_id, score, is_reply)')
+                .in('debate_id', debateIds)
+        ]);
+        const teams = _ok(teamsRes, 'getRounds.teams');
+        const speakers = _ok(speakersRes, 'getRounds.speakers');
+        const ballots = _ok(ballotsRes, 'getRounds.ballots');
+        const teamById = new Map(teams.map(team => [String(team.id), team]));
+        const speakerById = new Map(speakers.map(speaker => [String(speaker.id), speaker]));
+        const latestBallotByDebate = new Map();
+        for (const ballot of ballots) {
+            const key = String(ballot.debate_id);
+            const prev = latestBallotByDebate.get(key);
+            if (!prev || new Date(ballot.submitted_at).getTime() > new Date(prev.submitted_at).getTime()) {
+                latestBallotByDebate.set(key, ballot);
+            }
+        }
 
         return rounds.map(r => {
-            const debates = allDebates.filter(d => d.round_id === r.id).map(d => ({
-                ...d,
-                gov: d.gov_team_id,
-                opp: d.opp_team_id,
-                panel: allJudges.filter(j => j.debate_id === d.id).map(j => ({
-                    id: j.judge_id,
-                    role: j.role,
-                    name: j.judges?.name
-                }))
-            }));
+            const debates = allDebates.filter(d => d.round_id === r.id).map(d => {
+                const ballot = latestBallotByDebate.get(String(d.id));
+                const govTeamId = d.gov_team_id;
+                const oppTeamId = d.opp_team_id;
+                const govScores = [];
+                const oppScores = [];
+                let govReply = null;
+                let oppReply = null;
+
+                if (ballot) {
+                    for (const row of ballot.ballot_speaker_scores || []) {
+                        const speaker = speakerById.get(String(row.speaker_id));
+                        if (!speaker) continue;
+                        const scoreRow = { speaker: speaker.name, score: row.score };
+                        if (String(speaker.team_id) === String(govTeamId)) {
+                            if (row.is_reply) govReply = scoreRow;
+                            else govScores.push({ ...scoreRow, position: speaker.position ?? 99 });
+                        } else if (String(speaker.team_id) === String(oppTeamId)) {
+                            if (row.is_reply) oppReply = scoreRow;
+                            else oppScores.push({ ...scoreRow, position: speaker.position ?? 99 });
+                        }
+                    }
+                }
+
+                govScores.sort((a, b) => (a.position ?? 99) - (b.position ?? 99));
+                oppScores.sort((a, b) => (a.position ?? 99) - (b.position ?? 99));
+
+                return {
+                    ...d,
+                    gov: govTeamId,
+                    opp: oppTeamId,
+                    entered: Boolean(d.entered || ballot),
+                    winner_side: ballot?.winner_side ?? null,
+                    gov_total: ballot?.gov_total ?? null,
+                    opp_total: ballot?.opp_total ?? null,
+                    govResults: ballot ? {
+                        teamName: teamById.get(String(govTeamId))?.name || 'Government',
+                        substantive: govScores.map(({ speaker, score }) => ({ speaker, score })),
+                        reply: govReply,
+                        total: ballot.gov_total
+                    } : null,
+                    oppResults: ballot ? {
+                        teamName: teamById.get(String(oppTeamId))?.name || 'Opposition',
+                        substantive: oppScores.map(({ speaker, score }) => ({ speaker, score })),
+                        reply: oppReply,
+                        total: ballot.opp_total
+                    } : null,
+                    panel: allJudges.filter(j => j.debate_id === d.id).map(j => ({
+                        id: j.judge_id,
+                        role: j.role,
+                        name: j.judges?.name
+                    }))
+                };
+            });
             return { ...r, debates };
         });
     },
@@ -416,6 +498,13 @@ export const api = {
             }))
         ).select(), 'createDebates');
     },
+    async updateDebate(id, fields) {
+        return _ok(await supabase.from('debates').update(fields).eq('id', id).select().single(), 'updateDebate');
+    },
+    async deleteDebate(id) {
+        await supabase.from('debate_judges').delete().eq('debate_id', id);
+        _ok(await supabase.from('debates').delete().eq('id', id), 'deleteDebate');
+    },
     async assignJudgesToDebate(debateId, judgeAssignments) {
         await supabase.from('debate_judges').delete().eq('debate_id', debateId);
         if (judgeAssignments.length > 0) {
@@ -423,6 +512,23 @@ export const api = {
                 judgeAssignments.map(ja => ({ debate_id: debateId, judge_id: ja.judgeId, role: ja.role || 'panellist' }))
             ), 'assignJudgesToDebate');
         }
+    },
+    async replaceRoundDebates(roundId, tournamentId, debates) {
+        const existing = await supabase.from('debates').select('id').eq('round_id', roundId);
+        const existingIds = (existing.data || []).map(d => d.id);
+        if (existingIds.length) {
+            await supabase.from('debate_judges').delete().in('debate_id', existingIds);
+        }
+        _ok(await supabase.from('debates').delete().eq('round_id', roundId), 'replaceRoundDebates.delete');
+        return await api.createDebates(
+            debates.map(d => ({
+                roundId,
+                tournamentId,
+                govTeamId: d.gov ?? null,
+                oppTeamId: d.opp ?? null,
+                roomName: d.roomName || null
+            }))
+        );
     },
 
     // ── Ballots ───────────────────────────────────────────────────────────
@@ -447,6 +553,13 @@ export const api = {
         if (fnErr) console.error('[api:submitBallot] Stats fn error:', fnErr.message);
 
         return ballot;
+    },
+    async replaceBallotAsAdmin({ debateId, tournamentId, winnerSide, govTotal, oppTotal, speakerScores = [] }) {
+        const { data, error } = await supabase.functions.invoke('admin-replace-ballot', {
+            body: { debateId, tournamentId, winnerSide, govTotal, oppTotal, speakerScores }
+        });
+        if (error || data?.error) throw new Error(error?.message || data.error);
+        return data;
     },
     async getBallots(debateId) {
         return _ok(await supabase.from('ballots').select('*, ballot_speaker_scores(*)')

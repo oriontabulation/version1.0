@@ -26,45 +26,6 @@ function _safeEncodedName(name) {
     return encodeURIComponent(_speakerName(name)).replace(/'/g, '%27');
 }
 
-function _speakerRosterPanel() {
-    const teams = state.teams || [];
-    const teamOptions = teams
-        .map(team => `<option value="${team.id}">${escapeHTML(team.name || 'Unnamed team')}</option>`)
-        .join('');
-    const rows = teams.map(team => {
-        const speakers = (team.speakers || []).filter(s => _speakerName(s.name));
-        return `
-            <div class="spk-roster-team">
-                <div class="spk-roster-team__head">
-                    <strong>${escapeHTML(team.name || 'Unnamed team')}</strong>
-                    <span>${speakers.length} speaker${speakers.length === 1 ? '' : 's'}</span>
-                </div>
-                <div class="spk-roster-chips">
-                    ${speakers.length ? speakers.map((speaker, index) => `
-                        <span class="spk-roster-chip">
-                            ${escapeHTML(speaker.name)}${speaker.email ? `<small>${escapeHTML(speaker.email)}</small>` : ''}
-                            <button type="button" onclick="window.deleteSpeakerFromTeam('${team.id}',${index})" title="Delete speaker">x</button>
-                        </span>`).join('') : '<em>No speakers</em>'}
-                </div>
-            </div>`;
-    }).join('');
-
-    return `
-        <details class="spk-admin-panel">
-            <summary>
-                <span>Manage Speakers</span>
-                <small>Add or remove speakers from team rosters</small>
-            </summary>
-            <div class="spk-add-row">
-                <select id="spk-add-team">${teamOptions}</select>
-                <input id="spk-add-name" type="text" placeholder="Speaker name">
-                <input id="spk-add-email" type="email" placeholder="Email optional">
-                <button class="btn btn-primary btn-sm" onclick="window.addSpeakerToTeam()">Add</button>
-            </div>
-            <div class="spk-roster-list">${rows}</div>
-        </details>`;
-}
-
 // Dropdown toggle with click-outside auto-close
 window._toggleDropdown = function(btn) {
     const menu = btn.nextElementSibling;
@@ -377,8 +338,7 @@ function _renderSpeakerStandings(container) {
         </div>`;
 
     // ── Table ──────────────────────────────────────────────────────────────
-    const adminRoster = isAdmin ? _speakerRosterPanel() : '';
-    let html = `<div class="speaker-section">${adminRoster}${catBar}${filterBar}`;
+    let html = `<div class="speaker-section">${catBar}${filterBar}`;
 
     if (speakers.length === 0) {
         html += `

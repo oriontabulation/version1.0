@@ -991,9 +991,16 @@ body.theme-dark .mobile-nav-item {
     margin: auto;
 }
 
-main:has(#public.tab-content.active) {
+/* Firefox < 121 fallback: class set by tab.js when public tab activates */
+main.public-tab-active {
     margin-top: 0;
     padding: 0;
+}
+@supports selector(:has(*)) {
+  main:has(#public.tab-content.active) {
+      margin-top: 0;
+      padding: 0;
+  }
 }
 
 #public {

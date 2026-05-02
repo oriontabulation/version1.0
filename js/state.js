@@ -196,34 +196,21 @@ export function hydrateState({ activeTournamentId, tournaments = [], teams = [],
     const activeId = activeTournamentId || tournaments[0]?.id;
     _state.activeTournamentId = activeId;
 
-    // Restore knockout bracket from localStorage if available
+    // Core tournament records come from Supabase. Only keep explicit per-browser
+    // UI adjuncts local; never merge browser-local team/round data back in.
     const active = _state.tournaments[activeId];
-    try {
-        if (active) {
-            active.teams   = teams;
-            active.judges  = judges;
-            active.rounds  = rounds;
-            active.publish = publish;
+    if (active) {
+        active.teams   = teams;
+        active.judges  = judges;
+        active.rounds  = rounds;
+        active.publish = publish;
 
-            try {
-                const savedBracket = localStorage.getItem(`orion_bracket_${activeId}`);
-                if (savedBracket) active.tournament = JSON.parse(savedBracket);
-
-                const savedBreakData = localStorage.getItem(`orion_breakdata_${activeId}`);
-                if (savedBreakData && active.teams?.length) {
-                    const breakData = JSON.parse(savedBreakData);
-                    breakData.forEach(bd => {
-                        const team = active.teams.find(t => String(t.id) === String(bd.id));
-                        if (team) Object.assign(team, bd);
-                    });
-                }
-            } catch {
-                // Ignore corrupt local bracket/break cache; Supabase state still loads.
-            }
-
+        try {
+            const savedBracket = localStorage.getItem(`orion_bracket_${activeId}`);
+            if (savedBracket) active.tournament = JSON.parse(savedBracket);
+        } catch {
+            // Ignore corrupt local bracket cache; Supabase state still loads.
         }
-    } catch {
-        // Ignore corrupt local bracket/break cache; Supabase state still loads.
     }
 
     // Notify all watchers

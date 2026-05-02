@@ -17,6 +17,19 @@ import { getLocalUsers, registerLocalUser, deleteLocalUser, updateLocalUserRole 
 
 let _activeSection = 'overview';
 
+async function _reloadTournamentCatalog(activeTournamentId, activeData = {}) {
+    const tournaments = await api.getTournaments().catch(() => []);
+    hydrateState({
+        activeTournamentId,
+        tournaments,
+        teams: activeData.teams ?? state.teams ?? [],
+        judges: activeData.judges ?? state.judges ?? [],
+        rounds: activeData.rounds ?? state.rounds ?? [],
+        publish: activeData.publish ?? state.publish ?? {}
+    });
+    return tournaments;
+}
+
 // ── Mobile nav — direct event-listener wiring ─────────────────────────────────
 (function _initMobileNav() {
 
@@ -176,7 +189,7 @@ function _fillRoundsSidebar() {
         return `<div class="adm-round-ctrl">
             <div class="adm-round-ctrl-head">
                 <div class="adm-row">
-                    <strong class="adm-round-ctrl-title">Round ${r.id}</strong>
+                    <strong class="adm-round-ctrl-title">Round ${r.round_number ?? (idx + 1)}</strong>
                     ${r.type==='knockout'?'<span class="adm-badge red">KO</span>':''}
                     ${r.blinded?'<span class="adm-badge grey">Blind</span>':''}
                 </div>
@@ -230,7 +243,8 @@ function _updateMainHeaderForAdmin(show) {
     
     // Check if we're actually in admin mode by checking if adm-body exists
     const inAdminMode = document.querySelector('.adm-body') !== null;
-    
+    document.body.classList.toggle('adm-mode', inAdminMode);
+
     // Use provided show value, or auto-detect based on admin mode
     const shouldShow = show !== undefined ? show : inAdminMode;
     
@@ -286,11 +300,10 @@ function _buildAdminHeader() {
                     <button class="adm-top-bar-btn adm-top-bar-home" onclick="switchTab('public')">🏠 Home</button>
                     <button class="adm-top-bar-settings" id="adm-top-settings-btn" onclick="toggleAdmTopSettings(event)">⚙️ Settings</button>
                     <div class="adm-top-settings-dropdown" id="adm-top-settings-dropdown">
-                        <div class="adm-top-settings-theme" id="adm-top-settings-theme"></div>
-                        <div class="adm-top-settings-theme" id="adm-inactivity-settings"></div>
-                        <div class="adm-top-settings-divider"></div>
-                        <button class="adm-top-settings-item" onclick="switchTab('profile')">👤 Profile</button>
-                        <button class="adm-top-settings-item" data-action="logout">🚪 Logout</button>
+                        <div id="adm-top-settings-theme"></div>
+                        <div class="stp-divider"></div>
+                        <button class="stp-menu-item" onclick="window.switchTab('profile');window.toggleAdmTopSettings&&document.getElementById('adm-top-settings-dropdown')?.classList.remove('open')">👤 Profile</button>
+                        <button class="stp-menu-item" onclick="window.logout&&window.logout()">🚪 Logout</button>
                     </div>
                 </div>
             </div>
@@ -344,7 +357,7 @@ function _buildSidebar() {
         <!-- Close button — visible only when sidebar is a mobile drawer -->
         <div class="adm-sidebar-head">
             <div style="display:flex;align-items:center;gap:8px;">
-                <img src="IMG/logo.png" alt="" style="width:22px;height:22px;border-radius:50%;object-fit:cover;object-position:center;">
+                <img src="/logo.png" alt="" style="width:22px;height:22px;border-radius:50%;object-fit:cover;object-position:center;">
                 <span style="font-size:12px;font-weight:700;letter-spacing:.04em;color:var(--text-muted,#64748b)">ORION</span>
             </div>
             <button class="adm-sidebar-close-btn" onclick="window.closeAdmSidebar()" aria-label="Close navigation">✕</button>
@@ -523,8 +536,7 @@ async function adminSwitchTournament(id, opts = {}) {
         const publish = await api.getPublishState(id).catch(() => ({}));
 
         localStorage.setItem('orion_active_tournament_id', id);
-        const tournaments = Object.entries(state.tournaments || {}).map(([tid, t]) => ({ id: tid, ...t }));
-        hydrateState({ activeTournamentId: id, tournaments, teams, judges, rounds, publish });
+        await _reloadTournamentCatalog(id, { teams, judges, rounds, publish });
         window._setupRealtimeSyncForTournament?.(id);
 
         // Debugging logs to help diagnose issues when switching tournaments
@@ -549,9 +561,9 @@ async function adminRenameTournament(id, currentName) {
     if (!newName?.trim()) return;
     try {
         const updated = await api.renameTournament(id, newName.trim());
-        if (state.tournaments?.[id]) state.tournaments[id].name = updated.name;
+        await _reloadTournamentCatalog(state.activeTournamentId);
         adminSwitchSection('tournaments');
-        showNotification('Tournament renamed', 'success');
+        showNotification(`Tournament renamed to "${updated.name}"`, 'success');
     } catch (err) {
         showNotification(`Rename failed: ${err.message}`, 'error');
     }
@@ -562,11 +574,13 @@ async function adminDeleteTournament(id) {
     if (!confirm('Delete this tournament? This cannot be undone.')) return;
     try {
         await api.deleteTournament(id);
-        delete state.tournaments[id];
-        const remaining = Object.entries(state.tournaments || {}).map(([tid, t]) => ({ id: tid, ...t }));
+        const currentId = String(state.activeTournamentId) === String(id) ? null : state.activeTournamentId;
+        const remaining = await _reloadTournamentCatalog(currentId, currentId ? {} : { teams: [], judges: [], rounds: [], publish: {} });
         if (remaining.length > 0) {
             await adminSwitchTournament(remaining[0].id, { skipConfirm: true });
         } else {
+            localStorage.removeItem('orion_active_tournament_id');
+            hydrateState({ activeTournamentId: null, tournaments: [], teams: [], judges: [], rounds: [], publish: {} });
             adminSwitchSection('tournaments');
         }
         showNotification('Tournament deleted', 'success');
@@ -618,7 +632,7 @@ function _sectionOverview() {
         
         roomBallotsHtml = `
             <div class="adm-round-summary">
-                <strong>Round ${currentRound.id}</strong> — ${submitted} submitted, ${pending} pending
+                <strong>Round ${currentRound.round_number ?? (rounds.indexOf(currentRound) + 1)}</strong> — ${submitted} submitted, ${pending} pending
             </div>
             ${rows}
             <div class="adm-card-action">
@@ -741,7 +755,7 @@ function _sectionBallots() {
             <div class="adm-card">
                 <div class="adm-ballot-header">
                     <div class="adm-row gap-sm">
-                        <span class="adm-strong">Round ${r.id}</span>
+                        <span class="adm-strong">Round ${r.round_number ?? (rIdx + 1)}</span>
                         ${r.type==='knockout'?'<span class="adm-badge red">KO</span>':''}
                         ${r.blinded?'<span class="adm-badge grey">Blind</span>':''}
                     </div>
@@ -1066,7 +1080,7 @@ function _sectionPublish() {
                         <div class="adm-pub-info">
                             <span class="adm-pub-icon">${r.type==='knockout'?'🏆':'🎲'}</span>
                             <div>
-                                <div class="adm-pub-label">Round ${r.id}${r.motion ? ': '+escapeHTML(r.motion.substring(0,40))+'…' : ''}</div>
+                                <div class="adm-pub-label">Round ${r.round_number ?? (idx + 1)}${r.motion ? ': '+escapeHTML(r.motion.substring(0,40))+'…' : ''}</div>
                                 <div class="adm-pub-desc">${done}/${tot} ballots submitted · ${r.type||'prelim'}</div>
                             </div>
                         </div>
@@ -2057,11 +2071,21 @@ export async function adminHideAll() {
 }
 
 function adminDeleteRound(id) {
-    if (!confirm(`Delete Round ${id}? All debate data will be lost.`)) return;
-    api.deleteRound(id).then(() => {
-        state.rounds = (state.rounds||[]).filter(r=>r.id!==id);
+    const round = (state.rounds || []).find(r => String(r.id) === String(id));
+    const label = round?.round_number ?? id;
+    if (!confirm(`Delete Round ${label}? All debate data will be lost.`)) return;
+    const tournamentId = state.activeTournamentId;
+    api.deleteRound(id).then(async () => {
+        if (tournamentId) {
+            const freshRounds = await api.getRounds(tournamentId);
+            if (String(state.activeTournamentId) === String(tournamentId)) {
+                state.rounds = freshRounds;
+            }
+        } else {
+            state.rounds = (state.rounds||[]).filter(r => String(r.id) !== String(id));
+        }
         saveNow();
-        showNotification(`Round ${id} deleted`,'info');
+        showNotification(`Round ${label} deleted`,'info');
         _refreshAdminRounds();
     }).catch(err => {
         showNotification(`Delete failed: ${err.message}`, 'error');
@@ -2077,26 +2101,20 @@ async function adminCreateTournamentWithOpt(autoSwitch) {
 
     try {
         const t = await api.createTournament(name, format);
-        state.tournaments[t.id] = {
-            name: t.name,
-            format: t.format,
-            teams: [],
-            judges: [],
-            rounds: [],
-            publish: {},
-            feedback: [],
-            judgeTokens: {},
-            roomURLs: {}
-        };
-
-        if (format === 'speech') {
-            state.tournaments[t.id].publish.speech = true;
-            state.tournaments[t.id].publish.speakers = true;
-            state.tournaments[t.id].speechMode = true;
-        }
+        const emptyPublish = format === 'speech'
+            ? { speech: true, speakers: true }
+            : {};
+        localStorage.setItem('orion_active_tournament_id', t.id);
+        await _reloadTournamentCatalog(autoSwitch ? t.id : state.activeTournamentId || t.id, {
+            teams: autoSwitch ? [] : (state.teams || []),
+            judges: autoSwitch ? [] : (state.judges || []),
+            rounds: autoSwitch ? [] : (state.rounds || []),
+            publish: autoSwitch ? emptyPublish : (state.publish || {})
+        });
 
         if (autoSwitch) {
-            switchTournamentCache(t.id, { teams: [], judges: [], rounds: [], publish: {} });
+            switchTournamentCache(t.id, { teams: [], judges: [], rounds: [], publish: emptyPublish });
+            window._setupRealtimeSyncForTournament?.(t.id);
         }
 
         document.getElementById('new-tournament-name').value = '';
@@ -2150,20 +2168,16 @@ async function resetTournamentDrawOnly() {
 
     try {
         await api.resetDrawOnly(tournId);
-
-        state.rounds = [];
-        state.teams = (state.teams || []).map(team => ({
-            ...team,
-            wins: 0,
-            total_points: 0,
-            broke: false,
-            seed: null,
-            eliminated: false,
-            break_ineligible: false,
-            break_ineligible_reason: null,
-            category_breaks: {}
-        }));
+        const [teams, rounds] = await Promise.all([
+            api.getTeams(tournId),
+            api.getRounds(tournId)
+        ]);
+        if (String(state.activeTournamentId) === String(tournId)) {
+            state.teams = teams;
+            state.rounds = rounds;
+        }
         showNotification('Tournament draw reset', 'success');
+        _refreshAdminRounds();
     } catch (err) {
         showNotification(`Reset failed: ${err.message}`, 'error');
     }
@@ -2230,7 +2244,25 @@ export function initAdminDashboard() {
     window.toggleAdmTopSettings = function(e) {
         e.stopPropagation();
         const dropdown = document.getElementById('adm-top-settings-dropdown');
-        if (dropdown) dropdown.classList.toggle('open');
+        const btn = document.getElementById('adm-top-settings-btn');
+        if (!dropdown || !btn) return;
+
+        const isOpen = dropdown.classList.contains('open');
+        if (isOpen) {
+            dropdown.classList.remove('open');
+            return;
+        }
+
+        // Position relative to button using fixed coords (bypasses all overflow:hidden ancestors)
+        const rect = btn.getBoundingClientRect();
+        dropdown.style.top  = (rect.bottom + 6) + 'px';
+        dropdown.style.right = (window.innerWidth - rect.right) + 'px';
+        dropdown.style.left = '';
+
+        dropdown.classList.add('open');
+        if (typeof window.renderThemePicker === 'function') {
+            window.renderThemePicker('adm-top-settings-theme');
+        }
     };
 
     // Format hint switcher — updates description card under the create-tournament form

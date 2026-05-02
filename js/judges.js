@@ -8,7 +8,7 @@
 //   - DOM via el() factory — no user data in innerHTML
 // ============================================================
 
-import { state, addJudgeToCache, removeJudgeFromCache, patchJudge } from './state.js';
+import { state, activeTournament, addJudgeToCache, removeJudgeFromCache, patchJudge } from './state.js';
 import { api } from './api.js';
 import { showNotification, escapeHTML, updatePublicCounts } from './utils.js';
 import { el, emptyState } from './ui/components.js';
@@ -19,6 +19,24 @@ import { renderSmartList, VIRTUALIZATION_THRESHOLD } from './ui/virtual-list.js'
 // ── Permission helpers ────────────────────────────────────────────────────────
 function _isAdmin() { return !!(state.auth?.isAuthenticated && state.auth?.currentUser?.role === 'admin'); }
 function _myJudgeId() { return state.auth?.currentUser?.associatedId ?? null; }
+
+function _requireActiveTournament() {
+    const tournament = activeTournament();
+    if (!tournament?.id) {
+        showNotification('Create or select a tournament before managing judges.', 'error');
+        window.switchTab?.('admin-dashboard');
+        return null;
+    }
+    return tournament;
+}
+
+async function _reloadJudgesForTournament(tournamentId) {
+    const judges = await api.getJudges(tournamentId);
+    if (String(state.activeTournamentId) === String(tournamentId)) {
+        state.judges = judges;
+    }
+    return judges;
+}
 
 // ── renderJudges ──────────────────────────────────────────────────────────────
 function renderJudges() {
@@ -257,10 +275,11 @@ async function addJudge() {
 
     const name = document.getElementById('judge-name')?.value.trim();
     const email = document.getElementById('judge-email')?.value.trim();
-    const tournId = state.activeTournamentId;
+    const tournament = _requireActiveTournament();
+    const tournId = tournament?.id;
 
     if (!name) { showNotification('Judge name required', 'error'); return; }
-    if (!tournId) { showNotification('Select or create a tournament before adding judges.', 'error'); return; }
+    if (!tournId) return;
 
     const checkedAffils = [...document.querySelectorAll('.judge-affil:checked')].map(cb => cb.value);
 
@@ -272,6 +291,7 @@ async function addJudge() {
             affiliations: checkedAffils
         });
         addJudgeToCache({ ...judge, judge_conflicts: checkedAffils.map(id => ({ team_id: id })) });
+        await _reloadJudgesForTournament(tournId);
         displayJudges();
         updatePublicCounts?.();
         showNotification(`Judge "${name}" added`, 'success');
