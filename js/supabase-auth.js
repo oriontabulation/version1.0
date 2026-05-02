@@ -7,6 +7,8 @@ import { registerLocalUser, loginLocalUser, getLocalSession, logoutLocalUser,
          isSupabaseReachable, getLocalUsers, deleteLocalUser, updateLocalUserRole } from './local-auth.js';
 
 let isOfflineMode = false;
+// Hydration guard: prevents in-flight logout during startup restore
+let _authHydrating = false;
 
 // ── Internal: apply verified profile to in-memory state ───────────────────
 async function _applyProfileToState(supabaseUser) {
@@ -263,6 +265,7 @@ function guestLogin() {
 
 // ── RESTORE SESSION ─────────────────────────────────────────────────────────
 async function restoreSession() {
+    _authHydrating = true;
     // Local session (offline mode) takes priority
     const localSession = getLocalSession();
     if (localSession) {
@@ -277,15 +280,35 @@ async function restoreSession() {
             };
             state.auth.isAuthenticated = true;
             _resetActivity();
+            _authHydrating = false;
             return true;
         }
     }
 
     const { data: { session }, error } = await supabase.auth.getSession();
-    if (!error && session?.user) return _applyProfileToState(session.user);
-
-    if (error) console.warn('[auth] Session restore failed, clearing stale token:', error.message);
-    await supabase.auth.signOut({ scope: 'local' });
+    if (!error && session?.user) {
+        const result = await _applyProfileToState(session.user);
+        _authHydrating = false;
+        if (result) {
+            updateHeaderControls();
+            updateAdminNavVisibility();
+            if (typeof window.updateTabsForRole === 'function') window.updateTabsForRole();
+            if (typeof window.updateAdminDropdownVisibility === 'function') window.updateAdminDropdownVisibility();
+            closeAllModals();
+            showNotification(`Welcome back, ${state.auth.currentUser?.name || 'User'}!`, 'success');
+            return true;
+        }
+        // If profile application failed, fall through to not restoring session
+        return false;
+    }
+    if (error) {
+        console.warn('[auth] Session restore failed, clearing stale token:', error.message);
+        // If there is a JWT/token issue, attempt local sign-out cleanup
+        await supabase.auth.signOut({ scope: 'local' });
+        _authHydrating = false;
+        return false;
+    }
+    _authHydrating = false;
     return false;
 }
 
@@ -306,6 +329,11 @@ supabase.auth.onAuthStateChange(async (event, session) => {
     }
 
     if (event === 'SIGNED_OUT') {
+        // If we're hydrating, skip in-memory sign-out to avoid logout-on-refresh race
+        if (_authHydrating) {
+            console.log('[auth] hydration in progress — ignoring SIGNED_OUT during refresh');
+            return;
+        }
         // (Avoids clearing display state during a slow refresh)
         if (state.auth?.isAuthenticated) {
             state.auth.currentUser     = null;
