@@ -30,7 +30,7 @@ export async function checkUrlForJudgeToken() {
     const judgeToken  = params.get('judge');
     const teamToken   = params.get('team');
 
-    if (!judgeToken && !teamToken) return;
+    if (!judgeToken && !teamToken) return false;
 
     const token = judgeToken || teamToken;
     const type  = judgeToken ? 'judge' : 'team';
@@ -38,7 +38,7 @@ export async function checkUrlForJudgeToken() {
     if (!isValidTokenFormat(token)) {
         showNotification('Invalid access link format.', 'error');
         _cleanUrl();
-        return;
+        return true;
     }
 
     // Check if we already have a verified session for this exact token
@@ -46,11 +46,11 @@ export async function checkUrlForJudgeToken() {
     if (session && session.token === token && session.type === type) {
         _cleanUrl();
         if (type === 'judge') {
-            _resumeJudgeSession(token, session.id);
+            await _resumeJudgeSession(token, session.id);
         } else {
-            _resumeTeamSession(token, session.id);
+            await _resumeTeamSession(token, session.id);
         }
-        return;
+        return true;
     }
 
     // No session — show email gate
@@ -58,6 +58,7 @@ export async function checkUrlForJudgeToken() {
     window.switchTab?.('portal');
     const container = document.getElementById('portal-container');
     if (container) _renderEmailGate(container, type, token);
+    return true;
 }
 
 function _cleanUrl() {
@@ -126,7 +127,7 @@ function _renderEmailGate(container, type, token) {
                 renderJudgePortalFromToken(result.judge, result.assignments, result.tournamentId);
             } else {
                 _saveSession('team', token, result.team?.id);
-                _renderTeamPortalFromToken(result.team, result.debates, result.tournamentId);
+                _renderTeamPortalFromToken(result.team, result.debates, result.tournamentId, result.feedback);
             }
         } catch (err) {
             _showGateErr(errEl, 'Could not verify. Check your connection and try again.');
@@ -156,19 +157,26 @@ async function _resumeTeamSession(token, teamId) {
     try {
         const result = await api.validateTeamToken(token);
         if (!result?.valid) { _clearSession(); _renderLoginPrompt(document.getElementById('portal-container')); return; }
-        _renderTeamPortalFromToken(result.team, result.debates, result.tournamentId);
+        _renderTeamPortalFromToken(result.team, result.debates, result.tournamentId, result.feedback);
     } catch (_) {
         _clearSession();
     }
 }
 
 // ── Team portal entry from token (data comes from Edge Function, not state) ───
-function _renderTeamPortalFromToken(team, debates, tournamentId) {
+function _renderTeamPortalFromToken(team, debates, tournamentId, feedback = []) {
     window.switchTab?.('portal');
     const container = document.getElementById('portal-container');
     if (!container) return;
 
-    window._portalCtx = { teamId: team.id, tournamentId, fromToken: true };
+    window._portalCtx = { teamId: team.id, tournamentId, fromToken: true, team };
+    if (Array.isArray(feedback)) {
+        const seen = new Set((state.feedback || []).map(f => String(f.id)));
+        state.feedback = [
+            ...(state.feedback || []),
+            ...feedback.filter(f => !seen.has(String(f.id)))
+        ];
+    }
 
     // Map Supabase debate rows → { debate, round, judges } tuples
     const participatedDebates = (debates || []).map(d => {
@@ -181,6 +189,7 @@ function _renderTeamPortalFromToken(team, debates, tournamentId) {
         return { debate: d, round, judges };
     });
 
+    window._portalCtx.participatedDebates = participatedDebates;
     _renderTeamPortalContent(container, team, team.id, participatedDebates);
 }
 
@@ -978,6 +987,131 @@ function _renderTeamPortalView(container) {
 function _renderTeamPortalContent(container, team, teamId, participatedDebates) {
     const rcMap = { chair: { bg: '#dcfce7', text: '#16a34a' }, wing: { bg: '#dbeafe', text: '#1d4ed8' }, trainee: { bg: '#fef3c7', text: '#92400e' } };
 
+    if (!window.__orionLegacyTeamPortalEnabled) {
+        const roleMeta = {
+            chair: { bg: '#ecfdf5', text: '#047857', label: 'Chair' },
+            wing: { bg: '#eff6ff', text: '#1d4ed8', label: 'Panel' },
+            trainee: { bg: '#fffbeb', text: '#92400e', label: 'Trainee' }
+        };
+        const rounds = participatedDebates || [];
+        const reviewTasks = rounds.flatMap(({ debate, judges }) => (judges || []).map(judge => ({ debate, judge })));
+        const isDone = (debate, judge) => (state.feedback || []).some(fb =>
+            String(fb.fromTeamId || fb.from_team_id) === String(teamId) &&
+            String(fb.toJudgeId || fb.to_judge_id) === String(judge.id) &&
+            String(fb.debateId || fb.debate_id) === String(debate.id)
+        );
+        const submittedCount = reviewTasks.filter(({ debate, judge }) => isDone(debate, judge)).length;
+        const pendingCount = Math.max(reviewTasks.length - submittedCount, 0);
+        window._portalCtx = { ...(window._portalCtx || {}), team, teamId, participatedDebates: rounds };
+
+        container.innerHTML = `
+        <style>
+        .team-portal{max-width:1040px;margin:0 auto;display:grid;gap:18px;}
+        .team-portal-hero{background:#0f172a;color:#fff;border-radius:14px;padding:24px;border:1px solid rgba(255,255,255,.08);box-shadow:0 12px 30px rgba(15,23,42,.14);}
+        .team-portal-hero h1{margin:0;font-size:24px;line-height:1.15;letter-spacing:0;font-weight:850;}
+        .team-portal-hero p{margin:8px 0 0;color:#cbd5e1;font-size:14px;line-height:1.5;max-width:720px;}
+        .team-portal-stats{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px;}
+        .team-portal-stat{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:10px 13px;min-width:110px;}
+        .team-portal-stat strong{display:block;font-size:20px;line-height:1;color:#fff;}
+        .team-portal-stat span{display:block;margin-top:4px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#94a3b8;font-weight:800;}
+        .team-review-list{display:grid;gap:16px;}
+        .team-round-card{background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:18px;box-shadow:0 1px 5px rgba(15,23,42,.05);}
+        .team-round-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:14px;flex-wrap:wrap;}
+        .team-round-title{margin:0;color:#0f172a;font-size:16px;font-weight:850;}
+        .team-round-motion{margin:4px 0 0;color:#64748b;font-size:13px;line-height:1.45;font-style:italic;}
+        .team-anon-note{background:#f8fafc;border:1px solid #e2e8f0;color:#475569;border-radius:10px;padding:10px 12px;font-size:12px;font-weight:700;}
+        .team-judge-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;}
+        .team-judge-card{background:#f8fafc;border:1px solid #e2e8f0;border-radius:11px;padding:14px;display:flex;flex-direction:column;gap:12px;min-width:0;}
+        .team-judge-top{display:flex;align-items:center;gap:10px;min-width:0;}
+        .team-judge-avatar{width:38px;height:38px;border-radius:999px;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:850;flex:0 0 auto;}
+        .team-judge-name{font-size:14px;font-weight:850;color:#0f172a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+        .team-judge-role{display:inline-block;margin-top:2px;padding:2px 8px;border-radius:999px;font-size:10px;font-weight:850;text-transform:uppercase;}
+        .team-reviewed{background:#ecfdf5;border:1px solid #bbf7d0;color:#047857;border-radius:9px;padding:11px;text-align:center;font-size:13px;font-weight:800;}
+        .hsp-row{display:flex;gap:5px;flex-wrap:wrap;margin:6px 0;}
+        .hsp-btn{min-width:42px;padding:6px 8px;border-radius:8px;border:1.5px solid #e2e8f0;background:white;cursor:pointer;font-size:12px;font-weight:800;color:#64748b;transition:all .12s;white-space:nowrap;}
+        .hsp-btn.active{border-color:#f59e0b;background:#fffbeb;color:#92400e;}
+        .hsp-btn.selected{border-color:#d97706;background:#f59e0b;color:white;transform:translateY(-1px);}
+        .agc-select{width:100%;box-sizing:border-box;padding:10px;border-radius:8px;border:1.5px solid #e2e8f0;font-size:13px;background:white;}
+        .fb-label{display:block;font-weight:800;color:#334155;font-size:11px;margin-bottom:6px;text-transform:uppercase;letter-spacing:.04em;}
+        .fb-textarea{width:100%;min-height:88px;padding:10px;border-radius:8px;border:1.5px solid #e2e8f0;font-size:13px;resize:vertical;box-sizing:border-box;font-family:inherit;line-height:1.45;}
+        .team-submit-btn{width:100%;padding:11px;background:var(--t-brand,#f97316);color:white;border:none;border-radius:8px;font-weight:850;cursor:pointer;font-size:13px;}
+        .team-submit-btn:hover{background:var(--t-brand-hover,#ea580c);}
+        .team-empty{background:#fff;border:1px dashed #cbd5e1;border-radius:12px;padding:42px 20px;text-align:center;color:#64748b;}
+        .team-empty h3{margin:0 0 8px;color:#0f172a;font-size:17px;}
+        @media(max-width:720px){.team-portal-hero{border-radius:10px;padding:20px}.team-judge-grid{grid-template-columns:1fr}.team-portal-stat{flex:1 1 120px}}
+        </style>
+        <div class="team-portal">
+            <section class="team-portal-hero">
+                <h1>${escapeHTML(team.name || 'Team Portal')}</h1>
+                <p>Submit anonymous feedback for judges from your debates. This portal is only for judge feedback; teams do not submit ballots here.</p>
+                <div class="team-portal-stats">
+                    <div class="team-portal-stat"><strong>${rounds.length}</strong><span>Rounds</span></div>
+                    <div class="team-portal-stat"><strong>${reviewTasks.length}</strong><span>Judges</span></div>
+                    <div class="team-portal-stat"><strong>${pendingCount}</strong><span>Pending</span></div>
+                </div>
+            </section>
+            ${!rounds.length ? `
+                <div class="team-empty">
+                    <h3>No judge feedback available yet</h3>
+                    <p style="margin:0;">Judges will appear here after your team is assigned to a debate with a panel.</p>
+                </div>` :
+                `<div class="team-review-list">${rounds.map(({ debate, round, judges }) => {
+                    const roundNum = round.round_number || round.id || '?';
+                    const motion = round.motion || 'Motion TBD';
+                    return `
+                    <section class="team-round-card">
+                        <div class="team-round-head">
+                            <div>
+                                <h2 class="team-round-title">Round ${escapeHTML(String(roundNum))}</h2>
+                                <p class="team-round-motion">"${escapeHTML(motion)}"</p>
+                            </div>
+                            <div class="team-anon-note">Anonymous to judges</div>
+                        </div>
+                        <div class="team-judge-grid">
+                            ${(judges || []).map(judge => {
+                                const meta = roleMeta[judge.role] || roleMeta.wing;
+                                const key = `tfb-${debate.id}-${judge.id}`;
+                                const done = isDone(debate, judge);
+                                return `
+                                <article class="team-judge-card">
+                                    <div class="team-judge-top">
+                                        <div class="team-judge-avatar" style="background:${meta.bg};color:${meta.text};">${escapeHTML((judge.name || 'J')[0].toUpperCase())}</div>
+                                        <div style="min-width:0;">
+                                            <div class="team-judge-name">${escapeHTML(judge.name || 'Judge')}</div>
+                                            <span class="team-judge-role" style="background:${meta.bg};color:${meta.text};">${escapeHTML(meta.label)}</span>
+                                        </div>
+                                    </div>
+                                    ${done ? `<div class="team-reviewed">Feedback submitted. Thank you.</div>` : `
+                                        <div>
+                                            <label class="fb-label">Agree with the Call?</label>
+                                            <select class="agc-select" id="${key}-agc">
+                                                <option value="">Select option</option>
+                                                <option value="yes">Yes, fully agreed</option>
+                                                <option value="mostly">Mostly agreed</option>
+                                                <option value="partially">Partially agreed</option>
+                                                <option value="no">Disagreed</option>
+                                                <option value="na">N/A</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label class="fb-label">Quality Rating *</label>
+                                            ${_halfStarPickerHtml(key)}
+                                        </div>
+                                        <div>
+                                            <label class="fb-label">Comments <span style="font-weight:400;color:#64748b;">(optional)</span></label>
+                                            <textarea class="fb-textarea" id="${key}-comment" rows="3" placeholder="How clear was their decision? Was their feedback helpful? How did they run the room?"></textarea>
+                                        </div>
+                                        <button onclick="window._submitTeamFeedback('${key}','${debate.id}','${judge.id}')" class="team-submit-btn">Submit Feedback for ${escapeHTML(judge.name || 'Judge')}</button>
+                                    `}
+                                </article>`;
+                            }).join('')}
+                        </div>
+                    </section>`;
+                }).join('')}</div>`}
+        </div>`;
+        return;
+    }
+
     container.innerHTML = `
     <style>
     .portal-section{background:white;border-radius:14px;padding:22px;margin-bottom:18px;box-shadow:0 2px 8px rgba(0,0,0,.06);border:1px solid #f1f5f9;}
@@ -1072,7 +1206,10 @@ window._submitTeamFeedback = async function(key, debateId, toJudgeId) {
     const ctx    = window._portalCtx || {};
     const teamId = ctx.teamId || state.auth?.currentUser?.associatedId;
     const judgeInState = (state.judges || []).find(j => String(j.id) === String(toJudgeId));
-    const judgeName = judgeInState?.name || 'Judge';
+    const judgeInPortal = (ctx.participatedDebates || [])
+        .flatMap(item => item.judges || [])
+        .find(j => String(j.id) === String(toJudgeId));
+    const judgeName = judgeInState?.name || judgeInPortal?.name || 'Judge';
     if (!teamId) { showNotification('Could not identify your team', 'error'); return; }
 
     const agc    = document.getElementById(`${key}-agc`)?.value || null;
@@ -1097,7 +1234,13 @@ window._submitTeamFeedback = async function(key, debateId, toJudgeId) {
 
         showNotification(`Feedback submitted for ${judgeName}!`, 'success');
         const container = document.getElementById('portal-container');
-        if (container) _renderTeamPortalView(container);
+        if (container) {
+            if (ctx.fromToken) {
+                _renderTeamPortalContent(container, ctx.team || { id: teamId, name: 'Team Portal' }, teamId, ctx.participatedDebates || []);
+            } else {
+                _renderTeamPortalView(container);
+            }
+        }
     } catch (e) {
         showNotification(`Submission failed: ${e.message}`, 'error');
     }

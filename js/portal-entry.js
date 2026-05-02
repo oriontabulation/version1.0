@@ -2,10 +2,11 @@ import { checkUrlForJudgeToken, renderJudgePortal } from './portal.js';
 
 document.addEventListener('DOMContentLoaded', async () => {
   // Initialize portal flow: validate token if present, then render portal UI
+  let handledToken = false;
   try {
-    await checkUrlForJudgeToken();
+    handledToken = await checkUrlForJudgeToken();
   } catch (e) {
     // Fallback to rendering portal even if token check fails
   }
-  renderJudgePortal();
+  if (!handledToken) renderJudgePortal();
 });

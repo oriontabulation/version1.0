@@ -12,6 +12,7 @@ let isOfflineMode = false;
 let _restoreInProgress = false;
 let _explicitLogoutInProgress = false;
 let _lastManualSignInAt = 0;
+let _authApplyGeneration = 0;
 const _profileApplyInFlight = new Map();
 
 function _looksLikeConnectionError(err) {
@@ -56,10 +57,22 @@ function _refreshAuthDependentUI() {
     if (typeof window.updateAdminDropdownVisibility === 'function') {
         window.updateAdminDropdownVisibility();
     }
+    const role = state.auth?.currentUser?.role;
+    if (role !== 'admin') {
+        document.body.classList.remove('admin-mode');
+        document.querySelectorAll('.adm-topbar,.adm-layout,.adm-sidebar,.adm-backdrop').forEach(el => {
+            el.style.display = 'none';
+        });
+        const activeTab = document.querySelector('.tab-content.active')?.id;
+        if (activeTab === 'admin-dashboard' && typeof window.switchTab === 'function') {
+            window.switchTab(role === 'team' ? 'portal' : 'public');
+        }
+    }
 }
 
 // ── Internal: apply verified profile to in-memory state ───────────────────
 async function _applyProfileToState(supabaseUser) {
+    const applyGeneration = _authApplyGeneration;
     if (!supabaseUser) return false;
     const user = supabaseUser;
 
@@ -72,6 +85,7 @@ async function _applyProfileToState(supabaseUser) {
         .single();
 
     if (profileErr || !profile) {
+        if (applyGeneration !== _authApplyGeneration) return false;
         // For OAuth sign-ins the profile row may not exist yet — create a minimal one
         const displayName = user.user_metadata?.full_name || user.user_metadata?.name
             || user.email?.split('@')[0] || 'User';
@@ -101,6 +115,8 @@ async function _applyProfileToState(supabaseUser) {
         showNotification('Your account has been suspended. Contact the tournament admin.', 'error');
         return false;
     }
+
+    if (applyGeneration !== _authApplyGeneration) return false;
 
     state.auth.currentUser = {
         id: profile.id,
@@ -135,10 +151,17 @@ async function handleLogin() {
 
     if (loginBtn) { loginBtn.textContent = 'Logging in…'; loginBtn.disabled = true; }
 
-    // Clear stale offline fallback state; Supabase will replace any current browser session.
+    // Clear stale sessions before replacing the current user on shared devices.
+    _authApplyGeneration++;
+    state.auth.currentUser = null;
+    state.auth.isAuthenticated = false;
+    updateHeaderControls();
+    updateAdminNavVisibility();
     logoutLocalUser();
+    try { await supabase.auth.signOut({ scope: 'local' }); } catch (_) { /* ignore stale session cleanup */ }
 
     try {
+        _authApplyGeneration++;
         const data = await api.signIn(email, password);
         const user = data?.user || data?.session?.user;
         if (user) {
@@ -148,6 +171,10 @@ async function handleLogin() {
                 _refreshAuthDependentUI();
                 _lastManualSignInAt = Date.now();
                 closeAllModals();
+                const role = state.auth.currentUser?.role;
+                if (typeof window.switchTab === 'function') {
+                    window.switchTab(role === 'admin' ? 'admin-dashboard' : role === 'team' ? 'portal' : 'public');
+                }
                 showNotification(`Welcome back, ${state.auth.currentUser?.name || 'User'}!`, 'success');
                 return;
             }
@@ -296,6 +323,7 @@ async function registerUser() {
 async function logout() {
     const user = state.auth.currentUser;
     _explicitLogoutInProgress = true;
+    _authApplyGeneration++;
 
     // Clear local session if in offline mode
     if (user?.isLocal || isOfflineMode) {
@@ -324,6 +352,7 @@ async function logout() {
 
 // ── GUEST LOGIN ─────────────────────────────────────────────────────────────
 function guestLogin() {
+    _authApplyGeneration++;
     state.auth.currentUser = { role: 'public', name: 'Guest' };
     state.auth.isAuthenticated = false;
     updateHeaderControls();
@@ -343,14 +372,15 @@ async function restoreSession() {
         if (!error && session?.user) {
             logoutLocalUser();
             isOfflineMode = false;
+            _authApplyGeneration++;
             return _applySessionUserOnce(session);
         }
 
         const localSession = getLocalSession();
 
         if (localSession) {
-            // Enforce 1-hour inactivity on local sessions
-            if (localSession.loggedInAt && Date.now() - localSession.loggedInAt > 3_600_000) {
+            // Enforce configured inactivity on local sessions
+            if (localSession.loggedInAt && Date.now() - localSession.loggedInAt > _getInactivityLimitMs()) {
                 logoutLocalUser();
             } else {
                 const reachable = await isSupabaseReachable();
@@ -600,12 +630,52 @@ function _showProfileCompletion(supabaseUser) {
 }
 
 // ── INACTIVITY TIMEOUT (1 hour) ──────────────────────────────────────────────
-const INACTIVITY_LIMIT = 60 * 60 * 1000; // 1 hour (FIXED: was 10 hours)
+const INACTIVITY_SETTING_KEY = 'orion_inactivity_timeout_minutes';
+const DEFAULT_INACTIVITY_MINUTES = 30;
 let _lastActivity = Date.now();
 let _inactivityTimer = null;
 
 function _resetActivity() {
     _lastActivity = Date.now();
+}
+
+function _getInactivityMinutes() {
+    const raw = Number(localStorage.getItem(INACTIVITY_SETTING_KEY) || DEFAULT_INACTIVITY_MINUTES);
+    return [15, 30, 60, 120, 240].includes(raw) ? raw : DEFAULT_INACTIVITY_MINUTES;
+}
+
+function _getInactivityLimitMs() {
+    return _getInactivityMinutes() * 60 * 1000;
+}
+
+function setInactivityTimeoutMinutes(minutes) {
+    const value = Number(minutes);
+    const safe = [15, 30, 60, 120, 240].includes(value) ? value : DEFAULT_INACTIVITY_MINUTES;
+    localStorage.setItem(INACTIVITY_SETTING_KEY, String(safe));
+    _resetActivity();
+    showNotification(`Auto logout set to ${safe} minutes of inactivity.`, 'success');
+}
+
+function renderInactivitySettings(containerId) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    if (state.auth?.currentUser?.role !== 'admin') {
+        container.innerHTML = '';
+        return;
+    }
+    const current = _getInactivityMinutes();
+    const options = [15, 30, 60, 120, 240]
+        .map(v => `<option value="${v}" ${v === current ? 'selected' : ''}>${v < 60 ? `${v} minutes` : `${v / 60} hour${v === 60 ? '' : 's'}`}</option>`)
+        .join('');
+    container.innerHTML = `
+        <div style="padding:10px 14px;">
+            <label style="display:block;font-size:11px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;">Auto logout</label>
+            <select id="${containerId}-select" style="width:100%;padding:8px 10px;border:1px solid #e2e8f0;border-radius:8px;background:white;font-size:13px;">
+                ${options}
+            </select>
+        </div>`;
+    const select = document.getElementById(`${containerId}-select`);
+    if (select) select.onchange = () => setInactivityTimeoutMinutes(select.value);
 }
 
 function _initInactivityWatcher() {
@@ -615,8 +685,7 @@ function _initInactivityWatcher() {
     );
     _inactivityTimer = setInterval(() => {
         if (!state.auth?.isAuthenticated) return;
-        if (!isOfflineMode && !state.auth.currentUser?.isLocal) return;
-        if (Date.now() - _lastActivity > INACTIVITY_LIMIT) {
+        if (Date.now() - _lastActivity > _getInactivityLimitMs()) {
             showNotification('You were logged out due to inactivity.', 'info');
             logout();
         }
@@ -950,6 +1019,8 @@ export {
     updateHeaderControls,
     restoreSession,
     renderProfile,
+    renderInactivitySettings,
+    setInactivityTimeoutMinutes,
     signInWithGoogle,
     signInWithDiscord,
     signInWithApple,

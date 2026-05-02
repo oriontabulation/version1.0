@@ -4,7 +4,8 @@
 // ============================================
 
 import { save, saveNow} from './supabase-sync.js';
-import { state, watch } from './state.js';
+import { state, watch, switchTournamentCache } from './state.js';
+import { api } from './api.js';
 import { showNotification, escapeHTML, closeAllModals, getPreviousMeetings, teamCode } from './utils.js';
 import { hasConflict, buildConflictMap, buildTeamMap } from './maps.js';
 import { renderStandings } from './tab.js';
@@ -26,6 +27,63 @@ function getFormat() {
 }
 function isBP()     { return getFormat() === 'bp';     }
 function isSpeech() { return getFormat() === 'speech'; }
+
+function hasActiveTournament() {
+    const id = state.activeTournamentId;
+    return !!(id && state.tournaments?.[id]);
+}
+
+function showTournamentRequiredPrompt() {
+    closeAllModals();
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.onclick = e => { if (e.target === overlay) overlay.remove(); };
+    const modal = document.createElement('div');
+    modal.className = 'modal modal--center';
+    modal.innerHTML = `
+        <h2 class="u-mt-0">Tournament Required</h2>
+        <p class="u-text-muted">Create or select a tournament before generating a draw.</p>
+        <div class="modal-actions">
+            <button class="btn btn-secondary" type="button" id="draw-open-tournament-manager">Open Tournament Manager</button>
+            <button class="btn btn-primary" type="button" id="draw-create-placeholder-tournament">Create Placeholder Tournament</button>
+        </div>`;
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+    modal.querySelector('#draw-open-tournament-manager').onclick = () => {
+        overlay.remove();
+        window.switchTab?.('admin-dashboard');
+        setTimeout(() => window.adminSwitchSection?.('tournaments'), 0);
+    };
+    modal.querySelector('#draw-create-placeholder-tournament').onclick = async () => {
+        const btn = modal.querySelector('#draw-create-placeholder-tournament');
+        btn.disabled = true;
+        btn.textContent = 'Creating...';
+        try {
+            const t = await api.createTournament('Placeholder Tournament');
+            state.tournaments[t.id] = {
+                ...t,
+                teams: [],
+                judges: [],
+                rounds: [],
+                publish: {},
+                feedback: [],
+                judgeTokens: {},
+                roomURLs: {}
+            };
+            localStorage.setItem('orion_active_tournament_id', t.id);
+            switchTournamentCache(t.id, { teams: [], judges: [], rounds: [], publish: {} });
+            window._setupRealtimeSyncForTournament?.(t.id);
+            overlay.remove();
+            showNotification('Placeholder tournament created. Add teams before generating a draw.', 'success');
+            renderDraw();
+            window.updateHeaderTournamentName?.();
+        } catch (error) {
+            btn.disabled = false;
+            btn.textContent = 'Create Placeholder Tournament';
+            showNotification(`Could not create tournament: ${error.message}`, 'error');
+        }
+    };
+}
 
 // Team label helper - shows team names or codes based on display preference
 function teamLabel(team) {
@@ -72,6 +130,8 @@ function _setNameDisplay(value) {
     savedPrefs['display'] = value;
     localStorage.setItem('orion_draw_prefs', JSON.stringify(savedPrefs));
     displayRounds();
+    if (typeof window.renderKnockout === 'function') window.renderKnockout();
+    if (typeof window.refreshAdminRounds === 'function') window.refreshAdminRounds();
 }
 
 
@@ -240,14 +300,15 @@ export function renderDraw() {
     if (!container) return;
 
     // Check if tournament is loaded
-    if (!state.activeTournamentId) {
+    if (!hasActiveTournament()) {
         container.innerHTML = `
             <div class="section">
                 <h2>Draw</h2>
                 <div style="text-align:center;padding:60px 20px;color:#64748b">
                     <div style="font-size:48px;margin-bottom:12px">🏛️</div>
                     <h3 style="margin:0 0 8px;color:#1e293b">No Tournament Selected</h3>
-                    <p style="margin:0">Please select or create a tournament first.</p>
+                    <p style="margin:0 0 16px">Please select or create a tournament first.</p>
+                    <button onclick="window.showTournamentRequiredPrompt()" class="btn btn-primary">Create or Select Tournament</button>
                 </div>
             </div>`;
         return;
@@ -1905,12 +1966,16 @@ function allocateJudgesToDebates(debates, isKnockout = false) {
         });
 
     // Helper: pick the best available judge for a debate (no conflict, not yet used)
+    function debateTeamIds(debate) {
+        return [debate.gov, debate.opp, debate.og, debate.oo, debate.cg, debate.co]
+            .filter(id => id !== null && id !== undefined);
+    }
+
     function pickJudge(debate, excludeIds = new Set()) {
         return judgesByHistory.find(j =>
             !assignedInRound.has(j.id) &&
             !excludeIds.has(j.id) &&
-            !hasConflict(conflictMap, j.id, debate.gov) &&
-            !hasConflict(conflictMap, j.id, debate.opp)
+            debateTeamIds(debate).every(teamId => !hasConflict(conflictMap, j.id, teamId))
         ) || null;
     }
 
@@ -1971,6 +2036,46 @@ function getPreviousJudgeAllocations(isKnockout) {
     });
     
     return allocations;
+}
+
+async function persistStandardRound(round, roundNumber) {
+    const tournamentId = state.activeTournamentId;
+    if (!tournamentId) throw new Error('No active tournament selected');
+    if ((round.debates || []).some(d => d.format === 'bp' || d.format === 'speech' || d.og || d.oo || d.cg || d.co)) {
+        return null;
+    }
+
+    const dbRound = await api.createRound({
+        tournamentId,
+        roundNumber,
+        motion: round.motion,
+        infoslide: round.infoslide || null,
+        type: round.type || 'prelim',
+        blinded: !!round.blinded
+    });
+
+    const createdDebates = await api.createDebates((round.debates || []).map((d, i) => ({
+        roundId: dbRound.id,
+        tournamentId,
+        govTeamId: d.gov,
+        oppTeamId: d.opp,
+        roomName: round.rooms?.[i] || `Room ${i + 1}`
+    })));
+
+    await Promise.all(createdDebates.map((debate, i) => {
+        const panel = (round.debates[i]?.panel || [])
+            .map(p => ({ judgeId: p.id, role: p.role || 'panellist' }));
+        return api.assignJudgesToDebate(debate.id, panel);
+    }));
+
+    return api.getRounds(tournamentId);
+}
+
+function nextRoundNumber() {
+    const nums = (state.rounds || [])
+        .map(r => Number(r.round_number ?? r.id))
+        .filter(Number.isFinite);
+    return nums.length ? Math.max(...nums) + 1 : 1;
 }
 
 // ============================================
@@ -4384,6 +4489,7 @@ window.dndTeamDrop          = dndTeamDrop;
 window.dndDragEnd           = dndDragEnd;
 window.dndDragLeave         = dndDragLeave;
 window.showJudgeManagement  = showJudgeManagement;
+window.showTournamentRequiredPrompt = showTournamentRequiredPrompt;
 
 function _avoidPreviousMeetingPairs(pairs) {
     if (pairs.length < 2) return pairs;
@@ -4455,6 +4561,11 @@ export function createRound(params) {
     const isRoundRobin = method === 'roundrobin';
     const bpMode       = isBP();
 
+    if (!hasActiveTournament()) {
+        showTournamentRequiredPrompt();
+        return;
+    }
+
     const activeTeams = (state.teams||[]).filter(t => !t.eliminated);
     const minTeams = bpMode ? 4 : 2;
     if (activeTeams.length < minTeams) {
@@ -4491,7 +4602,7 @@ export function createRound(params) {
             debates.push({ format:'bp', og:og.id, oo:oo.id, cg:cg.id, co:co.id, entered:false, panel:[] });
         }
         if (autoAllocate) allocateJudgesToDebates(debates, false);
-        const roundId = state.rounds.length > 0 ? Math.max(...state.rounds.map(r=>r.id))+1 : 1;
+        const roundId = nextRoundNumber();
         const rooms = debates.map((_, i) => `Room ${i + 1}`);
         state.rounds.push({ id:roundId, motion, debates, rooms, format:'bp', type:'prelim', blinded:blind, sideMethod:'bp', nextRoundCreated:false });
         saveNow();
@@ -4514,7 +4625,7 @@ export function createRound(params) {
             debates.push({ format:'bp', og:og.id, oo:oo.id, cg:cg.id, co:co.id, entered:false, panel:[] });
         }
         if (autoAllocate) allocateJudgesToDebates(debates, true);
-        const roundId = state.rounds.length > 0 ? Math.max(...state.rounds.map(r=>r.id))+1 : 1;
+        const roundId = nextRoundNumber();
         const rooms = debates.map((_, i) => `Room ${i + 1}`);
         state.rounds.push({ id:roundId, motion, debates, rooms, format:'bp', type:'knockout', blinded:blind, sideMethod:'bp', nextRoundCreated:false });
         saveNow();
@@ -4578,8 +4689,7 @@ export function createRound(params) {
 
         if (autoAllocate) allocateJudgesToDebates(speechDebates, false);
 
-        const roundId = state.rounds.length > 0
-            ? Math.max(...state.rounds.map(r => r.id)) + 1 : 1;
+        const roundId = nextRoundNumber();
         const rooms = speechDebates.map((_, i) => `Room ${i + 1}`);
 
         state.rounds.push({
@@ -4649,10 +4759,23 @@ export function createRound(params) {
 
     if (autoAllocate) allocateJudgesToDebates(debates, isKnockout);
 
-    const roundId = state.rounds.length > 0 ? Math.max(...state.rounds.map(r=>r.id))+1 : 1;
+    const roundId = nextRoundNumber();
     const rooms = debates.map((_, i) => `Room ${i + 1}`);
-    state.rounds.push({ id:roundId, motion, debates, rooms, type:isKnockout?'knockout':'prelim', blinded:blind, disableReply, sideMethod, nextRoundCreated:false });
+    const newRound = { id:roundId, motion, debates, rooms, type:isKnockout?'knockout':'prelim', blinded:blind, disableReply, sideMethod, nextRoundCreated:false };
+    state.rounds.push(newRound);
     saveNow();
+
+    persistStandardRound(newRound, roundId)
+        .then(freshRounds => {
+            if (freshRounds && state.activeTournamentId) {
+                state.rounds = freshRounds;
+                displayRounds();
+            }
+        })
+        .catch(error => {
+            console.error('[draw] persist round failed:', error);
+            showNotification(`Round created locally, but Supabase save failed: ${error.message}`, 'error');
+        });
 
     const label = isKnockout ? 'Knockout' : isRoundRobin ? 'Round Robin' : (method||'random').charAt(0).toUpperCase()+(method||'random').slice(1);
     showNotification(`Round ${roundId} (${label}) created with ${debates.length} debates${blind?' [BLINDED]':''}`, 'success');

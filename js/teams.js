@@ -8,17 +8,16 @@
 
 import { state, addTeamToCache, removeTeamFromCache, patchTeam } from './state.js';
 import { api } from './api.js';
-import { buildTeamMap } from './maps.js';
 import { showNotification, escapeHTML } from './utils.js';
 import { getCategories, teamMatchesCategory } from './categories.js';
-import { el, replaceChildren, emptyState } from './ui/components.js';
-import { renderSmartList, VIRTUALIZATION_THRESHOLD } from './ui/virtual-list.js';
+import { el, emptyState } from './ui/components.js';
 
 // ── Permission helpers ────────────────────────────────────────────────────────
 function _isAdmin() { return !!(state.auth?.isAuthenticated && state.auth?.currentUser?.role === 'admin'); }
 function _myTeamId() { return state.auth?.currentUser?.associatedId ?? null; }
 
 let _teamsListCategory = null;
+const _CARD = 'background:white;border:1px solid #e2e8f0;border-radius:12px;padding:18px;margin-bottom:16px;';
 
 // ── renderTeams ───────────────────────────────────────────────────────────────
 export function renderTeams() {
@@ -162,31 +161,14 @@ export function displayTeams() {
         return;
     }
 
-    // Use virtual list for large datasets
-    if (teams.length >= VIRTUALIZATION_THRESHOLD) {
-        list.style.height = '600px';
-        list.style.overflow = 'auto';
-        list.style.display = '';
-        list.style.flexDirection = '';
-        list.style.gap = '';
-
-        _teamsVirtualList = renderSmartList({
-            container: list,
-            items: teams,
-            itemHeight: 140,
-            renderItem: (team, index) => _buildTeamCard(team, isAdmin, cats),
-            emptyMessage: isAdmin ? 'Add your first team above.' : 'Your team profile was not found. Contact the admin.'
-        });
-    } else {
-        list.style.height = '';
-        list.style.overflow = '';
-        list.style.display = 'flex';
-        list.style.flexDirection = 'column';
-        list.style.gap = '16px';
-        list.innerHTML = '';
-        for (const team of teams) {
-            list.appendChild(_buildTeamCard(team, isAdmin, cats));
-        }
+    list.style.height = '';
+    list.style.overflow = 'visible';
+    list.style.display = 'grid';
+    list.style.gridTemplateColumns = 'repeat(auto-fit, minmax(min(100%, 320px), 1fr))';
+    list.style.gap = '16px';
+    list.innerHTML = '';
+    for (const team of teams) {
+        list.appendChild(_buildTeamCard(team, isAdmin, cats));
     }
 }
 

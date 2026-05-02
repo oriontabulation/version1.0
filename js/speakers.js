@@ -232,10 +232,10 @@ function _buildSpeakerStats(catId) {
 }
 
 function renderSpeakerStandings() {
-    const container = document.getElementById('speaker-rankings');
+    const container = document.getElementById('speaker-rankings') || createSpeakerRankingsTab();
     if (!container) {
-        createSpeakerRankingsTab();
-        return renderSpeakerStandings();
+        console.warn('[speakers] speaker rankings container is unavailable');
+        return;
     }
 
     try {
@@ -597,18 +597,29 @@ function toggleReplyColumn() { showReplies = !showReplies; renderSpeakerStanding
 
 // ── Fallback tab creator ──────────────────────────────────────────────────────
 function createSpeakerRankingsTab() {
-    if (document.getElementById('speakers')) return;
-    const tabDiv = document.createElement('div');
-    tabDiv.id = 'speakers'; tabDiv.className = 'tab-content';
-    tabDiv.innerHTML = '<div id="speaker-rankings"></div>';
-    document.body.appendChild(tabDiv);
+    let tabDiv = document.getElementById('speakers');
+    if (!tabDiv) {
+        tabDiv = document.createElement('div');
+        tabDiv.id = 'speakers'; tabDiv.className = 'tab-content';
+        document.body.appendChild(tabDiv);
+    }
+
+    let rankings = document.getElementById('speaker-rankings');
+    if (!rankings) {
+        rankings = document.createElement('div');
+        rankings.id = 'speaker-rankings';
+        tabDiv.appendChild(rankings);
+    }
+
     const tc = document.querySelector('.tabs');
-    if (tc) {
+    if (tc && !tc.querySelector('[data-tab="speakers"]')) {
         const btn = document.createElement('button');
-        btn.className = 'tab-btn'; btn.textContent = '🗣️ Speakers';
+        btn.className = 'tab-btn'; btn.dataset.tab = 'speakers'; btn.textContent = '🗣️ Speakers';
         btn.onclick = () => switchTab('speakers');
         tc.appendChild(btn);
     }
+
+    return rankings;
 }
 
 // ── Export CSV ────────────────────────────────────────────────────────────────

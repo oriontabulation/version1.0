@@ -5,7 +5,7 @@
 //   + Tournament management 
 // ============================================
 
-import { state, activeTournament, switchTournamentCache, save, saveNow } from './state.js';
+import { state, activeTournament, switchTournamentCache, hydrateState, save, saveNow } from './state.js';
 import { api } from './api.js';
 import { showNotification, escapeHTML, closeAllModals } from './utils.js';
 import { updateTabsForRole, updateNavDropdowns } from './tab.js';
@@ -142,6 +142,9 @@ export function renderAdminDashboard() {
     if (typeof window.renderThemePicker === 'function') {
         window.renderThemePicker('adm-top-settings-theme');
     }
+    if (typeof window.renderInactivitySettings === 'function') {
+        window.renderInactivitySettings('adm-inactivity-settings');
+    }
 
     if (_activeSection === 'rounds') _refreshAdminRounds();
 }
@@ -163,16 +166,8 @@ function _fillRoundsSidebar() {
     const el = document.getElementById('adm-rounds-sidebar');
     if (!el) return;
     const rounds = state.rounds || [];
-
-    let savedPrefs = {};
-    try { savedPrefs = JSON.parse(localStorage.getItem('orion_draw_prefs') || '{}'); } catch(e) { /* ignore corrupt draw prefs */ }
-    const sp = savedPrefs['adm-pair-method'] || 'random';
-    const ss = savedPrefs['adm-side-method'] || 'random';
-
-    const pairOpts = [['random','🎲 Random'],['power','⚡ Power Pairing'],['fold','📊 Fold Pairing'],['roundrobin','🔄 Round Robin'],['knockout','🏆 Outrounds Draw']]
-        .map(([v,l]) => `<option value="${v}" ${sp===v?'selected':''}>${l}</option>`).join('');
-    const sideOpts = [['random','🎲 Random'],['manual','✋ Manual'],['seed-high-gov','🔼 High Seed = Gov'],['seed-low-gov','🔽 Low Seed = Gov']]
-        .map(([v,l]) => `<option value="${v}" ${ss===v?'selected':''}>${l}</option>`).join('');
+    const teams = state.teams || [];
+    const judges = state.judges || [];
 
     const ctrlCards = rounds.map((r, idx) => {
         const done = (r.debates||[]).filter(d=>d.entered).length;
@@ -203,29 +198,16 @@ function _fillRoundsSidebar() {
 
     el.innerHTML = `
         <div class="adm-card adm-card--no-mb">
-            <div class="adm-card-title">➕ Create Round</div>
-            <div class="adm-form-stack">
-                <div class="adm-field">
-                    <label class="adm-label">Motion / Topic</label>
-                    <input type="text" id="adm-motion" class="adm-input" placeholder="e.g. This House Would…"
-                           onkeydown="if(event.key==='Enter') window.adminCreateRound()">
-                </div>
-                <div class="adm-field">
-                    <label class="adm-label">Pairing Method</label>
-                    <select id="adm-pair-method" class="adm-select" onchange="window._admSaveDrawPref('adm-pair-method',this.value)">${pairOpts}</select>
-                </div>
-                <div class="adm-field">
-                    <label class="adm-label">Side Assignment</label>
-                    <select id="adm-side-method" class="adm-select" onchange="window._admSaveDrawPref('adm-side-method',this.value)">${sideOpts}</select>
-                </div>
-                <div class="adm-field">
-                    <label class="adm-label">Options</label>
-                    <div class="adm-checks">
-                        <label class="adm-check"><input type="checkbox" id="adm-auto-allocate" checked> Auto-allocate Judges</label>
-                        <label class="adm-check"><input type="checkbox" id="adm-blind-round"> 🔒 Blind Round</label>
-                    </div>
-                </div>
-                <button class="adm-btn accent full" onclick="window.adminCreateRound()">🎯 Create Round</button>
+            <div class="adm-card-title">Mini Draw Inputs</div>
+            <div class="adm-muted-sm" style="margin-bottom:12px;">Create rounds from the Draw tab. This panel shows the current pool for quick checking.</div>
+            <button class="adm-btn accent full" onclick="window.switchTab('draw')">Open Draw Creator</button>
+            <div class="adm-card-title" style="margin-top:16px;">Available Teams <span class="adm-card-count">${teams.length}</span></div>
+            <div class="adm-col adm-col--sm" style="max-height:180px;overflow:auto;">
+                ${teams.length ? teams.map(t => `<div class="adm-round-ctrl"><strong>${escapeHTML(t.name || 'Unnamed team')}</strong><span class="adm-muted-sm">${escapeHTML(t.code || '')}</span></div>`).join('') : '<div class="adm-empty">No teams registered.</div>'}
+            </div>
+            <div class="adm-card-title" style="margin-top:16px;">Available Judges <span class="adm-card-count">${judges.length}</span></div>
+            <div class="adm-col adm-col--sm" style="max-height:180px;overflow:auto;">
+                ${judges.length ? judges.map(j => `<div class="adm-round-ctrl"><strong>${escapeHTML(j.name || 'Unnamed judge')}</strong><span class="adm-muted-sm">${escapeHTML(j.role || 'panellist')}</span></div>`).join('') : '<div class="adm-empty">No judges registered.</div>'}
             </div>
         </div>
         ${rounds.length > 0 ? `<div class="adm-card adm-card--mt adm-card--no-mb">
@@ -305,6 +287,7 @@ function _buildAdminHeader() {
                     <button class="adm-top-bar-settings" id="adm-top-settings-btn" onclick="toggleAdmTopSettings(event)">⚙️ Settings</button>
                     <div class="adm-top-settings-dropdown" id="adm-top-settings-dropdown">
                         <div class="adm-top-settings-theme" id="adm-top-settings-theme"></div>
+                        <div class="adm-top-settings-theme" id="adm-inactivity-settings"></div>
                         <div class="adm-top-settings-divider"></div>
                         <button class="adm-top-settings-item" onclick="switchTab('profile')">👤 Profile</button>
                         <button class="adm-top-settings-item" data-action="logout">🚪 Logout</button>
@@ -528,8 +511,8 @@ function _sectionTournaments() {
     </div>`;
 }
 
-async function adminSwitchTournament(id) {
-    if (!confirm('Switch to this tournament?')) return;
+async function adminSwitchTournament(id, opts = {}) {
+    if (!opts.skipConfirm && !confirm('Switch to this tournament?')) return;
     showNotification('Loading tournament data...', 'info');
     try {
         const [teams, judges, rounds] = await Promise.all([
@@ -539,19 +522,9 @@ async function adminSwitchTournament(id) {
         ]);
         const publish = await api.getPublishState(id).catch(() => ({}));
 
-        // Hot-swap state without a page reload (preserves login session)
         localStorage.setItem('orion_active_tournament_id', id);
-        // Update the active tournament in-memory (ensure container exists)
-        const s = state;
-        if (!s.tournaments) s.tournaments = {};
-        if (!s.tournaments[id]) {
-            s.tournaments[id] = { name: '', format: 'standard', teams: [], judges: [], rounds: [], publish: {} };
-        }
-        s.tournaments[id].teams   = teams;
-        s.tournaments[id].judges  = judges;
-        s.tournaments[id].rounds  = rounds;
-        s.tournaments[id].publish = publish;
-        s.activeTournamentId = id;
+        const tournaments = Object.entries(state.tournaments || {}).map(([tid, t]) => ({ id: tid, ...t }));
+        hydrateState({ activeTournamentId: id, tournaments, teams, judges, rounds, publish });
         window._setupRealtimeSyncForTournament?.(id);
 
         // Debugging logs to help diagnose issues when switching tournaments
@@ -575,7 +548,7 @@ async function adminRenameTournament(id, currentName) {
     const newName = prompt('Rename tournament:', currentName);
     if (!newName?.trim()) return;
     try {
-        const updated = await api.updateTournament(id, { name: newName.trim() });
+        const updated = await api.renameTournament(id, newName.trim());
         if (state.tournaments?.[id]) state.tournaments[id].name = updated.name;
         adminSwitchSection('tournaments');
         showNotification('Tournament renamed', 'success');
@@ -590,9 +563,9 @@ async function adminDeleteTournament(id) {
     try {
         await api.deleteTournament(id);
         delete state.tournaments[id];
-        const remaining = Object.values(state.tournaments || {});
+        const remaining = Object.entries(state.tournaments || {}).map(([tid, t]) => ({ id: tid, ...t }));
         if (remaining.length > 0) {
-            await adminSwitchTournament(remaining[0].id);
+            await adminSwitchTournament(remaining[0].id, { skipConfirm: true });
         } else {
             adminSwitchSection('tournaments');
         }
@@ -1140,6 +1113,7 @@ async function _loadURLsData() {
 
 function _buildURLsBody(jTokens, tTokens) {
     const base   = window.location.origin + window.location.pathname;
+    const portalBase = `${window.location.origin}/portal.html`;
     const jMap   = Object.fromEntries((jTokens).map(t => [t.judge_id, t]));
     const tMap   = Object.fromEntries((tTokens).map(t => [t.team_id,  t]));
     const judges = state.judges || [];
@@ -1177,7 +1151,7 @@ function _buildURLsBody(jTokens, tTokens) {
 
     function teamRow(t) {
         const tok   = tMap[t.id];
-        const url   = tok ? `${base}?team=${tok.token}` : null;
+        const url   = tok ? `${portalBase}?team=${tok.token}` : null;
         const safeUrl  = url  ? url.replace(/'/g, '%27')  : '';
         const safeName = escapeHTML(t.name);
         const safeEmail = escapeHTML(t.email || '');

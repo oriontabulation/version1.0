@@ -164,6 +164,8 @@ function _judgeProfileSection() {
 
 // ── displayJudges ─────────────────────────────────────────────────────────────
 let _judgesVirtualList = null;
+let _judgeEditModal = null;
+let _judgeEditTeamSignature = '';
 
 function displayJudges() {
     const list = document.getElementById('judges-list');
@@ -258,6 +260,7 @@ async function addJudge() {
     const tournId = state.activeTournamentId;
 
     if (!name) { showNotification('Judge name required', 'error'); return; }
+    if (!tournId) { showNotification('Select or create a tournament before adding judges.', 'error'); return; }
 
     const checkedAffils = [...document.querySelectorAll('.judge-affil:checked')].map(cb => cb.value);
 
@@ -297,6 +300,92 @@ async function deleteJudge(judgeId) {
 }
 
 // ── showEditJudge / saveEditJudge ─────────────────────────────────────────────
+function _ensureJudgeEditModal() {
+    if (_judgeEditModal) return _judgeEditModal;
+
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.id = 'judge-edit-modal';
+    overlay.style.display = 'none';
+    overlay.onclick = e => { if (e.target === overlay) _hideJudgeEditModal(); };
+
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.style.maxWidth = '620px';
+    modal.innerHTML = `
+        <h2 class="u-mt-0" id="judge-edit-title">Edit Judge</h2>
+        <div style="display:grid;grid-template-columns:1fr;gap:10px;margin-bottom:14px;">
+            <label style="font-size:12px;font-weight:700;color:#64748b;">
+                Name
+                <input type="text" id="edit-judge-name" style="margin-top:4px;padding:10px;border-radius:8px;border:1px solid #e2e8f0;width:100%;box-sizing:border-box;">
+            </label>
+            <label style="font-size:12px;font-weight:700;color:#64748b;">
+                Email
+                <input type="email" id="edit-judge-email" style="margin-top:4px;padding:10px;border-radius:8px;border:1px solid #e2e8f0;width:100%;box-sizing:border-box;">
+            </label>
+        </div>
+        <div style="margin-bottom:14px;">
+            <label style="font-size:12px;font-weight:700;color:#64748b;display:block;margin-bottom:8px;">Conflict Affiliations</label>
+            <input type="search" id="edit-judge-affil-search" placeholder="Search teams..." style="width:100%;padding:9px 10px;border-radius:8px;border:1px solid #e2e8f0;margin-bottom:8px;box-sizing:border-box;">
+            <div id="edit-judge-affil-list" style="max-height:220px;overflow:auto;padding:6px 10px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;"></div>
+        </div>
+        <div style="display:flex;gap:10px;justify-content:flex-end;">
+            <button class="btn btn-secondary" id="judge-edit-cancel" type="button">Cancel</button>
+            <button class="btn btn-primary" id="judge-edit-save" type="button">Save</button>
+        </div>`;
+
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+    modal.querySelector('#judge-edit-cancel').addEventListener('click', _hideJudgeEditModal);
+    modal.querySelector('#judge-edit-save').addEventListener('click', () => saveEditJudge(overlay.dataset.judgeId));
+    modal.querySelector('#edit-judge-affil-search').addEventListener('input', e => _filterJudgeAffiliations(e.target.value));
+
+    _judgeEditModal = overlay;
+    return overlay;
+}
+
+function _syncJudgeAffiliationOptions() {
+    const modal = _ensureJudgeEditModal();
+    const list = modal.querySelector('#edit-judge-affil-list');
+    const teams = state.teams || [];
+    const signature = teams.map(t => `${t.id}:${t.name}:${t.code || ''}`).join('|');
+    if (_judgeEditTeamSignature === signature) return;
+
+    _judgeEditTeamSignature = signature;
+    list.innerHTML = '';
+    if (!teams.length) {
+        list.appendChild(el('div', { style: 'padding:16px;text-align:center;color:#94a3b8;font-size:13px;' }, 'No teams available.'));
+        return;
+    }
+
+    for (const team of teams) {
+        const lbl = document.createElement('label');
+        lbl.className = 'judge-edit-affil-row';
+        lbl.dataset.search = `${team.name || ''} ${team.code || ''}`.toLowerCase();
+        lbl.style.cssText = 'display:flex;align-items:center;gap:8px;padding:6px 0;cursor:pointer;font-size:13px;';
+        const chk = document.createElement('input');
+        chk.type = 'checkbox';
+        chk.className = 'edit-judge-affil';
+        chk.value = team.id;
+        const spn = document.createElement('span');
+        spn.textContent = team.code ? `${team.name} (${team.code})` : team.name;
+        lbl.appendChild(chk);
+        lbl.appendChild(spn);
+        list.appendChild(lbl);
+    }
+}
+
+function _filterJudgeAffiliations(query) {
+    const q = String(query || '').trim().toLowerCase();
+    document.querySelectorAll('#edit-judge-affil-list .judge-edit-affil-row').forEach(row => {
+        row.style.display = !q || row.dataset.search.includes(q) ? 'flex' : 'none';
+    });
+}
+
+function _hideJudgeEditModal() {
+    if (_judgeEditModal) _judgeEditModal.style.display = 'none';
+}
+
 function showEditJudge(judgeId) {
     if (!_isAdmin()) { showNotification('Admin access required', 'error'); return; }
     const judge = (state.judges || []).find(j => String(j.id) === String(judgeId));
@@ -307,6 +396,22 @@ function showEditJudge(judgeId) {
     const teams = state.teams || [];
     const conflictIds = new Set((judge.judge_conflicts || []).map(c => String(c.team_id)));
 
+    const modal = _ensureJudgeEditModal();
+    _syncJudgeAffiliationOptions();
+    modal.dataset.judgeId = judgeId;
+    modal.querySelector('#judge-edit-title').textContent = `Edit Judge - ${judge.name || 'Unnamed'}`;
+    modal.querySelector('#edit-judge-name').value = judge.name || '';
+    modal.querySelector('#edit-judge-email').value = judge.email || '';
+    modal.querySelector('#edit-judge-affil-search').value = '';
+    modal.querySelectorAll('.edit-judge-affil').forEach(cb => {
+        cb.checked = conflictIds.has(String(cb.value));
+        cb.closest('.judge-edit-affil-row').style.display = 'flex';
+    });
+    modal.style.display = 'flex';
+    modal.querySelector('#edit-judge-name').focus();
+    return;
+
+    /* eslint-disable no-unreachable */
     card.innerHTML = '';
     const form = el('div', { style: 'background:white;padding:20px;border-radius:12px;border:2px solid #bfdbfe;' });
     const title = el('h3', { style: 'margin-top:0;color:#1e40af;' }, '✏️ Edit Judge — ', judge.name);
@@ -354,20 +459,23 @@ function showEditJudge(judgeId) {
     form.appendChild(btns);
 
     card.appendChild(form);
+    /* eslint-enable no-unreachable */
 }
 
 async function saveEditJudge(judgeId) {
     if (!_isAdmin()) { showNotification('Admin access required', 'error'); return; }
-    const name = document.getElementById(`edit-judge-name-${judgeId}`)?.value.trim();
-    const email = document.getElementById(`edit-judge-email-${judgeId}`)?.value.trim();
+    const modal = _ensureJudgeEditModal();
+    const name = modal.querySelector('#edit-judge-name')?.value.trim();
+    const email = modal.querySelector('#edit-judge-email')?.value.trim();
 
     if (!name) { showNotification('Name required', 'error'); return; }
 
-    const affiliations = [...document.querySelectorAll(`.edit-judge-affil-${judgeId}:checked`)].map(cb => cb.value);
+    const affiliations = [...modal.querySelectorAll('.edit-judge-affil:checked')].map(cb => cb.value);
 
     try {
         await api.updateJudge(judgeId, { name, email, affiliations });
         patchJudge(judgeId, { name, email, judge_conflicts: affiliations.map(id => ({ team_id: id })) });
+        _hideJudgeEditModal();
         displayJudges();
         showNotification('Judge updated', 'success');
     } catch (e) {

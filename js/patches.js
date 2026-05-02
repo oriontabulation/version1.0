@@ -266,6 +266,7 @@
       document.documentElement.style.setProperty('--t-text-light', '#64748b');
       document.documentElement.style.setProperty('--t-border', '#e2e8f0');
       document.documentElement.style.setProperty('--t-bg-hover', '#f1f5f9');
+      localStorage.setItem('orion_theme_mode', 'light');
     } else {
       // Switch to dark
       body.classList.add('theme-dark');
@@ -274,6 +275,7 @@
       document.documentElement.style.setProperty('--t-text-light', '#94a3b8');
       document.documentElement.style.setProperty('--t-border', '#334155');
       document.documentElement.style.setProperty('--t-bg-hover', '#1e293b');
+      localStorage.setItem('orion_theme_mode', 'dark');
     }
   };
 
@@ -286,10 +288,12 @@
       body.classList.remove('theme-high-contrast');
       document.documentElement.style.setProperty('--t-bg', document.body.classList.contains('theme-dark') ? '#0f172a' : '#f8fafc');
       document.documentElement.style.setProperty('--t-text', document.body.classList.contains('theme-dark') ? '#f1f5f9' : '#1e293b');
+      localStorage.setItem('orion_theme_contrast', 'normal');
     } else {
       body.classList.add('theme-high-contrast');
       document.documentElement.style.setProperty('--t-bg', '#000000');
       document.documentElement.style.setProperty('--t-text', '#ffffff');
+      localStorage.setItem('orion_theme_contrast', 'high');
     }
   };
 
@@ -301,11 +305,38 @@
     if (isLargeFont) {
       body.classList.remove('theme-large-font');
       document.documentElement.style.removeProperty('--t-font-scale');
+      localStorage.setItem('orion_theme_font', 'normal');
     } else {
       body.classList.add('theme-large-font');
       document.documentElement.style.setProperty('--t-font-scale', '1.15');
+      localStorage.setItem('orion_theme_font', 'large');
     }
   };
+
+  function restoreThemeModePrefs() {
+    try {
+      applyColor(loadColor());
+      if (localStorage.getItem('orion_theme_mode') === 'dark') {
+        document.body.classList.add('theme-dark');
+        document.documentElement.style.setProperty('--t-bg', '#0f172a');
+        document.documentElement.style.setProperty('--t-text', '#f1f5f9');
+        document.documentElement.style.setProperty('--t-text-light', '#94a3b8');
+        document.documentElement.style.setProperty('--t-border', '#334155');
+        document.documentElement.style.setProperty('--t-bg-hover', '#1e293b');
+      }
+      if (localStorage.getItem('orion_theme_contrast') === 'high') {
+        document.body.classList.add('theme-high-contrast');
+        document.documentElement.style.setProperty('--t-bg', '#000000');
+        document.documentElement.style.setProperty('--t-text', '#ffffff');
+      }
+      if (localStorage.getItem('orion_theme_font') === 'large') {
+        document.body.classList.add('theme-large-font');
+        document.documentElement.style.setProperty('--t-font-scale', '1.15');
+      }
+    } catch (_) {
+      // Theme prefs are cosmetic; ignore storage failures.
+    }
+  }
 
     /* ────────────────────────────────────────────────────────────
      SELECTOR MEMORY
@@ -704,6 +735,7 @@
   ───────────────────────────────────────────────────────────── */
   var _initDone = false;
   function _runInits() {
+    restoreThemeModePrefs();
     if (!_initDone && window.switchTab && window.closeAllModals) {
       _applyPatchClose();
       // _applyPatchLogin removed — caused infinite recursion loop

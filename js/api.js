@@ -81,6 +81,12 @@ export const api = {
         return _ok(await supabase.from('tournaments').update({ name: name.trim() })
             .eq('id', id).select().single(), 'renameTournament');
     },
+    async updateTournament(id, fields) {
+        const patch = { ...fields };
+        if (patch.name) patch.name = patch.name.trim();
+        return _ok(await supabase.from('tournaments').update(patch)
+            .eq('id', id).select().single(), 'updateTournament');
+    },
     async deleteTournament(id) {
         await supabase.from('rounds').delete().eq('tournament_id', id);
         await supabase.from('teams').delete().eq('tournament_id', id);
@@ -276,7 +282,7 @@ export const api = {
     },
     async createJudge({ id, tournamentId, name, role = 'panellist', institution, email, affiliations = [] }) {
         // Revert to insert — duplicates handled in bulkCreateJudges
-        const judge = _ok(await supabase.from('judges')
+        let inserted = await supabase.from('judges')
             .insert({ 
                 id: id || undefined,
                 tournament_id: tournamentId, 
@@ -285,7 +291,19 @@ export const api = {
                 institution: institution?.trim() || null, 
                 email: email?.trim() || null 
             })
-            .select().single(), 'createJudge');
+            .select().single();
+        if (inserted.error && email) {
+            inserted = await supabase.from('judges')
+                .insert({
+                    id: id || undefined,
+                    tournament_id: tournamentId,
+                    name: name.trim(),
+                    role,
+                    institution: institution?.trim() || null
+                })
+                .select().single();
+        }
+        const judge = _ok(inserted, 'createJudge');
 
         if (affiliations.length > 0) {
             // RESILIENCE: Swallow conflict errors
@@ -479,7 +497,7 @@ export const api = {
         const row = _ok(await supabase.from('team_tokens')
             .insert({ team_id: teamId, tournament_id: tournamentId, token })
             .select('id, token').single(), 'generateTeamToken');
-        const url = `${window.location.origin}${window.location.pathname}?team=${row.token}`;
+        const url = `${window.location.origin}/portal.html?team=${row.token}`;
         return { url, tokenId: row.id };
     },
     async validateTeamToken(token, email) {

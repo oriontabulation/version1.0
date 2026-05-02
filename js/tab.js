@@ -29,7 +29,7 @@ const _TAB_META = {
     break:           { icon: '🏆', label: 'Break',            blurb: 'Teams advancing to the knockout stage.' },
     knockout:        { icon: '🔥', label: 'Knockout',         blurb: 'Knockout bracket and elimination rounds.' },
     motions:         { icon: '📋', label: 'Motions',          blurb: 'All round motions and topics.' },
-    portal:          { icon: '📝', label: 'Judge Portal',     blurb: 'Submit and manage ballots for your assigned debates.' },
+    portal:          { icon: '📝', label: 'Portal',     blurb: 'Access judge assignments or team judge feedback.' },
     'admin-dashboard': { icon: '⚙️', label: 'Admin Dashboard', blurb: 'Tournament administration — restricted to admins.' },
 };
 
@@ -70,11 +70,11 @@ function _canShowNavTab(tabId) {
     if (tabId === 'profile') return isAuth;
     if (tabId === 'admin-dashboard') return isAdmin;
     if (['judges', 'import'].includes(tabId)) return isAdmin;
-    if (tabId === 'teams') return isAdmin || role === 'team';
-    if (tabId === 'portal') return isAdmin || role === 'judge';
+    if (tabId === 'teams') return isAdmin;
+    if (tabId === 'portal') return isAdmin || role === 'judge' || role === 'team';
 
     const publishedTabs = ['draw', 'standings', 'speakers', 'break', 'knockout', 'motions', 'results'];
-    if (publishedTabs.includes(tabId)) return isAdmin || isAuth || !!state.publish?.[tabId];
+    if (publishedTabs.includes(tabId)) return isAdmin || role === 'judge' || !!state.publish?.[tabId];
 
     return true;
 }
@@ -193,6 +193,7 @@ function switchTab(tabId) {
     const sess    = state.auth;
     const isAdmin = sess?.currentUser?.role === 'admin';
     const isJudge = sess?.currentUser?.role === 'judge';
+    const isTeam  = sess?.currentUser?.role === 'team';
     const isAuth  = !!(sess?.isAuthenticated && sess?.currentUser);
 
     let lockedReason = null;
@@ -206,8 +207,7 @@ function switchTab(tabId) {
 
     // Teams tab — admin sees all, team role sees own team, others are blocked
     if (!lockedReason && tabId === 'teams') {
-        const role = sess?.currentUser?.role;
-        if (!isAdmin && role !== 'team') {
+        if (!isAdmin) {
             lockedReason = isAuth ? 'admin-only' : 'login-required';
         }
     }
@@ -221,7 +221,7 @@ function switchTab(tabId) {
     //                     the admin has flipped the public publish toggle)
     //  • Guest / unauth → only visible when the admin has published the tab.
     const publishedTabs = ['draw', 'standings', 'speakers', 'break', 'knockout', 'motions', 'results'];
-    if (!lockedReason && publishedTabs.includes(tabId) && !isAdmin && !isAuth) {
+    if (!lockedReason && publishedTabs.includes(tabId) && !isAdmin && !isJudge) {
         const published = (state.publish || {})[tabId];
         if (!published) {
             lockedReason = 'not-published';
@@ -229,7 +229,7 @@ function switchTab(tabId) {
     }
 
     // Judge portal — requires judge or admin login
-    if (tabId === 'portal' && !isAdmin && !isJudge) {
+    if (tabId === 'portal' && !isAdmin && !isJudge && !isTeam) {
         lockedReason = isAuth ? 'admin-only' : 'login-required';
     }
     // ─────────────────────────────────────────────────────────────────────────
@@ -397,7 +397,7 @@ function updateTabsForRole() {
     const mainContent = document.querySelector('main');
 
     tabOrder.forEach(id => {
-        if (tabs[id]) {
+        if (tabs[id] && _canShowNavTab(id)) {
             const btn = document.createElement('button');
             btn.className = 'tab-btn';
             btn.textContent = tabNames[id];
@@ -1040,3 +1040,4 @@ export {
     renderBreakDisplay,
     switchCategoryTab,
 };
+

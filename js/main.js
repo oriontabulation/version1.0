@@ -45,10 +45,12 @@ import {
     handleLogin, switchAuthTab,
     handleRoleChange,
     renderProfile,
+    renderInactivitySettings,
+    setInactivityTimeoutMinutes,
     signInWithGoogle, signInWithDiscord, signInWithApple,
 } from './supabase-auth.js';
 import {
-    navigate, initRouter,
+    initRouter,
     registerActions, registerTab,
     installDelegatedListener
 } from './router.js';
@@ -141,10 +143,11 @@ registerActions({
     // Auth
     showLoginModal, logout, guestLogin, registerUser, handleLogin,
     switchAuthTab, handleRoleChange, closeAllModals, renderProfile,
+    renderInactivitySettings, setInactivityTimeoutMinutes,
     signInWithGoogle, signInWithDiscord, signInWithApple,
 
     // Nav
-    navigate,
+    navigate: _legacySwitchTab,
     switchTab: _legacySwitchTab, // guarded version — enforces role/publish checks
 
     // Teams
@@ -208,8 +211,10 @@ window.switchCategoryTab = switchCategoryTab;
 window.showNotification = showNotification;
 window.updatePublicCounts = updatePublicCounts;
 window.updateHeaderTournamentName = updateHeaderTournamentName;
-window.navigate = navigate;
+window.navigate = _legacySwitchTab;
 window.showLoginModal = showLoginModal;
+window.renderInactivitySettings = renderInactivitySettings;
+window.setInactivityTimeoutMinutes = setInactivityTimeoutMinutes;
 window.renderAdminDashboard = renderAdminDashboard;
 window.adminPublishAll = adminPublishAll;
 window.adminHideAll = adminHideAll;
@@ -553,7 +558,7 @@ async function init() {
         ]).catch(() => null) : Promise.resolve(null)
     ]);
 
-    if (!tournaments.length) {
+    if (!tournaments.length && isAuthed && window.__orionAutoCreateTournament === true) {
         // First run — create default tournament
         const tour = await api.createTournament('My Tournament').catch(() => null);
         if (tour) tournaments.push(tour);
@@ -566,7 +571,8 @@ async function init() {
     }
 
     if (!activeId) {
-        showNotification('Could not load tournament data.', 'error');
+        updatePublicCounts();
+        showNotification('No published tournament is available yet.', 'info');
         return;
     }
 
@@ -616,6 +622,9 @@ async function init() {
         if (!isOpen && typeof window.renderThemePicker === 'function') {
             window.renderThemePicker('theme-picker-container');
         }
+        if (!isOpen && typeof window.renderInactivitySettings === 'function') {
+            window.renderInactivitySettings('inactivity-settings-container');
+        }
     };
     
     if (settingsBtn && settingsDropdown) {
@@ -656,10 +665,10 @@ async function init() {
     // 10. Restore active tab (sticky navigation)
     const savedTab = localStorage.getItem('orion_active_tab') || 'public';
     try {
-        navigate(savedTab);
+        _legacySwitchTab(savedTab);
     } catch (e) {
         console.warn('[main] Failed to navigate to saved tab, falling back to public');
-        navigate('public');
+        _legacySwitchTab('public');
     }
     window.__orionReady = true;
     console.log('[main] Init complete, step:', window.__orionStep);
