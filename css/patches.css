@@ -2063,153 +2063,44 @@ font-style: italic;
 }
 
 /* ================================================================
-   TEAM & JUDGE CARDS STYLING - Like Motion Cards
+   TEAM & JUDGE CARDS — same pattern as .motion-card
    ================================================================ */
 
-/* Team Cards - match motion-card style */
 .team-card {
-    background: #fff !important;
-    border: 1px solid #e2e8f0 !important;
-    border-radius: 12px !important;
-    padding: 20px !important;
-    margin-bottom: 16px !important;
-    width: 100% !important;
-    box-sizing: border-box !important;
-    display: block !important;
-    position: relative !important;
-    z-index: 1 !important;
-    transition: none !important;
-    visibility: visible !important;
-    opacity: 1 !important;
-    min-height: 50px !important;
-    clear: both !important;
-    float: none !important;
+    background: var(--bg-card);
+    border: 1px solid var(--color-border);
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 20px;
+    width: 100%;
 }
 
-.team-card:hover {
-    transform: none !important;
-    box-shadow: none !important;
-}
-
-.team-card.breaking {
-    border-left: 4px solid #10b981 !important;
-}
-
-.team-card.eliminated {
-    border-left: 4px solid #dc2626 !important;
-    opacity: 0.7 !important;
-}
-
-/* Force buttons visible */
-.team-card button,
-.team-card .btn {
-    visibility: visible !important;
-    opacity: 1 !important;
-    display: inline-flex !important;
-    min-width: 80px;
-}
+.team-card.breaking { border-left: 4px solid #10b981; }
+.team-card.eliminated { border-left: 4px solid #dc2626; opacity: 0.75; }
 
 .team-header {
     display: flex;
-    justify-content: space-between;
     align-items: center;
-    margin-bottom: 12px;
-    padding-bottom: 12px;
-    border-bottom: 1px solid #e2e8f0;
-}
-
-.team-name {
-    font-size: 16px;
-    font-weight: 700;
-    color: #1e293b;
-}
-
-.team-code {
-    color: #64748b;
-    font-size: 13px;
-    margin-left: 8px;
-}
-
-.team-speakers {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    margin-top: 12px;
-}
-
-.team-speakers span {
-    background: #f1f5f9;
-    padding: 6px 12px;
-    border-radius: 16px;
-    font-size: 13px;
-    color: #475569;
-}
-
-.team-actions {
-    display: flex !important;
     gap: 10px;
-    margin-top: 16px;
-    padding-top: 12px;
-    border-top: 1px solid #e2e8f0;
-    visibility: visible !important;
-}
-
-.team-actions .btn {
-    padding: 8px 16px !important;
-    font-size: 13px !important;
-    border-radius: 8px !important;
-    display: inline-flex !important;
-    align-items: center !important;
-    visibility: visible !important;
-    opacity: 1 !important;
-}
-
-.team-card:hover {
-    transform: none !important;
-    box-shadow: none !important;
-}
-
-.team-card.breaking {
-    border-left: 4px solid #10b981;
-}
-
-.team-card.eliminated {
-    border-left: 4px solid #dc2626;
-    opacity: 0.7;
-}
-
-.team-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
     margin-bottom: 12px;
     padding-bottom: 12px;
-    border-bottom: 1px solid #e2e8f0;
+    border-bottom: 1px solid var(--color-border);
 }
 
-.team-name {
-    font-size: 16px;
-    font-weight: 700;
-    color: #1e293b;
-}
-
-.team-code {
-    color: #64748b;
-    font-size: 13px;
-    margin-left: 8px;
-}
+.team-name { font-size: 16px; font-weight: 700; color: var(--color-dark); flex: 1; }
+.team-code { color: #64748b; font-size: 13px; margin-left: 6px; }
 
 .team-speakers {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
-    margin-top: 12px;
+    margin-top: 10px;
 }
 
 .team-speakers span {
-    background: #f1f5f9;
-    padding: 6px 12px;
-    border-radius: 16px;
+    background: var(--bg-light);
+    padding: 4px 10px;
+    border-radius: 14px;
     font-size: 13px;
     color: #475569;
 }
@@ -2219,67 +2110,30 @@ font-style: italic;
     gap: 10px;
     margin-top: 16px;
     padding-top: 12px;
-    border-top: 1px solid var(--color-border, #e2e8f0);
+    border-top: 1px solid var(--color-border);
 }
 
-.team-actions .btn {
-    padding: 8px 16px !important;
-    font-size: 13px !important;
-    border-radius: 8px !important;
-    display: inline-flex !important;
-    align-items: center !important;
-    visibility: visible !important;
-    opacity: 1 !important;
-}
+/* ── Judge cards ── */
 
-/* Judge Cards - match motion-card style */
 .judge-card {
-    background: #fff !important;
-    border: 1px solid #e2e8f0 !important;
-    border-radius: 12px !important;
-    padding: 20px !important;
-    margin-bottom: 16px !important;
-    width: 100% !important;
-    box-sizing: border-box !important;
-    display: block !important;
-    position: relative !important;
-    z-index: 1 !important;
-    transition: none !important;
-}
-
-.judge-card:hover {
-    transform: none !important;
-    box-shadow: none !important;
-}
-
-/* Force buttons to be above any overlapping elements */
-.judge-card button,
-.judge-card .btn {
-    position: relative !important;
-    z-index: 10 !important;
-    visibility: visible !important;
-    opacity: 1 !important;
-}
-
-.judge-header button {
-    position: relative !important;
-    z-index: 10 !important;
+    background: var(--bg-card);
+    border: 1px solid var(--color-border);
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 20px;
+    width: 100%;
 }
 
 .judge-header {
     display: flex;
-    justify-content: space-between;
     align-items: center;
+    gap: 12px;
     margin-bottom: 12px;
     padding-bottom: 12px;
-    border-bottom: 1px solid #e2e8f0;
+    border-bottom: 1px solid var(--color-border);
 }
 
-.judge-info {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-}
+.judge-info { flex: 1; }
 
 .judge-avatar {
     width: 36px;
@@ -2292,43 +2146,9 @@ font-style: italic;
     justify-content: center;
     font-weight: 700;
     font-size: 14px;
+    flex-shrink: 0;
 }
 
-.team-actions {
-    display: flex !important;
-    margin-top: 16px !important;
-    padding-top: 12px !important;
-    border-top: 1px solid #e2e8f0 !important;
-    gap: 10px !important;
-}
-
-.team-card .team-actions,
-.team-card .team-actions button,
-.team-card .team-actions .btn {
-    visibility: visible !important;
-    opacity: 1 !important;
-    display: inline-flex !important;
-}
-
-.judge-card button,
-.judge-card .btn {
-    visibility: visible !important;
-    opacity: 1 !important;
-    display: inline-flex !important;
-}
-
-.judge-card {
-    margin-bottom: 16px !important;
-    padding: 16px !important;
-}
-
-.judge-header {
-    margin-bottom: 12px !important;
-}
-
-.judge-info {
-    padding: 8px 0 !important;
-}
 
 /* ================================================================
    UNIFIED HEADER - Admin mode

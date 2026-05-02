@@ -1817,14 +1817,10 @@ body.modal-open {
 .team-card {
     background: var(--bg-card);
     border-radius: var(--radius-lg);
-    border: 1.5px solid var(--border);
+    border: 1px solid var(--border);
     padding: var(--spacing-lg);
-    transition: var(--transition-base);
-}
-
-.team-card:hover {
-    transform: translateY(-2px);
-    box-shadow: var(--shadow-md);
+    margin-bottom: 20px;
+    width: 100%;
 }
 
 .team-card.breaking {
