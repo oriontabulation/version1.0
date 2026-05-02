@@ -5,7 +5,6 @@ const env = (typeof import.meta !== 'undefined' && import.meta.env) ? import.met
 // Global error handler to prevent blank screen on errors
 window.addEventListener('error', (e) => {
     console.error('[global] Uncaught error:', e.error);
-    localStorage.setItem('orion_active_tab', 'public');
     // Show visible error to user
     const errDiv = document.getElementById('init-error');
     if (errDiv) {
@@ -31,7 +30,7 @@ window.addEventListener('unhandledrejection', (e) => {
 import { api } from './api.js';
 import {
     hydrateState, state,
-    restoreUIPrefs, patchDebate
+    restoreUIPrefs
 } from './state.js';
 import {
     cache, loadTeams,
@@ -344,7 +343,7 @@ window.syncGlobalSearchForActiveTab = syncGlobalSearchForActiveTab;
 let _realtimeChannels = [];
 
 function _cleanupRealtimeChannels() {
-    _realtimeChannels.forEach(ch => { try { supabase.removeChannel(ch); } catch (_) {} });
+    _realtimeChannels.forEach(ch => { try { supabase.removeChannel(ch); } catch (_) { /* ignore channel cleanup errors */ } });
     _realtimeChannels = [];
 }
 
@@ -353,27 +352,54 @@ function _debounce(fn, ms) {
     return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); };
 }
 
+function _activeTabId() {
+    return document.querySelector('.tab-content.active')?.id || localStorage.getItem('orion_active_tab') || 'public';
+}
+
+function _refreshVisibleRealtimeView() {
+    const tabId = _activeTabId();
+    const realtimeTabs = new Set(['draw', 'standings', 'speakers', 'break', 'knockout', 'results', 'public']);
+    if (!realtimeTabs.has(tabId)) return;
+    setTimeout(() => {
+        try {
+            if (typeof window.switchTab === 'function') window.switchTab(tabId);
+            window.updatePublicCounts?.();
+        } catch (e) {
+            console.warn('[rt] visible view refresh failed:', e);
+        }
+    }, 0);
+}
+
 function _setupRealtimeSync(tournamentId) {
     _cleanupRealtimeChannels();
 
     const refetchTeams = _debounce(async () => {
         try {
             const teams = await api.getTeams(tournamentId);
-            if (state.activeTournamentId === tournamentId) state.teams = teams;
+            if (state.activeTournamentId === tournamentId) {
+                state.teams = teams;
+                _refreshVisibleRealtimeView();
+            }
         } catch (e) { console.warn('[rt] teams refetch:', e); }
     }, 400);
 
     const refetchJudges = _debounce(async () => {
         try {
             const judges = await api.getJudges(tournamentId);
-            if (state.activeTournamentId === tournamentId) state.judges = judges;
+            if (state.activeTournamentId === tournamentId) {
+                state.judges = judges;
+                _refreshVisibleRealtimeView();
+            }
         } catch (e) { console.warn('[rt] judges refetch:', e); }
     }, 400);
 
     const refetchRounds = _debounce(async () => {
         try {
             const rounds = await api.getRounds(tournamentId);
-            if (state.activeTournamentId === tournamentId) state.rounds = rounds;
+            if (state.activeTournamentId === tournamentId) {
+                state.rounds = rounds;
+                _refreshVisibleRealtimeView();
+            }
         } catch (e) { console.warn('[rt] rounds refetch:', e); }
     }, 400);
 
@@ -386,9 +412,31 @@ function _setupRealtimeSync(tournamentId) {
             if (state.activeTournamentId === tournamentId) {
                 state.teams  = teams;
                 state.rounds = rounds;
+                _refreshVisibleRealtimeView();
             }
         } catch (e) { console.warn('[rt] teams+rounds refetch:', e); }
     }, 400);
+
+    const refetchPublishedData = _debounce(async () => {
+        try {
+            const [teams, judges, rounds, publish] = await Promise.all([
+                api.getTeams(tournamentId).catch(() => state.teams || []),
+                api.getJudges(tournamentId).catch(() => state.judges || []),
+                api.getRounds(tournamentId).catch(() => state.rounds || []),
+                api.getPublishState(tournamentId).catch(() => state.publish || {}),
+            ]);
+            if (state.activeTournamentId === tournamentId) {
+                state.teams = teams;
+                state.judges = judges;
+                state.rounds = rounds;
+                const { tournament_id, ...flags } = publish || {};
+                state.publish = flags;
+                updateTabsForRole();
+                updateNavDropdowns();
+                _refreshVisibleRealtimeView();
+            }
+        } catch (e) { console.warn('[rt] published data refetch:', e); }
+    }, 500);
 
     _realtimeChannels = [
         // Teams row changes
@@ -428,15 +476,7 @@ function _setupRealtimeSync(tournamentId) {
         // Debate changes — fast DOM patch for ballot-entry status; full refetch otherwise
         supabase.channel(`rt-debates-${tournamentId}`)
             .on('postgres_changes', { event: '*', schema: 'public', table: 'debates',
-                filter: `tournament_id=eq.${tournamentId}` }, payload => {
-                if (payload.eventType === 'UPDATE') {
-                    const d = payload.new;
-                    patchDebate(d.round_id, d.id, d);
-                    window._drawDomHelpers?.updateRoomStatus(d.id, d.entered);
-                } else {
-                    refetchRounds();
-                }
-            })
+                filter: `tournament_id=eq.${tournamentId}` }, refetchRounds)
             .subscribe(),
 
         // Debate judge assignments — no tournament_id, filter by known debate IDs
@@ -465,6 +505,8 @@ function _setupRealtimeSync(tournamentId) {
                     state.publish = flags;
                     updateTabsForRole();
                     updateNavDropdowns();
+                    refetchPublishedData();
+                    _refreshVisibleRealtimeView();
                 }
             })
             .subscribe(),
@@ -558,14 +600,14 @@ async function init() {
     const settingsDropdown = document.getElementById('header-settings-dropdown');
     const themeContainer = document.getElementById('theme-picker-container');
     
-    function openSettings() {
+    const openSettings = () => {
         const isOpen = settingsDropdown.classList.contains('open');
         settingsDropdown.classList.toggle('open');
         // Render theme picker when opening
         if (!isOpen && typeof window.renderThemePicker === 'function') {
             window.renderThemePicker('theme-picker-container');
         }
-    }
+    };
     
     if (settingsBtn && settingsDropdown) {
         settingsBtn.addEventListener('click', (e) => {
@@ -579,7 +621,7 @@ async function init() {
         });
         
         // Handle color input focus - don't close dropdown
-        themeContainer?.addEventListener('focus', (e) => {
+        themeContainer?.addEventListener('focus', () => {
             settingsDropdown.classList.add('open');
         }, true);
         

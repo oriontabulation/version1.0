@@ -33,6 +33,11 @@ let _state = {
     tournaments: {}
 };
 
+const LOCAL_STATE_PREFIX = 'orion_tournament_state_v1';
+const LOCAL_STATE_MAX_AGE = 14 * 24 * 60 * 60 * 1000;
+let _isHydrating = false;
+let _persistTimer = null;
+
 // ── Keys scoped to the active tournament ─────────────────────────────────────
 export const TOURNAMENT_KEYS = [
     'teams', 'judges', 'rounds', 'tournament', 'publish',
@@ -60,6 +65,70 @@ function _notifyForKey(key) {
     notify(key);
     if (key === 'teams')  notify('speakers');
     if (key === 'rounds') { notify('standings'); notify('speakers'); }
+    _schedulePersist();
+}
+
+function _localStateKey(tournamentId) {
+    return `${LOCAL_STATE_PREFIX}_${tournamentId}`;
+}
+
+function _snapshotTournament(tournament) {
+    if (!tournament) return null;
+    return {
+        savedAt: Date.now(),
+        name: tournament.name,
+        format: tournament.format,
+        teams: tournament.teams || [],
+        judges: tournament.judges || [],
+        rounds: tournament.rounds || [],
+        tournament: tournament.tournament || null,
+        publish: tournament.publish || {},
+        feedback: tournament.feedback || [],
+        judgeTokens: tournament.judgeTokens || {},
+        roomURLs: tournament.roomURLs || {},
+    };
+}
+
+function _applyLocalSnapshot(tournamentId, tournament) {
+    try {
+        if (_state.auth?.currentUser?.role !== 'admin') return;
+        const raw = localStorage.getItem(_localStateKey(tournamentId));
+        if (!raw) return;
+        const saved = JSON.parse(raw);
+        if (!saved?.savedAt || Date.now() - saved.savedAt > LOCAL_STATE_MAX_AGE) return;
+
+        for (const key of TOURNAMENT_KEYS) {
+            if (Object.prototype.hasOwnProperty.call(saved, key)) {
+                tournament[key] = saved[key];
+                delete tournament[`__proxy_${key}`];
+            }
+        }
+        if (saved.name) tournament.name = saved.name;
+        if (saved.format) tournament.format = saved.format;
+    } catch (e) {
+        console.warn('[state] Could not restore local page state:', e);
+    }
+}
+
+function _persistActiveTournament() {
+    if (_isHydrating) return;
+    const tid = _state.activeTournamentId;
+    const tournament = tid ? _state.tournaments[tid] : null;
+    const snapshot = _snapshotTournament(tournament);
+    if (!tid || !snapshot) return;
+    localStorage.setItem(_localStateKey(tid), JSON.stringify(snapshot));
+}
+
+function _schedulePersist() {
+    if (_isHydrating) return;
+    clearTimeout(_persistTimer);
+    _persistTimer = setTimeout(() => {
+        try {
+            _persistActiveTournament();
+        } catch (e) {
+            console.warn('[state] Could not persist page state:', e);
+        }
+    }, 250);
 }
 
 // ── Deep Proxy (notifications only — no save()) ───────────────────────────────
@@ -176,6 +245,7 @@ Object.defineProperty(state, 'tournaments', {
  * @param {Object}  options.publish       — tournament_publish row
  */
 export function hydrateState({ activeTournamentId, tournaments = [], teams = [], judges = [], rounds = [], publish = {} }) {
+    _isHydrating = true;
     // Build tournament map
     _state.tournaments = {};
     for (const t of tournaments) {
@@ -197,25 +267,33 @@ export function hydrateState({ activeTournamentId, tournaments = [], teams = [],
 
     // Restore knockout bracket from localStorage if available
     const active = _state.tournaments[activeId];
-    if (active) {
-        active.teams   = teams;
-        active.judges  = judges;
-        active.rounds  = rounds;
-        active.publish = publish;
+    try {
+        if (active) {
+            active.teams   = teams;
+            active.judges  = judges;
+            active.rounds  = rounds;
+            active.publish = publish;
 
-        try {
-            const savedBracket = localStorage.getItem(`orion_bracket_${activeId}`);
-            if (savedBracket) active.tournament = JSON.parse(savedBracket);
+            try {
+                const savedBracket = localStorage.getItem(`orion_bracket_${activeId}`);
+                if (savedBracket) active.tournament = JSON.parse(savedBracket);
 
-            const savedBreakData = localStorage.getItem(`orion_breakdata_${activeId}`);
-            if (savedBreakData && active.teams?.length) {
-                const breakData = JSON.parse(savedBreakData);
-                breakData.forEach(bd => {
-                    const team = active.teams.find(t => String(t.id) === String(bd.id));
-                    if (team) Object.assign(team, bd);
-                });
+                const savedBreakData = localStorage.getItem(`orion_breakdata_${activeId}`);
+                if (savedBreakData && active.teams?.length) {
+                    const breakData = JSON.parse(savedBreakData);
+                    breakData.forEach(bd => {
+                        const team = active.teams.find(t => String(t.id) === String(bd.id));
+                        if (team) Object.assign(team, bd);
+                    });
+                }
+            } catch {
+                // Ignore corrupt local bracket/break cache; Supabase state still loads.
             }
-        } catch {}
+
+            _applyLocalSnapshot(activeId, active);
+        }
+    } finally {
+        _isHydrating = false;
     }
 
     // Notify all watchers
@@ -230,6 +308,7 @@ export function save() {
     try {
         const tid = _state.activeTournamentId;
         const t   = _state.tournaments[tid];
+        _persistActiveTournament();
         if (tid && t?.tournament) {
             localStorage.setItem(`orion_bracket_${tid}`, JSON.stringify(t.tournament));
         }
@@ -326,14 +405,20 @@ export function activeTournament() {
 }
 
 export function switchTournamentCache(id, { teams = [], judges = [], rounds = [], publish = {} }) {
+    _isHydrating = true;
     _state.activeTournamentId = id;
     const t = _state.tournaments[id];
-    if (t) {
-        t.teams   = teams;
-        t.judges  = judges;
-        t.rounds  = rounds;
-        t.publish = publish;
-        TOURNAMENT_KEYS.forEach(k => delete t[`__proxy_${k}`]);
+    try {
+        if (t) {
+            t.teams   = teams;
+            t.judges  = judges;
+            t.rounds  = rounds;
+            t.publish = publish;
+            _applyLocalSnapshot(id, t);
+            TOURNAMENT_KEYS.forEach(k => delete t[`__proxy_${k}`]);
+        }
+    } finally {
+        _isHydrating = false;
     }
     Object.keys(_watchers).forEach(k => notify(k));
 }
@@ -356,7 +441,9 @@ export function saveDrawPref(key, value) {
         const prefs = JSON.parse(localStorage.getItem('orion_draw_prefs') || '{}');
         prefs[key] = value;
         localStorage.setItem('orion_draw_prefs', JSON.stringify(prefs));
-    } catch {}
+    } catch {
+        // Ignore unavailable localStorage for non-sensitive UI preferences.
+    }
 }
 
 // ── Legacy: token helpers (now backed by Supabase) ────────────────────────────

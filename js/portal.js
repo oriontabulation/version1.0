@@ -15,13 +15,13 @@ import { isValidTokenFormat }  from './auth-validation.js';
 const SESSION_KEY = 'portal_session';
 
 function _saveSession(type, token, id) {
-    try { sessionStorage.setItem(SESSION_KEY, JSON.stringify({ type, token, id })); } catch(_) {}
+    try { sessionStorage.setItem(SESSION_KEY, JSON.stringify({ type, token, id })); } catch(_) { /* ignore unavailable sessionStorage */ }
 }
 function _loadSession() {
     try { return JSON.parse(sessionStorage.getItem(SESSION_KEY) || 'null'); } catch(_) { return null; }
 }
 function _clearSession() {
-    try { sessionStorage.removeItem(SESSION_KEY); } catch(_) {}
+    try { sessionStorage.removeItem(SESSION_KEY); } catch(_) { /* ignore unavailable sessionStorage */ }
 }
 
 // ── Token entry — detects ?judge= or ?team= on page load ─────────────────────
@@ -1345,5 +1345,5 @@ window.addEventListener('portal:login-success', () => {
     try {
         const container = document.getElementById('portal-container');
         if (container) { container.innerHTML = ''; renderJudgePortal(); }
-    } catch (e) {}
+    } catch (e) { /* keep portal event handler non-fatal */ }
 });

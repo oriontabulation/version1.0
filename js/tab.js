@@ -154,6 +154,7 @@ function _renderLockedPage(containerId, reason) {
 
 function switchTab(tabId) {
     console.log('Switching to tab:', tabId);
+    try { localStorage.setItem('orion_active_tab', tabId); } catch (e) { /* ignore tab storage errors */ }
 
     // ── Role & Publish guard ──────────────────────────────────────────────────
     // Re-read auth from state on every call — never rely on a cached variable.
@@ -951,7 +952,7 @@ function applyTheme(themeId) {
     }
     
     document.body.classList.toggle('theme-dark', themeId === 'dark' || themeId === 'highcontrast');
-    try { localStorage.setItem('orion_theme', themeId); } catch(e) {}
+    try { localStorage.setItem('orion_theme', themeId); } catch(e) { /* ignore theme storage errors */ }
 }
 
 // Helper to lighten/darken colors
@@ -981,7 +982,7 @@ function renderThemePicker(containerId) {
 try {
     const savedTheme = localStorage.getItem('orion_theme');
     if (savedTheme && savedTheme !== 'default') applyTheme(savedTheme);
-} catch(e) {}
+} catch(e) { /* ignore theme restoration errors */ }
 
 window.applyTheme      = applyTheme;
 window.renderThemePicker = renderThemePicker;

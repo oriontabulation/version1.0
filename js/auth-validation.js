@@ -1,28 +1,8 @@
 // ============================================================
-// AUTH-VALIDATION.JS (refactored)
-//
-// ORIGINAL HAD:
-//   - checkUserRole() — client-side role check (forgeable)
-//   - createSecureSession() — stub that set a plain JS object as session
-//   - rateLimit() — in-memory, bypassed by page refresh, used Math.random
-//
-// THESE ARE ALL DELETED. Here is what replaces each one:
-//
-//   checkUserRole()      → Supabase RLS (see schema.sql)
-//   createSecureSession()→ supabase.auth.signInWithPassword() (session
-//                          stored in httpOnly cookie by Supabase)
-//   rateLimit()          → Supabase Auth built-in rate limiting
-//                          + optional Edge Function middleware
-//
-// This file now provides:
-//   - Form input validators (client UX only — server enforces too)
-//   - Token format validators
+// AUTH-VALIDATION.JS
 // ============================================================
 
 /**
- * Validate registration form inputs before sending to Supabase.
- * Returns { valid: boolean, errors: string[] }
- *
  * These are UX-only checks — Supabase and the DB enforce the real constraints.
  */
 export function validateRegistrationForm({ name, email, username, password, confirmPassword }) {
@@ -65,7 +45,7 @@ export function validateRegistrationForm({ name, email, username, password, conf
 export function validateLoginForm({ email, password }) {
     const errors = [];
     if (!email?.trim()) errors.push('Email is required.');
-    if (!password)      errors.push('Password is required.');
+    if (!password) errors.push('Password is required.');
     return { valid: errors.length === 0, errors };
 }
 

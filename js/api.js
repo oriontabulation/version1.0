@@ -28,7 +28,7 @@ export const api = {
         return data;
     },
     async signOut() {
-        const { error } = await supabase.auth.signOut();
+        const { error } = await supabase.auth.signOut({ scope: 'local' });
         if (error) throw new Error(error.message);
     },
     async signUp(email, password, metadata = {}) {

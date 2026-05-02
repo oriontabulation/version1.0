@@ -462,7 +462,7 @@ function generateKnockout() {
     const roundSizes = [];
     let current = isPartial && R > 0 ? NR : N;
     let added = false;
-    while (true) {
+    while (current > 0) {
         roundSizes.push(current);
         const isFinalSize = bp ? current === 4 : current === 2;
         if (isFinalSize && (!isPartial || added)) break;

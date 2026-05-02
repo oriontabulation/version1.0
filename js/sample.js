@@ -6,14 +6,7 @@
 
 import { state, save } from './state.js';
 import { showNotification } from './utils.js';
-
-let renderSpeakerStandings = null;
-try {
-    const speakersModule = await import('./speakers.js');
-    renderSpeakerStandings = speakersModule.renderSpeakerStandings;
-} catch (e) {
-    console.log('Speaker module not available yet');
-}
+import { renderSpeakerStandings } from './speakers.js';
 
 // ============================================
 // READ CONFIG FROM INLINE FORM & GENERATE

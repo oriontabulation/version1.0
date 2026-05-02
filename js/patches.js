@@ -312,7 +312,7 @@
   ──────────────────────────────────────────────────────────── */
   const PREF_KEY = 'orion_draw_prefs';
   function loadPrefs()      { try { return JSON.parse(localStorage.getItem(PREF_KEY)||'{}'); } catch(e){ return {}; } }
-  function savePref(k, v)   { const p=loadPrefs(); p[k]=v; try{localStorage.setItem(PREF_KEY,JSON.stringify(p));}catch(e){} }
+  function savePref(k, v)   { const p=loadPrefs(); p[k]=v; try{localStorage.setItem(PREF_KEY,JSON.stringify(p));}catch(e){ /* ignore preference storage errors */ } }
   window._saveDrawPref      = savePref;
   window._admSaveDrawPref   = savePref;
 
@@ -670,7 +670,7 @@
     var orig = window.switchTab;
     if (!orig || orig._pp) return;
     window.switchTab = function(id) {
-      if (id) try { localStorage.setItem(_TAB_KEY, id); } catch(e) {}
+      if (id) try { localStorage.setItem(_TAB_KEY, id); } catch(e) { /* ignore tab storage errors */ }
       return orig.apply(this, arguments);
     };
     window.switchTab._pp = true;
@@ -684,7 +684,7 @@
           && !location.search.includes('room')) {
         window.switchTab && window.switchTab(saved);
       }
-    } catch(e) {}
+    } catch(e) { /* ignore tab restoration errors */ }
   });
 
   /* ─────────────────────────────────────────────────────────────
