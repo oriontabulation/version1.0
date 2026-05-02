@@ -426,134 +426,6 @@
     if (++n > 12) clearInterval(t);
   }, 500);
 
-  function computeSpeakerRankings(categoryFilter) {
-    const state  = window.state;
-    if (!state) return [];
-    const teams  = state.teams  || [];
-    const rounds = state.rounds || [];
-
-    // Build speaker map: speakerId → { name, teamName, category, scores[] }
-    const speakers = new Map();
-
-    teams.forEach(team => {
-      (team.speakers || []).forEach(spk => {
-        if (!spk.id) return;
-        speakers.set(String(spk.id), {
-          id:       spk.id,
-          name:     spk.name || '?',
-          teamName: team.name || '?',
-          teamId:   team.id,
-          category: team.category || spk.category || null,
-          scores:   [],
-          replyScores: []
-        });
-      });
-    });
-
-    rounds.forEach(round => {
-      if (round.blinded) return;          // respect blind rounds
-      (round.debates || []).forEach(debate => {
-        if (!debate.entered) return;
-        ['gov','opp'].forEach(side => {
-          const res = debate[`${side}Results`];
-          if (!res) return;
-          (res.substantive || []).forEach(s => {
-            const spk = speakers.get(String(s.speakerId));
-            if (spk) spk.scores.push(s.score);
-          });
-          if (res.reply?.speakerId) {
-            const spk = speakers.get(String(res.reply.speakerId));
-            if (spk) spk.replyScores.push(res.reply.score);
-          }
-        });
-      });
-    });
-
-    let list = [...speakers.values()]
-      .filter(s => s.scores.length > 0);
-
-    if (categoryFilter && categoryFilter !== 'all') {
-      list = list.filter(s => (s.category || 'Uncategorised') === categoryFilter);
-    }
-
-    list.forEach(s => {
-      s.total = s.scores.reduce((a,b) => a+b, 0);
-      s.avg   = s.scores.length ? (s.total / s.scores.length) : 0;
-      s.replyTotal = s.replyScores.reduce((a,b) => a+b, 0);
-    });
-
-    list.sort((a,b) => b.total - a.total || b.avg - a.avg);
-    list.forEach((s,i) => { s.rank = i + 1; });
-    return list;
-  }
-
-  function getAllCategories() {
-    const state = window.state;
-    if (!state) return [];
-    const cats = new Set();
-    (state.teams || []).forEach(t => {
-      const cat = t.category || null;
-      if (cat) cats.add(cat);
-      (t.speakers || []).forEach(s => { if (s.category) cats.add(s.category); });
-    });
-    return [...cats];
-  }
-
-  let _domat_cat = 'all';
-
-  window.renderSpeakerDomat = function(containerId, categoryFilter) {
-    const el = containerId ? document.getElementById(containerId) : null;
-    if (!el) return;
-    if (categoryFilter !== undefined) _domat_cat = categoryFilter;
-    const cat = _domat_cat;
-
-    const cats = getAllCategories();
-    const hasCats = cats.length > 0;
-    const isPublic = !window.state?.auth?.currentUser || window.state.auth.currentUser.role === 'guest';
-
-    // Category tab bar
-    const tabBar = hasCats ? `
-      <div class="spk-cat-tabs">
-        <button class="spk-cat-tab ${cat==='all'?'active':''}" onclick="window.renderSpeakerDomat('${containerId}','all')">All Speakers</button>
-        ${cats.map(c => `<button class="spk-cat-tab ${cat===c?'active':''}" onclick="window.renderSpeakerDomat('${containerId}','${c.replace(/'/g,"\\'")}')">🏷 ${c}</button>`).join('')}
-      </div>` : '';
-
-    const speakers = computeSpeakerRankings(cat === 'all' ? null : cat);
-    if (speakers.length === 0) {
-      el.innerHTML = tabBar + `<div class="adm-empty" style="padding:40px 0;text-align:center;color:#94a3b8;">No speaker scores entered yet.</div>`;
-      return;
-    }
-
-    const cards = speakers.map(s => {
-      const rankClass = s.rank <= 3 ? `spk-domat-rank--${s.rank}` : 'spk-domat-rank--n';
-      const medal = s.rank === 1 ? '🥇' : s.rank === 2 ? '🥈' : s.rank === 3 ? '🥉' : s.rank;
-      return `
-        <div class="spk-domat-card">
-          <div class="spk-domat-rank ${rankClass}">${medal}</div>
-          <div class="spk-domat-info">
-            <div class="spk-domat-name">${escHTML(s.name)}</div>
-            <div class="spk-domat-team">${escHTML(s.teamName)}${s.category ? ` · <em>${escHTML(s.category)}</em>` : ''}</div>
-          </div>
-          <div class="spk-domat-scores">
-            <div class="spk-domat-total">${s.total.toFixed(1)}</div>
-            <div class="spk-domat-avg">avg ${s.avg.toFixed(1)}</div>
-          </div>
-        </div>`;
-    }).join('');
-
-    el.innerHTML = tabBar + `<div class="spk-domat-grid">${cards}</div>`;
-  };
-
-  function escHTML(str) {
-    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-  }
-
-  /* Auto-render if the domat container already exists in DOM */
-  function tryAutoDomat() {
-    const el = document.getElementById('spk-domat-body');
-    if (el) window.renderSpeakerDomat('spk-domat-body');
-  }
-
   function patchFilterCounts() {
     const role = window.state?.auth?.currentUser?.role || 'guest';
     if (role === 'admin') return;   // admins see everything
@@ -577,7 +449,6 @@
 
   // ── Extend init and switchTab hooks ─────────────────────────
   function initEnhancements() {
-    tryAutoDomat();
     patchFilterCounts();
   }
 
@@ -585,10 +456,9 @@
   else initEnhancements();
   window.addEventListener('load', initEnhancements);
 
-  // Poll for domat container
+  // Poll for filter count visibility
   let _dm = 0;
   const _dmt = setInterval(() => {
-    tryAutoDomat();
     patchFilterCounts();
     if (++_dm > 10) clearInterval(_dmt);
   }, 600);
@@ -781,30 +651,6 @@
       });
     });
   }
-
-  /* ─────────────────────────────────────────────────────────────
-     SPEAKER SCORE RANGE — tabmaster-configurable min/max
-  ───────────────────────────────────────────────────────────── */
-  window.getSpeakerScoreRange = function() {
-    var tid  = window.state && window.state.activeTournamentId;
-    var tour = tid && window.state.tournaments && window.state.tournaments[tid];
-    return {
-      subMin: tour ? (tour.scoreRangeSubMin !== undefined ? tour.scoreRangeSubMin : 60) : 60,
-      subMax: tour ? (tour.scoreRangeSubMax !== undefined ? tour.scoreRangeSubMax : 80) : 80,
-      repMin: tour ? (tour.scoreRangeRepMin !== undefined ? tour.scoreRangeRepMin : 30) : 30,
-      repMax: tour ? (tour.scoreRangeRepMax !== undefined ? tour.scoreRangeRepMax : 40) : 40,
-    };
-  };
-  window.setSpeakerScoreRange = function(subMin, subMax, repMin, repMax) {
-    var tid = window.state && window.state.activeTournamentId;
-    if (!tid || !window.state.tournaments || !window.state.tournaments[tid]) return;
-    Object.assign(window.state.tournaments[tid], {
-      scoreRangeSubMin: subMin, scoreRangeSubMax: subMax,
-      scoreRangeRepMin: repMin, scoreRangeRepMax: repMax
-    });
-    window.save && window.save();
-    window.showNotification && window.showNotification('Score ranges updated', 'success');
-  };
 
   /* ─────────────────────────────────────────────────────────────
      ENHANCED BREAK SIZES (partial breaks, round of 128, etc.)

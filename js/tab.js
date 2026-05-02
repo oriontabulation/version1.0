@@ -60,6 +60,38 @@ function updateNavDropdowns() {
     _rebuildOutroundsNav(cats);
 }
 
+function _canShowNavTab(tabId) {
+    const sess = state.auth;
+    const isAuth = !!(sess?.isAuthenticated && sess?.currentUser);
+    const role = sess?.currentUser?.role || 'public';
+    const isAdmin = role === 'admin';
+
+    if (tabId === 'public') return true;
+    if (tabId === 'profile') return isAuth;
+    if (tabId === 'admin-dashboard') return isAdmin;
+    if (['judges', 'import'].includes(tabId)) return isAdmin;
+    if (tabId === 'teams') return isAdmin || role === 'team';
+    if (tabId === 'portal') return isAdmin || role === 'judge';
+
+    const publishedTabs = ['draw', 'standings', 'speakers', 'break', 'knockout', 'motions', 'results'];
+    if (publishedTabs.includes(tabId)) return isAdmin || isAuth || !!state.publish?.[tabId];
+
+    return true;
+}
+
+function _syncNavVisibility() {
+    document.querySelectorAll('[data-tab]').forEach(btn => {
+        const tabId = btn.dataset.tab;
+        const visible = _canShowNavTab(tabId);
+        const directGroup = btn.classList.contains('dropdown-trigger') ? btn.closest('.dropdown-group') : null;
+        if (directGroup && btn.dataset.tab) {
+            directGroup.style.display = visible ? '' : 'none';
+        } else {
+            btn.style.display = visible ? '' : 'none';
+        }
+    });
+}
+
 // ── Shared category nav builder ────────────────────────────────────────────────
 // Builds a dropdown group with an "All" option plus one button per category.
 // groupId       – element id of the <div class="dropdown-group"> to replace
@@ -307,6 +339,7 @@ function switchTab(tabId) {
 function updateTabsForRole() {
     const isAuth = state.auth?.isAuthenticated && state.auth?.currentUser;
     const role = state.auth?.currentUser?.role || 'public';
+    _syncNavVisibility();
 
     // ── FIX: Move tabNames definition to the top of the function ──
     const tabNames = {
@@ -353,7 +386,10 @@ function updateTabsForRole() {
     };
 
     const tabsContainer = document.querySelector('.tabs');
-    if (!tabsContainer) return;
+    if (!tabsContainer) {
+        updateNavDropdowns();
+        return;
+    }
     tabsContainer.innerHTML = '';
 
     const tabOrder = ['public', 'teams', 'judges', 'standings', 'speakers', 'motions', 'results', 'draw', 'break', 'knockout', 'feedback', 'portal', 'import', 'admin-dashboard'];

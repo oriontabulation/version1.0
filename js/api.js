@@ -9,6 +9,12 @@ function _ok({ data, error }, ctx) {
     return data;
 }
 
+function _withoutEmail(row) {
+    const copy = { ...row };
+    delete copy.email;
+    return copy;
+}
+
 export const api = {
 
     // ── Auth ──────────────────────────────────────────────────────────────
@@ -153,10 +159,17 @@ export const api = {
         if (speakers.length > 0) {
             const rows = speakers.map((s, i) => ({
                 team_id: team.id, tournament_id: tournamentId,
-                name: (typeof s === 'string' ? s : s.name || '').trim(), position: i + 1
+                name: (typeof s === 'string' ? s : s.name || '').trim(),
+                email: typeof s === 'string' ? null : (s.email || null),
+                position: i + 1
             })).filter(s => s.name);
             // RESILIENCE: Swallow speaker errors
-            if (rows.length) await supabase.from('speakers').insert(rows);
+            if (rows.length) {
+                const inserted = await supabase.from('speakers').insert(rows);
+                if (inserted.error) {
+                    await supabase.from('speakers').insert(rows.map(_withoutEmail));
+                }
+            }
         }
         if (categories.length > 0) {
             // RESILIENCE: Swallow category errors
@@ -166,9 +179,27 @@ export const api = {
         return team;
     },
     async updateTeam(id, fields) {
-        return _ok(await supabase.from('teams').update(fields).eq('id', id).select().single(), 'updateTeam');
+        const { speakers, categories, ...teamFields } = fields || {};
+        const team = _ok(await supabase.from('teams').update(teamFields).eq('id', id).select().single(), 'updateTeam');
+
+        if (Array.isArray(speakers)) {
+            await api.updateSpeakers(id, speakers);
+        }
+        if (Array.isArray(categories)) {
+            await supabase.from('team_categories').delete().eq('team_id', id);
+            if (categories.length > 0) {
+                await supabase.from('team_categories')
+                    .insert(categories.map(categoryId => ({ team_id: id, category_id: categoryId })));
+            }
+        }
+        return { ...team, speakers: Array.isArray(speakers) ? speakers : undefined };
     },
     async deleteTeam(id) {
+        await Promise.all([
+            supabase.from('judge_conflicts').delete().eq('team_id', id),
+            supabase.from('team_categories').delete().eq('team_id', id),
+            supabase.from('speakers').delete().eq('team_id', id),
+        ]);
         _ok(await supabase.from('teams').delete().eq('id', id), 'deleteTeam');
     },
     async updateSpeakers(teamId, speakers) {
@@ -177,32 +208,53 @@ export const api = {
             const { data: t } = await supabase.from('teams').select('tournament_id').eq('id', teamId).single();
             const rows = speakers.map((s, i) => ({
                 team_id: teamId, tournament_id: t.tournament_id,
-                name: (typeof s === 'string' ? s : s.name || '').trim(), position: i + 1
+                name: (typeof s === 'string' ? s : s.name || '').trim(),
+                email: typeof s === 'string' ? null : (s.email || null),
+                position: i + 1
             })).filter(s => s.name);
-            if (rows.length) _ok(await supabase.from('speakers').insert(rows), 'updateSpeakers');
+            if (rows.length) {
+                const inserted = await supabase.from('speakers').insert(rows);
+                if (inserted.error) {
+                    _ok(await supabase.from('speakers').insert(rows.map(_withoutEmail)), 'updateSpeakers');
+                } else {
+                    _ok(inserted, 'updateSpeakers');
+                }
+            }
         }
     },
     async bulkCreateTeams(tournamentId, teamsData) {
-        // SMART IMPORT: Fetch existing names first to avoid duplicate errors
         const { data: existing } = await supabase.from('teams').select('name').eq('tournament_id', tournamentId);
         const existingNames = new Set((existing || []).map(t => t.name.toLowerCase()));
 
-        const results = [], errors = [];
-        let skipped = 0;
+        const toInsert = teamsData.filter(t => !existingNames.has(t.name.toLowerCase()));
+        const skipped = teamsData.length - toInsert.length;
+        if (!toInsert.length) return { imported: 0, skipped, errors: [] };
 
-        for (const t of teamsData) {
-            if (existingNames.has(t.name.toLowerCase())) {
-                skipped++;
-                continue;
-            }
-            try { 
-                const res = await api.createTeam({ tournamentId, ...t });
-                results.push(res);
-                existingNames.add(t.name.toLowerCase());
-            }
-            catch (err) { errors.push({ name: t.name, error: err.message }); }
-        }
-        return { imported: results.length, skipped, errors };
+        const teamRows = toInsert.map(t => ({
+            tournament_id: tournamentId,
+            name: t.name.trim(),
+            code: t.code?.trim() || null,
+            institution: t.institution?.trim() || null,
+            email: t.email?.trim() || null,
+        }));
+        const { data: insertedTeams, error: teamsErr } = await supabase.from('teams').insert(teamRows).select();
+        if (teamsErr) return { imported: 0, skipped, errors: [{ name: 'batch', error: teamsErr.message }] };
+
+        const speakerRows = [], categoryRows = [];
+        insertedTeams.forEach((team, i) => {
+            (toInsert[i].speakers || []).forEach((s, pos) => {
+                const name = (typeof s === 'string' ? s : s.name || '').trim();
+                if (name) speakerRows.push({ team_id: team.id, tournament_id: tournamentId, name, email: typeof s === 'string' ? null : (s.email || null), position: pos + 1 });
+            });
+            (toInsert[i].categories || []).forEach(cid => categoryRows.push({ team_id: team.id, category_id: cid }));
+        });
+
+        await Promise.all([
+            speakerRows.length ? supabase.from('speakers').insert(speakerRows) : Promise.resolve(),
+            categoryRows.length ? supabase.from('team_categories').insert(categoryRows) : Promise.resolve(),
+        ]);
+
+        return { imported: insertedTeams.length, skipped, errors: [] };
     },
 
     // ── Judges ────────────────────────────────────────────────────────────
@@ -243,9 +295,19 @@ export const api = {
         return judge;
     },
     async updateJudge(id, fields) {
-        return _ok(await supabase.from('judges').update(fields).eq('id', id).select().single(), 'updateJudge');
+        const { affiliations, ...judgeFields } = fields || {};
+        const judge = _ok(await supabase.from('judges').update(judgeFields).eq('id', id).select().single(), 'updateJudge');
+        if (Array.isArray(affiliations)) {
+            await api.setJudgeConflicts(id, affiliations);
+        }
+        return judge;
     },
     async deleteJudge(id) {
+        await Promise.all([
+            supabase.from('judge_conflicts').delete().eq('judge_id', id),
+            supabase.from('debate_judges').delete().eq('judge_id', id),
+            supabase.from('judge_tokens').delete().eq('judge_id', id),
+        ]);
         _ok(await supabase.from('judges').delete().eq('id', id), 'deleteJudge');
     },
     async setJudgeConflicts(judgeId, teamIds) {
@@ -257,32 +319,33 @@ export const api = {
         }
     },
     async bulkCreateJudges(tournamentId, judgesData, teamByNameMap = {}) {
-        // SMART IMPORT: Fetch existing names first
         const { data: existing } = await supabase.from('judges').select('name').eq('tournament_id', tournamentId);
         const existingNames = new Set((existing || []).map(j => j.name.toLowerCase()));
 
-        const results = [], errors = [];
-        let skipped = 0;
+        const toInsert = judgesData.filter(j => !existingNames.has(j.name.toLowerCase()));
+        const skipped = judgesData.length - toInsert.length;
+        if (!toInsert.length) return { imported: 0, skipped, errors: [] };
 
-        for (const j of judgesData) {
-            if (existingNames.has(j.name.toLowerCase())) {
-                skipped++;
-                continue;
-            }
+        const judgeRows = toInsert.map(j => ({
+            tournament_id: tournamentId,
+            name: j.name.trim(),
+            role: j.role || 'panellist',
+            institution: j.institution?.trim() || null,
+            email: j.email?.trim() || null,
+        }));
+        const { data: insertedJudges, error: judgesErr } = await supabase.from('judges').insert(judgeRows).select();
+        if (judgesErr) return { imported: 0, skipped, errors: [{ name: 'batch', error: judgesErr.message }] };
 
-            // Map affiliation names to IDs
-            const affiliationIds = (j.affiliations || [])
+        const conflictRows = [];
+        insertedJudges.forEach((judge, i) => {
+            (toInsert[i].affiliations || [])
                 .map(name => teamByNameMap[name]?.id)
-                .filter(Boolean);
+                .filter(Boolean)
+                .forEach(tid => conflictRows.push({ judge_id: judge.id, team_id: tid }));
+        });
+        if (conflictRows.length) await supabase.from('judge_conflicts').insert(conflictRows);
 
-            try { 
-                const res = await api.createJudge({ ...j, tournamentId, affiliations: affiliationIds });
-                results.push(res);
-                existingNames.add(j.name.toLowerCase());
-            }
-            catch (err) { errors.push({ name: j.name, error: err.message }); }
-        }
-        return { imported: results.length, skipped, errors };
+        return { imported: insertedJudges.length, skipped, errors: [] };
     },
 
     // ── Rounds & Debates ──────────────────────────────────────────────────

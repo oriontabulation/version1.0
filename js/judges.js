@@ -67,24 +67,29 @@ function _adminScaffold() {
 
     // Add judge form
     const formSec = document.createElement('div');
-    formSec.className = 'section';
-    formSec.innerHTML = `<h2>Add New Judge</h2>
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:15px;margin-bottom:20px;">
-            <input type="text"  id="judge-name"  placeholder="Judge Name"               style="padding:12px;">
-            <input type="email" id="judge-email" placeholder="Email (for private URL)"   style="padding:12px;">
-            <button class="btn btn-primary" style="padding:12px;" data-action="addJudge">Add Judge</button>
+    formSec.className = 'section judge-admin-panel';
+    formSec.innerHTML = `<div class="judge-panel-head">
+            <div>
+                <h2>Add Judge</h2>
+                <p>Names, emails, and conflicts stay together in one compact roster.</p>
+            </div>
+            <span>${(state.judges || []).length} judge${(state.judges || []).length === 1 ? '' : 's'}</span>
+        </div>
+        <div class="judge-add-grid">
+            <input type="text"  id="judge-name"  placeholder="Judge name">
+            <input type="email" id="judge-email" placeholder="Email optional">
+            <button class="btn btn-primary" data-action="addJudge">Add Judge</button>
         </div>`;
 
     // Conflict checkboxes
     if (teams.length > 0) {
         const affilDiv = document.createElement('div');
-        affilDiv.style.cssText = 'margin-top:10px;padding:15px;background:#f1f5f9;border-radius:8px;';
+        affilDiv.className = 'judge-conflict-panel';
         const h3 = document.createElement('h3');
-        h3.style.margin = '0 0 10px';
         h3.textContent = 'Conflict Affiliations';
         affilDiv.appendChild(h3);
         const scroll = document.createElement('div');
-        scroll.style.cssText = 'max-height:150px;overflow-y:auto;';
+        scroll.className = 'judge-conflict-list';
         for (const team of teams) {
             const lbl = document.createElement('label');
             lbl.className = 'custom-checkbox-label';
@@ -106,9 +111,9 @@ function _adminScaffold() {
 
     // Judge list section
     const listSec = document.createElement('div');
-    listSec.className = 'section';
+    listSec.className = 'section judge-list-section';
     const listH = document.createElement('h2');
-    listH.textContent = 'Judges List';
+    listH.textContent = 'Judges';
     const listEl = document.createElement('div');
     listEl.id = 'judges-list';
     listSec.appendChild(listH);
@@ -202,57 +207,43 @@ function displayJudges() {
     }
 }
 
-const _CARD = 'background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:24px;margin-bottom:20px;width:100%;box-sizing:border-box;';
-
 function _buildJudgeCard(judge, isAdmin) {
-    const card = el('div', { id: `judge-${judge.id}`, style: _CARD });
+    const card = el('div', { id: `judge-${judge.id}`, class: 'judge-card' });
 
-    const header = el('div', { style: 'display:flex;align-items:center;gap:12px;' });
+    const header = el('div', { class: 'judge-header' });
+    header.appendChild(el('div', { class: 'judge-avatar' }, (judge.name || '?')[0].toUpperCase()));
 
-    header.appendChild(el('div', {
-        style: 'width:40px;height:40px;border-radius:50%;background:linear-gradient(135deg,#667eea,#764ba2);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:16px;flex-shrink:0;'
-    }, (judge.name || '?')[0].toUpperCase()));
-
-    const info = el('div', { style: 'flex:1;min-width:0;' });
-    info.appendChild(el('div', { style: 'font-size:16px;font-weight:700;color:#1e293b;' }, judge.name || 'Unnamed'));
-    if (judge.email) {
-        info.appendChild(el('div', { style: 'font-size:13px;color:#64748b;margin-top:2px;' }, judge.email));
-    }
+    const info = el('div', { class: 'judge-info' });
+    info.appendChild(el('strong', {}, judge.name || 'Unnamed'));
+    if (judge.email) info.appendChild(el('small', { class: 'judge-email' }, judge.email));
     header.appendChild(info);
-
-    if (isAdmin) {
-        const actions = el('div', { style: 'display:flex;gap:8px;margin-left:auto;flex-shrink:0;' });
-        actions.appendChild(el('button', {
-            style: 'padding:6px 14px;font-size:13px;border-radius:8px;border:1px solid #e2e8f0;background:#f8fafc;color:#374151;cursor:pointer;font-weight:500;',
-            'data-action': 'showEditJudge',
-            'data-args': JSON.stringify([judge.id])
-        }, '✏️ Edit'));
-        actions.appendChild(el('button', {
-            style: 'padding:6px 14px;font-size:13px;border-radius:8px;border:1px solid #fecaca;background:#fef2f2;color:#dc2626;cursor:pointer;font-weight:500;',
-            'data-action': 'deleteJudge',
-            'data-args': JSON.stringify([judge.id])
-        }, '🗑 Delete'));
-        header.appendChild(actions);
-    }
-
     card.appendChild(header);
 
     const conflicts = judge.judge_conflicts || [];
     if (conflicts.length > 0) {
-        const conflictRow = el('div', {
-            style: 'margin-top:14px;padding-top:14px;border-top:1px solid #e2e8f0;display:flex;flex-wrap:wrap;gap:6px;align-items:center;'
-        });
-        conflictRow.appendChild(el('span', { style: 'font-size:12px;color:#64748b;font-weight:600;' }, 'Conflicts:'));
+        const conflictRow = el('div', { class: 'judge-conflicts' });
+        conflictRow.appendChild(el('span', { class: 'judge-conflicts__label' }, 'Conflicts:'));
         const teamById = buildTeamMap(state.teams || []);
         for (const c of conflicts) {
             const team = teamById.get(String(c.team_id));
-            if (team) {
-                conflictRow.appendChild(el('span', {
-                    style: 'background:#fee2e2;color:#991b1b;padding:2px 10px;border-radius:12px;font-size:12px;font-weight:500;'
-                }, team.name));
-            }
+            if (team) conflictRow.appendChild(el('span', { class: 'conflict-chip' }, team.name));
         }
         card.appendChild(conflictRow);
+    }
+
+    if (isAdmin) {
+        const actions = el('div', { class: 'adm-card-actions-bordered' });
+        actions.appendChild(el('button', {
+            class: 'btn btn-secondary btn-sm',
+            'data-action': 'showEditJudge',
+            'data-args': JSON.stringify([judge.id])
+        }, '✏️ Edit'));
+        actions.appendChild(el('button', {
+            class: 'btn btn-danger btn-sm',
+            'data-action': 'deleteJudge',
+            'data-args': JSON.stringify([judge.id])
+        }, '🗑 Delete'));
+        card.appendChild(actions);
     }
 
     return card;
@@ -262,7 +253,7 @@ function _buildJudgeCard(judge, isAdmin) {
 async function addJudge() {
     if (!_isAdmin()) { showNotification('Admin access required', 'error'); return; }
 
-const name = document.getElementById('judge-name')?.value.trim();
+    const name = document.getElementById('judge-name')?.value.trim();
     const email = document.getElementById('judge-email')?.value.trim();
     const tournId = state.activeTournamentId;
 
@@ -274,7 +265,8 @@ const name = document.getElementById('judge-name')?.value.trim();
         const judge = await api.createJudge({
             tournamentId: tournId,
             name,
-            email
+            email,
+            affiliations: checkedAffils
         });
         addJudgeToCache({ ...judge, judge_conflicts: checkedAffils.map(id => ({ team_id: id })) });
         displayJudges();

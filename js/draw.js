@@ -6,9 +6,16 @@
 import { save, saveNow} from './supabase-sync.js';
 import { state, watch } from './state.js';
 import { showNotification, escapeHTML, closeAllModals, getPreviousMeetings, teamCode } from './utils.js';
-import { hasConflict, buildConflictMap } from './maps.js';
+import { hasConflict, buildConflictMap, buildTeamMap } from './maps.js';
 import { renderStandings } from './tab.js';
 
+// Module-level O(1) team lookup — invalidated by watch so it's always fresh
+let _teamById = null;
+let _judgeById = null;
+watch('teams',  () => { _teamById  = null; });
+watch('judges', () => { _judgeById = null; });
+const _getTeam  = id => { if (!_teamById)  _teamById  = buildTeamMap(state.teams  || []); return _teamById.get(String(id))  ?? null; };
+const _getJudge = id => { if (!_judgeById) _judgeById = buildTeamMap(state.judges || []); return _judgeById.get(String(id)) ?? null; };
 
 // ─── Format detection ────────────────────────────────────────────────────────
 function getFormat() {
@@ -2821,12 +2828,17 @@ export function showEnterResults(roundIdx, debateIdx) {
         }
     }
 
-    // Attach to all score inputs
+    // Attach to all score inputs (debounced — pure DOM update, no network)
+    let _ballotDebounceTimer;
+    const _debouncedUpdateTotals = () => {
+        clearTimeout(_ballotDebounceTimer);
+        _ballotDebounceTimer = setTimeout(_updateBallotTotals, 120);
+    };
     ['gov-score-0','gov-score-1','gov-score-2',
      'opp-score-0','opp-score-1','opp-score-2',
      ...(disableReply ? [] : ['gov-reply-score','opp-reply-score'])
     ].forEach(id => {
-        document.getElementById(id)?.addEventListener('input', _updateBallotTotals);
+        document.getElementById(id)?.addEventListener('input', _debouncedUpdateTotals);
     });
 
     // Run once immediately in case editing pre-populated results

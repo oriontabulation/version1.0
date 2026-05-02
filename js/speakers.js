@@ -2,14 +2,68 @@
 // Speaker rankings and statistics — with category support
 // ============================================
 
-import { state, watch } from './state.js';
+import { state, watch, patchTeam } from './state.js';
+import { api } from './api.js';
 import { escapeHTML, showNotification, teamCode as getTeamCode } from './utils.js';
 import { switchTab } from './tab.js';
 import { debounce } from './utils.js';
+import { buildTeamMap } from './maps.js';
 
 let showReplies       = false;
 let disabledSpeakers  = new Set();
 let currentTeamFilter = null;
+
+function _speakerName(value) {
+    return String(value ?? '').trim();
+}
+
+function _speakerKey(teamId, name) {
+    const normalized = _speakerName(name).toLowerCase();
+    return normalized ? `${teamId}::${normalized}` : null;
+}
+
+function _safeEncodedName(name) {
+    return encodeURIComponent(_speakerName(name)).replace(/'/g, '%27');
+}
+
+function _speakerRosterPanel() {
+    const teams = state.teams || [];
+    const teamOptions = teams
+        .map(team => `<option value="${team.id}">${escapeHTML(team.name || 'Unnamed team')}</option>`)
+        .join('');
+    const rows = teams.map(team => {
+        const speakers = (team.speakers || []).filter(s => _speakerName(s.name));
+        return `
+            <div class="spk-roster-team">
+                <div class="spk-roster-team__head">
+                    <strong>${escapeHTML(team.name || 'Unnamed team')}</strong>
+                    <span>${speakers.length} speaker${speakers.length === 1 ? '' : 's'}</span>
+                </div>
+                <div class="spk-roster-chips">
+                    ${speakers.length ? speakers.map((speaker, index) => `
+                        <span class="spk-roster-chip">
+                            ${escapeHTML(speaker.name)}${speaker.email ? `<small>${escapeHTML(speaker.email)}</small>` : ''}
+                            <button type="button" onclick="window.deleteSpeakerFromTeam('${team.id}',${index})" title="Delete speaker">x</button>
+                        </span>`).join('') : '<em>No speakers</em>'}
+                </div>
+            </div>`;
+    }).join('');
+
+    return `
+        <details class="spk-admin-panel">
+            <summary>
+                <span>Manage Speakers</span>
+                <small>Add or remove speakers from team rosters</small>
+            </summary>
+            <div class="spk-add-row">
+                <select id="spk-add-team">${teamOptions}</select>
+                <input id="spk-add-name" type="text" placeholder="Speaker name">
+                <input id="spk-add-email" type="email" placeholder="Email optional">
+                <button class="btn btn-primary btn-sm" onclick="window.addSpeakerToTeam()">Add</button>
+            </div>
+            <div class="spk-roster-list">${rows}</div>
+        </details>`;
+}
 
 // Dropdown toggle with click-outside auto-close
 window._toggleDropdown = function(btn) {
@@ -50,7 +104,8 @@ function disableTeamSpeakers(teamId) {
     if (!team) return;
     let count = 0;
     (team.speakers || []).forEach(s => {
-        const key = `${team.id}::${s.name.toLowerCase().trim()}`;
+        const key = _speakerKey(team.id, s.name);
+        if (!key) return;
         if (!disabledSpeakers.has(key)) { disabledSpeakers.add(key); count++; }
     });
     saveDisabledSpeakers(); renderSpeakerStandings();
@@ -62,7 +117,8 @@ function enableTeamSpeakers(teamId) {
     if (!team) return;
     let count = 0;
     (team.speakers || []).forEach(s => {
-        const key = `${team.id}::${s.name.toLowerCase().trim()}`;
+        const key = _speakerKey(team.id, s.name);
+        if (!key) return;
         if (disabledSpeakers.has(key)) { disabledSpeakers.delete(key); count++; }
     });
     saveDisabledSpeakers(); renderSpeakerStandings();
@@ -80,11 +136,12 @@ function clearAllDisabledSpeakers() {
 function removeSpeakerCategory(teamId, speakerName, catId) {
     const isAdmin = state.auth?.isAuthenticated && state.auth?.currentUser?.role === 'admin';
     if (!isAdmin) { showNotification('Admin access required', 'error'); return; }
+    const targetName = _speakerName(speakerName).toLowerCase();
     // Replace teams array so state proxy fires correctly (same pattern as deleteTeam)
     state.teams = (state.teams || []).map(team => {
         if (team.id != teamId) return team;
         const speakers = (team.speakers || []).map(spk => {
-            if (spk.name?.toLowerCase().trim() !== speakerName.toLowerCase().trim()) return spk;
+            if (_speakerName(spk.name).toLowerCase() !== targetName) return spk;
             let newCats;
             if (Array.isArray(spk.categories) && spk.categories.length > 0) {
                 newCats = spk.categories.filter(c => c !== catId);
@@ -110,6 +167,7 @@ function _buildSpeakerStats(catId) {
     const activeId  = state.activeTournamentId;
     const isBP      = state.tournaments?.[activeId]?.format === 'bp';
     const anyReplies = !isBP && allRounds.some(r => !r.disableReply);
+    const teamById   = buildTeamMap(state.teams || []);
 
     // Build valid-speaker map filtered by category
     const validSpeakers = new Map();
@@ -119,8 +177,10 @@ function _buildSpeakerStats(catId) {
             if (!tc.includes(catId)) return;
         }
         (team.speakers || []).forEach(speaker => {
-            const key = `${team.id}::${speaker.name.toLowerCase().trim()}`;
-            validSpeakers.set(key, { teamId: team.id, teamName: team.name, teamCode: getTeamCode(team), displayName: speaker.name });
+            const displayName = _speakerName(speaker.name);
+            const key = _speakerKey(team.id, displayName);
+            if (!key) return;
+            validSpeakers.set(key, { teamId: team.id, teamName: team.name, teamCode: getTeamCode(team), displayName });
         });
     });
 
@@ -131,11 +191,11 @@ function _buildSpeakerStats(catId) {
             if (!debate.entered) return;
             if (debate.format === 'bp') {
                 ['og','oo','cg','co'].forEach(pos => {
-                    const team = state.teams.find(t => t.id === debate[pos]);
+                    const team = teamById.get(String(debate[pos]));
                     if (!team) return;
                     (debate.bpSpeakers?.[pos] || []).forEach(s => {
-                        if (!s.speaker) return;
-                        const key = `${team.id}::${s.speaker.toLowerCase().trim()}`;
+                        const key = _speakerKey(team.id, s.speaker);
+                        if (!key) return;
                         if (validSpeakers.has(key)) {
                             if (!speakerStats.has(key)) speakerStats.set(key, { roundScores: {}, replyScores: {} });
                             speakerStats.get(key).roundScores[round.id] = s.score;
@@ -145,11 +205,11 @@ function _buildSpeakerStats(catId) {
             }
             for (const [side, results] of [['gov', debate.govResults], ['opp', debate.oppResults]]) {
                 if (!results) continue;
-                const team = state.teams.find(t => t.id === debate[side]);
+                const team = teamById.get(String(debate[side]));
                 if (!team) continue;
                 (results.substantive || []).forEach(s => {
-                    if (!s.speaker) return;
-                    const key = `${team.id}::${s.speaker.toLowerCase().trim()}`;
+                    const key = _speakerKey(team.id, s.speaker);
+                    if (!key) return;
                     if (validSpeakers.has(key)) {
                         if (!speakerStats.has(key)) speakerStats.set(key, { roundScores: {}, replyScores: {} });
                         const st = speakerStats.get(key);
@@ -158,7 +218,7 @@ function _buildSpeakerStats(catId) {
                     }
                 });
                 if (results.reply?.speaker) {
-                    const key = `${team.id}::${results.reply.speaker.toLowerCase().trim()}`;
+                    const key = _speakerKey(team.id, results.reply.speaker);
                     if (validSpeakers.has(key)) {
                         if (!speakerStats.has(key)) speakerStats.set(key, { roundScores: {}, replyScores: {} });
                         speakerStats.get(key).replyScores[round.id] = results.reply.score;
@@ -173,7 +233,25 @@ function _buildSpeakerStats(catId) {
 
 function renderSpeakerStandings() {
     const container = document.getElementById('speaker-rankings');
-    if (!container) { createSpeakerRankingsTab(); return; }
+    if (!container) {
+        createSpeakerRankingsTab();
+        return renderSpeakerStandings();
+    }
+
+    try {
+        _renderSpeakerStandings(container);
+    } catch (error) {
+        console.error('[speakers] render failed:', error);
+        container.innerHTML = `
+            <div class="empty-state">
+                <div class="empty-state__icon">!</div>
+                <h3 class="empty-state__title">Speaker Tab Could Not Render</h3>
+                <p class="empty-state__desc">One speaker or ballot entry has invalid data. The tab is still available; check the console for details.</p>
+            </div>`;
+    }
+}
+
+function _renderSpeakerStandings(container) {
 
     // ── Category filter ────────────────────────────────────────────────────
     const catFilters = window._orionCatFilter || {};
@@ -299,7 +377,8 @@ function renderSpeakerStandings() {
         </div>`;
 
     // ── Table ──────────────────────────────────────────────────────────────
-    let html = `<div class="speaker-section">${catBar}${filterBar}`;
+    const adminRoster = isAdmin ? _speakerRosterPanel() : '';
+    let html = `<div class="speaker-section">${adminRoster}${catBar}${filterBar}`;
 
     if (speakers.length === 0) {
         html += `
@@ -327,7 +406,7 @@ function renderSpeakerStandings() {
             if (isAdmin) {
                 const spkTeam = (state.teams || []).find(t => t.id == s.teamId);
                 const spkObj  = (spkTeam?.speakers || []).find(
-                    sp => sp.name?.toLowerCase().trim() === s.name.toLowerCase().trim()
+                    sp => _speakerName(sp.name).toLowerCase() === _speakerName(s.name).toLowerCase()
                 );
                 const spkCatIds = (spkObj && Array.isArray(spkObj.categories) && spkObj.categories.length > 0)
                     ? spkObj.categories
@@ -335,7 +414,7 @@ function renderSpeakerStandings() {
                 catBadges = spkCatIds.map(cid => {
                     const cat = cats.find(c => c.id === cid);
                     if (!cat) return '';
-                    const enc = encodeURIComponent(s.name);
+                    const enc = _safeEncodedName(s.name);
                     return `<span style="display:inline-flex;align-items:center;background:${cat.color}18;border:1px solid ${cat.color}40;color:${cat.color};padding:1px 4px 1px 7px;border-radius:10px;font-size:10px;font-weight:700;margin-left:4px;">${cat.icon} ${escapeHTML(cat.name)}<button type="button" onclick="window.removeSpeakerCategory(${s.teamId},'${enc}','${cat.id}')" style="margin-left:2px;background:none;border:none;cursor:pointer;color:${cat.color};font-size:12px;font-weight:900;padding:0 2px;line-height:1;opacity:0.6;" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.6" title="Remove ${cat.name} from ${escapeHTML(s.name)}">×</button></span>`;
                 }).join('');
             }
@@ -432,6 +511,49 @@ function clearTeamFilter() {
 }
 
 // ── Bulk disable modal ────────────────────────────────────────────────────────
+async function addSpeakerToTeam() {
+    const isAdmin = state.auth?.currentUser?.role === 'admin';
+    if (!isAdmin) { showNotification('Admin access required', 'error'); return; }
+
+    const teamId = document.getElementById('spk-add-team')?.value;
+    const name = document.getElementById('spk-add-name')?.value.trim();
+    const email = document.getElementById('spk-add-email')?.value.trim();
+    const team = (state.teams || []).find(t => String(t.id) === String(teamId));
+
+    if (!team) { showNotification('Select a team', 'error'); return; }
+    if (!name) { showNotification('Speaker name required', 'error'); return; }
+
+    const speakers = [...(team.speakers || []), { name, email: email || null, position: (team.speakers || []).length + 1 }];
+    try {
+        await api.updateTeam(team.id, { speakers });
+        patchTeam(team.id, { speakers });
+        renderSpeakerStandings();
+        showNotification(`Added ${name}`, 'success');
+    } catch (e) {
+        showNotification(`Failed to add speaker: ${e.message}`, 'error');
+    }
+}
+
+async function deleteSpeakerFromTeam(teamId, index) {
+    const isAdmin = state.auth?.currentUser?.role === 'admin';
+    if (!isAdmin) { showNotification('Admin access required', 'error'); return; }
+
+    const team = (state.teams || []).find(t => String(t.id) === String(teamId));
+    if (!team) return;
+
+    const speakers = (team.speakers || [])
+        .filter((_, i) => i !== Number(index))
+        .map((speaker, i) => ({ ...speaker, position: i + 1 }));
+    try {
+        await api.updateTeam(team.id, { speakers });
+        patchTeam(team.id, { speakers });
+        renderSpeakerStandings();
+        showNotification('Speaker deleted', 'info');
+    } catch (e) {
+        showNotification(`Failed to delete speaker: ${e.message}`, 'error');
+    }
+}
+
 function showBulkDisableModal() {
     const modal = document.createElement('div');
     modal.className = 'modal-overlay';
@@ -460,7 +582,8 @@ function showBulkDisableModal() {
             const team = state.teams.find(t => t.id == cb.value);
             if (!team) return;
             (team.speakers || []).forEach(sp => {
-                const key = `${team.id}::${sp.name.toLowerCase().trim()}`;
+                const key = _speakerKey(team.id, sp.name);
+                if (!key) return;
                 if (!disabledSpeakers.has(key)) { disabledSpeakers.add(key); total++; }
             });
         });
@@ -553,11 +676,14 @@ window.removeSpeakerCategory    = (teamId, encodedName, catId) =>
     removeSpeakerCategory(teamId, decodeURIComponent(encodedName), catId);
 window.applyTeamFilter          = applyTeamFilter;
 window.clearTeamFilter          = clearTeamFilter;
+window.addSpeakerToTeam         = addSpeakerToTeam;
+window.deleteSpeakerFromTeam    = deleteSpeakerFromTeam;
 window.showBulkDisableModal     = showBulkDisableModal;
 
 export {
     renderSpeakerStandings, toggleReplyColumn, createSpeakerRankingsTab,
     exportSpeakerStandings, showReplies, toggleSpeakerDisabled,
     disableTeamSpeakers, enableTeamSpeakers, clearAllDisabledSpeakers,
-    applyTeamFilter, clearTeamFilter, showBulkDisableModal
+    applyTeamFilter, clearTeamFilter, showBulkDisableModal,
+    addSpeakerToTeam, deleteSpeakerFromTeam
 };

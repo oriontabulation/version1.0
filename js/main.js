@@ -541,8 +541,18 @@ async function init() {
     updateHeaderControls();
     updateAdminNavVisibility();
 
-    // 3. Load tournament list
-    const tournaments = await api.getTournaments().catch(() => []);
+    // 3. Load tournament list + active tournament data in parallel (optimistic prefetch)
+    const storedActiveId = localStorage.getItem('orion_active_tournament_id');
+    let [tournaments, prefetched] = await Promise.all([
+        api.getTournaments().catch(() => []),
+        storedActiveId ? Promise.all([
+            api.getTeams(storedActiveId),
+            api.getJudges(storedActiveId),
+            api.getRounds(storedActiveId),
+            api.getPublishState(storedActiveId).catch(() => ({}))
+        ]).catch(() => null) : Promise.resolve(null)
+    ]);
+
     if (!tournaments.length) {
         // First run — create default tournament
         const tour = await api.createTournament('My Tournament').catch(() => null);
@@ -550,9 +560,7 @@ async function init() {
     }
 
     // 4. Determine active tournament
-    let activeId = localStorage.getItem('orion_active_tournament_id');
-
-    // Validate if it still exists in the loaded list
+    let activeId = storedActiveId;
     if (!activeId || !tournaments.find(t => t.id === activeId)) {
         activeId = tournaments[0]?.id;
     }
@@ -562,15 +570,16 @@ async function init() {
         return;
     }
 
-    // 5. Load active tournament data (BYPASS CACHE for diagnostics)
+    // 5. Use prefetched data if it matched the resolved tournament, else fetch now
     console.log('[main] Active Tournament ID:', activeId);
-
-    const [teams, judges, rounds, publish] = await Promise.all([
-        api.getTeams(activeId),
-        api.getJudges(activeId),
-        api.getRounds(activeId),
-        api.getPublishState(activeId).catch(() => ({}))
-    ]);
+    let [teams, judges, rounds, publish] = prefetched && storedActiveId === activeId
+        ? prefetched
+        : await Promise.all([
+            api.getTeams(activeId),
+            api.getJudges(activeId),
+            api.getRounds(activeId),
+            api.getPublishState(activeId).catch(() => ({}))
+          ]);
 
     // 6. Hydrate in-memory state cache
     hydrateState({ activeTournamentId: activeId, tournaments, teams, judges, rounds, publish });

@@ -6,12 +6,17 @@
 import { state, save, activeTournament } from './state.js';
 import { showNotification, escapeHTML, closeAllModals } from './utils.js';
 import { renderStandings } from './tab.js';
+import { buildTeamMap } from './maps.js';
 
 // ── Constants ────────────────────────────────────────────────────────────────
 const BP_TEAMS_PER_ROOM = 4;
 const WSDC_TEAMS_PER_ROOM = 2;
 const CHAR_CODE_A = 65;
 const MAX_BREAK_SIZE = 100;
+
+// Module-level O(1) team lookup — rebuild at start of each render entry point
+let _teamById = null;
+const _getTeam = id => { if (!_teamById) _teamById = buildTeamMap(state.teams || []); return _teamById.get(String(id)) ?? null; };
 
 // ── Validation helpers ────────────────────────────────────────────────────────
 
