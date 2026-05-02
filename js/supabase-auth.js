@@ -1,12 +1,62 @@
 // js/supabase-auth.js — Secure auth using JWT app_metadata for roles
-import { supabase }   from './supabase.js';
-import { api }        from './api.js';
+import { supabase } from './supabase.js';
+import { api } from './api.js';
 import { state, save } from './state.js';
 import { showNotification, closeAllModals, escapeHTML } from './utils.js';
-import { registerLocalUser, loginLocalUser, getLocalSession, logoutLocalUser,
-         isSupabaseReachable, getLocalUsers, deleteLocalUser, updateLocalUserRole } from './local-auth.js';
+import {
+    registerLocalUser, loginLocalUser, getLocalSession, logoutLocalUser,
+    isSupabaseReachable, getLocalUsers, deleteLocalUser, updateLocalUserRole
+} from './local-auth.js';
 
 let isOfflineMode = false;
+let _restoreInProgress = false;
+let _explicitLogoutInProgress = false;
+let _lastManualSignInAt = 0;
+const _profileApplyInFlight = new Map();
+
+function _looksLikeConnectionError(err) {
+    const message = String(err?.message || '').toLowerCase();
+    return message.includes('timeout')
+        || message.includes('network')
+        || message.includes('failed to fetch')
+        || message.includes('internet')
+        || message.includes('connection');
+}
+
+function _sessionApplyKey(sessionOrUser) {
+    const user = sessionOrUser?.user || sessionOrUser;
+    if (!user?.id) return null;
+    const token = sessionOrUser?.access_token || '';
+    return `${user.id}:${token.slice(-16)}`;
+}
+
+function _applySessionUserOnce(sessionOrUser) {
+    const user = sessionOrUser?.user || sessionOrUser;
+    const key = _sessionApplyKey(sessionOrUser) || user?.id;
+    if (!user) return Promise.resolve(false);
+    if (key && _profileApplyInFlight.has(key)) return _profileApplyInFlight.get(key);
+
+    const task = _applyProfileToState(user)
+        .catch(err => {
+            console.warn('[auth] Failed to apply auth session:', err?.message || err);
+            return false;
+        })
+        .finally(() => {
+            if (key) _profileApplyInFlight.delete(key);
+        });
+
+    if (key) _profileApplyInFlight.set(key, task);
+    return task;
+}
+
+function _refreshAuthDependentUI() {
+    updateHeaderControls();
+    updateAdminNavVisibility();
+    if (typeof window.updateTabsForRole === 'function') window.updateTabsForRole();
+    if (typeof window.updateAdminDropdownVisibility === 'function') {
+        window.updateAdminDropdownVisibility();
+    }
+}
 
 // ── Internal: apply verified profile to in-memory state ───────────────────
 async function _applyProfileToState(supabaseUser) {
@@ -29,12 +79,14 @@ async function _applyProfileToState(supabaseUser) {
             .toLowerCase().replace(/[^a-z0-9_]/g, '_');
         try {
             await supabase.from('user_profiles').upsert({
-                id:       user.id,
+                id: user.id,
                 username,
-                name:     displayName,
-                status:   'active',
+                name: displayName,
+                status: 'active',
             }, { onConflict: 'id' });
-        } catch (_) {}
+        } catch (_) {
+            // Profile creation is best-effort; minimal in-memory auth state is enough to proceed.
+        }
         // Proceed with minimal state, then prompt to complete profile
         state.auth.currentUser = { id: user.id, username, role, name: displayName, email: user.email, associatedId: null };
         state.auth.isAuthenticated = true;
@@ -45,31 +97,31 @@ async function _applyProfileToState(supabaseUser) {
     }
 
     if (profile.status === 'suspended') {
-        await supabase.auth.signOut();
+        await supabase.auth.signOut({ scope: 'local' });
         showNotification('Your account has been suspended. Contact the tournament admin.', 'error');
         return false;
     }
 
     state.auth.currentUser = {
-        id:           profile.id,
-        username:     profile.username,
+        id: profile.id,
+        username: profile.username,
         role,
-        name:         profile.name,
-        email:        user.email,
+        name: profile.name,
+        email: user.email,
         associatedId: profile.associated_id,
     };
     state.auth.isAuthenticated = true;
     _resetActivity();
 
-    api.updateLastLogin(user.id).catch(() => {});
-    return profile;
+    api.updateLastLogin(user.id).catch(() => { });
+    return true;
 }
 
 // ── LOGIN ──────────────────────────────────────────────────────────────────
 async function handleLogin() {
-    const email    = document.getElementById('loginEmail')?.value.trim();
+    const email = document.getElementById('loginEmail')?.value.trim();
     const password = document.getElementById('loginPassword')?.value;
-    const errorEl  = document.getElementById('loginError');
+    const errorEl = document.getElementById('loginError');
     const loginBtn = document.getElementById('modalLoginBtn');
 
     if (errorEl) { errorEl.textContent = ''; errorEl.style.display = 'none'; }
@@ -83,34 +135,50 @@ async function handleLogin() {
 
     if (loginBtn) { loginBtn.textContent = 'Logging in…'; loginBtn.disabled = true; }
 
-    await supabase.auth.signOut({ scope: 'local' });
+    // Clear stale offline fallback state; Supabase will replace any current browser session.
+    logoutLocalUser();
 
     try {
-        await api.signIn(email, password);
-        // Success is handled by onAuthStateChange SIGNED_IN event
-        // But close modal as fallback in case that fails
-        setTimeout(() => closeAllModals(), 500);
+        const data = await api.signIn(email, password);
+        const user = data?.user || data?.session?.user;
+        if (user) {
+            const ok = await _applySessionUserOnce(data?.session || user);
+            if (ok) {
+                isOfflineMode = false;
+                _refreshAuthDependentUI();
+                _lastManualSignInAt = Date.now();
+                closeAllModals();
+                showNotification(`Welcome back, ${state.auth.currentUser?.name || 'User'}!`, 'success');
+                return;
+            }
+        }
+
+        closeAllModals();
     } catch (err) {
         console.error('[auth] Login error:', err);
 
-        // Fall back to local auth (offline mode) only if Supabase is genuinely down
-        try {
-            const session = await loginLocalUser(email, password);
-            isOfflineMode = true;
-            state.auth.currentUser = {
-                id: session.id,
-                username: session.username,
-                role: session.role,
-                name: session.name,
-                isLocal: true
-            };
-            state.auth.isAuthenticated = true;
-            updateHeaderControls();
-            updateAdminNavVisibility();
-            closeAllModals();
-            showNotification('Logged in (offline mode)', 'info');
-            return;
-        } catch (_) {}
+        // Fall back to local auth only for connectivity failures, not wrong passwords.
+        if (_looksLikeConnectionError(err) || !(await isSupabaseReachable())) {
+            try {
+                const session = await loginLocalUser(email, password);
+                isOfflineMode = true;
+                state.auth.currentUser = {
+                    id: session.id,
+                    username: session.username,
+                    role: session.role,
+                    name: session.name,
+                    isLocal: true
+                };
+                state.auth.isAuthenticated = true;
+                updateHeaderControls();
+                updateAdminNavVisibility();
+                closeAllModals();
+                showNotification('Logged in (offline mode)', 'info');
+                return;
+            } catch (_) {
+                // Local fallback is optional; keep the original Supabase error visible.
+            }
+        }
 
         if (errorEl) { errorEl.textContent = err.message; errorEl.style.display = 'block'; }
         showNotification('Login failed: ' + err.message, 'error');
@@ -120,17 +188,17 @@ async function handleLogin() {
 
 // ── REGISTER ───────────────────────────────────────────────────────────────
 async function registerUser() {
-    const name       = document.getElementById('registerName')?.value.trim();
-    const email      = document.getElementById('registerEmail')?.value.trim();
-    const password   = document.getElementById('registerPassword')?.value;
-    const confirm    = document.getElementById('registerConfirmPassword')?.value;
+    const name = document.getElementById('registerName')?.value.trim();
+    const email = document.getElementById('registerEmail')?.value.trim();
+    const password = document.getElementById('registerPassword')?.value;
+    const confirm = document.getElementById('registerConfirmPassword')?.value;
     // Support both new radio cards and legacy select
-    const roleRadio  = document.querySelector('input[name="regRole"]:checked');
-    const role       = roleRadio?.value || document.getElementById('registerRole')?.value || 'public';
-    const assocId    = document.getElementById('registerAssociation')?.value || null;
+    const roleRadio = document.querySelector('input[name="regRole"]:checked');
+    const role = roleRadio?.value || document.getElementById('registerRole')?.value || 'public';
+    const assocId = document.getElementById('registerAssociation')?.value || null;
     // Derive username from email prefix
-    const username   = (email || '').split('@')[0].toLowerCase().replace(/[^a-z0-9_]/g, '_') || 'user';
-    const errorEl    = document.getElementById('registerError');
+    const username = (email || '').split('@')[0].toLowerCase().replace(/[^a-z0-9_]/g, '_') || 'user';
+    const errorEl = document.getElementById('registerError');
 
     if (errorEl) errorEl.textContent = '';
 
@@ -179,11 +247,11 @@ async function registerUser() {
         // Create the profile row
         if (user) {
             await api.upsertProfile({
-                id:           user.id,
-                username:     username.toLowerCase().trim(),
-                name:         name,
+                id: user.id,
+                username: username.toLowerCase().trim(),
+                name: name,
                 associated_id: assocId || null,
-                status:       'active',
+                status: 'active',
             });
 
             if (safeRole !== 'public') {
@@ -227,6 +295,7 @@ async function registerUser() {
 // ── LOGOUT ─────────────────────────────────────────────────────────────────
 async function logout() {
     const user = state.auth.currentUser;
+    _explicitLogoutInProgress = true;
 
     // Clear local session if in offline mode
     if (user?.isLocal || isOfflineMode) {
@@ -241,20 +310,21 @@ async function logout() {
     }
 
     // Clear in-memory auth state — NOT localStorage (no longer used for auth)
-    state.auth.currentUser    = null;
+    state.auth.currentUser = null;
     state.auth.isAuthenticated = false;
-    state.auth.lastActivity   = Date.now();
+    state.auth.lastActivity = Date.now();
     isOfflineMode = false;
 
     updateHeaderControls();
     updateAdminNavVisibility();
     if (typeof window.switchTab === 'function') window.switchTab('public');
     showNotification('Logged out successfully', 'info');
+    setTimeout(() => { _explicitLogoutInProgress = false; }, 1000);
 }
 
 // ── GUEST LOGIN ─────────────────────────────────────────────────────────────
 function guestLogin() {
-    state.auth.currentUser    = { role: 'public', name: 'Guest' };
+    state.auth.currentUser = { role: 'public', name: 'Guest' };
     state.auth.isAuthenticated = false;
     updateHeaderControls();
     updateAdminNavVisibility();
@@ -265,78 +335,113 @@ function guestLogin() {
 
 // ── RESTORE SESSION ─────────────────────────────────────────────────────────
 async function restoreSession() {
-    // Local session (offline mode) takes priority
-    const localSession = getLocalSession();
-    if (localSession) {
-        // Enforce 1-hour inactivity on local sessions
-        if (localSession.loggedInAt && Date.now() - localSession.loggedInAt > 3_600_000) {
+    _restoreInProgress = true;
+    try {
+        // Prefer online Supabase session when available.
+        // Stale offline sessions can block normal logins on shared browsers.
+        const { data: { session }, error } = await supabase.auth.getSession();
+        if (!error && session?.user) {
             logoutLocalUser();
-        } else {
-            isOfflineMode = true;
-            state.auth.currentUser = {
-                id: localSession.id, username: localSession.username,
-                role: localSession.role, name: localSession.name, isLocal: true
-            };
-            state.auth.isAuthenticated = true;
-            _resetActivity();
-            return true;
+            isOfflineMode = false;
+            return _applySessionUserOnce(session);
         }
+
+        const localSession = getLocalSession();
+
+        if (localSession) {
+            // Enforce 1-hour inactivity on local sessions
+            if (localSession.loggedInAt && Date.now() - localSession.loggedInAt > 3_600_000) {
+                logoutLocalUser();
+            } else {
+                const reachable = await isSupabaseReachable();
+                if (!reachable) {
+                    isOfflineMode = true;
+                    state.auth.currentUser = {
+                        id: localSession.id,
+                        username: localSession.username,
+                        role: localSession.role,
+                        name: localSession.name,
+                        isLocal: true
+                    };
+                    state.auth.isAuthenticated = true;
+                    _resetActivity();
+                    _refreshAuthDependentUI();
+                    return true;
+                }
+                // Supabase is reachable and there's no online session: clear stale local login
+                logoutLocalUser();
+            }
+        }
+
+        if (error) {
+            console.warn('[auth] Session restore failed:', error.message);
+        }
+        return false;
+    } finally {
+        setTimeout(() => { _restoreInProgress = false; }, 750);
     }
-
-    const { data: { session }, error } = await supabase.auth.getSession();
-    if (!error && session?.user) return _applyProfileToState(session.user);
-
-    if (error) console.warn('[auth] Session restore failed, clearing stale token:', error.message);
-    await supabase.auth.signOut({ scope: 'local' });
-    return false;
 }
 
-// ── AUTH STATE CHANGE LISTENER ──────────────────────────────────────────────
-supabase.auth.onAuthStateChange(async (event, session) => {
-    if (event === 'SIGNED_IN' && session?.user) {
-        const ok = await _applyProfileToState(session.user);
+async function _handleAuthStateChange(event, session) {
+    if ((event === 'INITIAL_SESSION' || event === 'SIGNED_IN') && session?.user) {
+        const ok = await _applySessionUserOnce(session);
         if (ok) {
-            updateHeaderControls();
-            updateAdminNavVisibility();
-            if (typeof window.updateTabsForRole === 'function') window.updateTabsForRole();
-            if (typeof window.updateAdminDropdownVisibility === 'function') {
-                window.updateAdminDropdownVisibility();
+            _refreshAuthDependentUI();
+            const justHandledByLogin = Date.now() - _lastManualSignInAt < 1500;
+            if (event === 'SIGNED_IN' && !_restoreInProgress && !justHandledByLogin) {
+                closeAllModals();
+                showNotification(`Welcome back, ${state.auth.currentUser?.name || 'User'}!`, 'success');
             }
-            closeAllModals();
-            showNotification(`Welcome back, ${state.auth.currentUser?.name || 'User'}!`, 'success');
         }
     }
 
     if (event === 'SIGNED_OUT') {
-        // (Avoids clearing display state during a slow refresh)
-        if (state.auth?.isAuthenticated) {
-            state.auth.currentUser     = null;
-            state.auth.isAuthenticated  = false;
-            updateHeaderControls();
-            updateAdminNavVisibility();
-            if (typeof window.updateTabsForRole === 'function') window.updateTabsForRole();
-            if (typeof window.updateAdminDropdownVisibility === 'function') {
-                window.updateAdminDropdownVisibility();
-            }
+        if (!_explicitLogoutInProgress || _restoreInProgress) return;
+        if (state.auth?.isAuthenticated && state.auth.currentUser) {
+            state.auth.currentUser = null;
+            state.auth.isAuthenticated = false;
+            _refreshAuthDependentUI();
         }
     }
 
+    // Handle token refresh
+    if (event === 'TOKEN_REFRESHED' && session?.user) {
+        if (state.auth.isAuthenticated) {
+            // Update role from app_metadata
+            const newRole = session.user.app_metadata?.role || state.auth.currentUser?.role || 'public';
+            if (state.auth.currentUser) {
+                state.auth.currentUser.role = newRole;
+            }
+            updateAdminNavVisibility();
+        }
+    }
+}
+
+// ── AUTH STATE CHANGE LISTENER ──────────────────────────────────────────────
+supabase.auth.onAuthStateChange((event, session) => {
+    // Keep Supabase's auth callback synchronous. Database/profile work is
+    // deferred so refresh and sign-in events cannot block the auth client.
+    setTimeout(() => {
+        _handleAuthStateChange(event, session).catch(err => {
+            console.warn('[auth] Auth state handler failed:', err?.message || err);
+        });
+    }, 0);
 });
 
 // ── HEADER CONTROLS ─────────────────────────────────────────────────────────
 function updateHeaderControls() {
-    const user   = state.auth.currentUser;
+    const user = state.auth.currentUser;
     const isAuth = state.auth.isAuthenticated;
 
     // Header
-    const headerName   = document.getElementById('header-user-name');
-    const headerInfo   = document.getElementById('header-user-info');
-    const headerLogin  = document.getElementById('header-login-btn');
+    const headerName = document.getElementById('header-user-name');
+    const headerInfo = document.getElementById('header-user-info');
+    const headerLogin = document.getElementById('header-login-btn');
     const headerLogout = document.getElementById('header-logout-btn');
     const settingsWrapper = document.getElementById('header-settings-wrapper');
-    if (headerName)   headerName.textContent    = user?.name || 'Guest';
-    if (headerInfo)   headerInfo.style.display  = isAuth ? '' : 'none';
-    if (headerLogin)  headerLogin.style.display = isAuth ? 'none' : '';
+    if (headerName) headerName.textContent = user?.name || 'Guest';
+    if (headerInfo) headerInfo.style.display = isAuth ? '' : 'none';
+    if (headerLogin) headerLogin.style.display = isAuth ? 'none' : '';
     if (settingsWrapper) settingsWrapper.style.display = isAuth ? '' : 'none';
 
     // Settings dropdown (only visible when logged in)
@@ -358,11 +463,11 @@ function updateHeaderControls() {
     if (adminUserDisplay) adminUserDisplay.textContent = user?.name || '';
 
     // Drawer
-    const drawerName   = document.getElementById('drawer-user-name');
-    const drawerLogin  = document.getElementById('drawer-login-btn');
+    const drawerName = document.getElementById('drawer-user-name');
+    const drawerLogin = document.getElementById('drawer-login-btn');
     const drawerLogout = document.getElementById('drawer-logout-btn');
-    if (drawerName)   drawerName.textContent    = user?.name || 'Guest';
-    if (drawerLogin)  drawerLogin.style.display = isAuth ? 'none' : '';
+    if (drawerName) drawerName.textContent = user?.name || 'Guest';
+    if (drawerLogin) drawerLogin.style.display = isAuth ? 'none' : '';
     if (drawerLogout) drawerLogout.style.display = isAuth ? '' : 'none';
 
     // Offline mode indicator
@@ -397,7 +502,7 @@ function _showProfileCompletion(supabaseUser) {
 
     const judgeOptions = (state.judges || []).map(j =>
         `<option value="${escapeHTML(String(j.id))}">${escapeHTML(j.name)}</option>`).join('');
-    const teamOptions  = (state.teams  || []).map(t =>
+    const teamOptions = (state.teams || []).map(t =>
         `<option value="${escapeHTML(String(t.id))}">${escapeHTML(t.name)}</option>`).join('');
 
     overlay.innerHTML = `
@@ -449,16 +554,16 @@ function _showProfileCompletion(supabaseUser) {
             const inp = l.querySelector('input[name="pcRole"]');
             const active = inp?.value === role;
             l.style.borderColor = active ? '#6366f1' : '#e5e7eb';
-            l.style.background  = active ? '#eef2ff' : '#fff';
+            l.style.background = active ? '#eef2ff' : '#fff';
             l.querySelectorAll('span').forEach(s => s.style.color = active ? '#4f46e5' : '#374151');
         });
         const ag = document.getElementById('pcAssocGroup');
         const al = document.getElementById('pcAssocLabel');
         const jg = document.getElementById('pcJudgeGrp');
         const tg = document.getElementById('pcTeamGrp');
-        if (role === 'judge') { if (ag) ag.style.display=''; if (al) al.textContent='Which judge are you?'; if (jg) jg.style.display=''; if (tg) tg.style.display='none'; }
-        else if (role === 'team') { if (ag) ag.style.display=''; if (al) al.textContent='Which team are you on?'; if (jg) jg.style.display='none'; if (tg) tg.style.display=''; }
-        else { if (ag) ag.style.display='none'; }
+        if (role === 'judge') { if (ag) ag.style.display = ''; if (al) al.textContent = 'Which judge are you?'; if (jg) jg.style.display = ''; if (tg) tg.style.display = 'none'; }
+        else if (role === 'team') { if (ag) ag.style.display = ''; if (al) al.textContent = 'Which team are you on?'; if (jg) jg.style.display = 'none'; if (tg) tg.style.display = ''; }
+        else { if (ag) ag.style.display = 'none'; }
     }
     overlay.querySelectorAll('input[name="pcRole"]').forEach(r =>
         r.addEventListener('change', () => updatePcRole(r.value))
@@ -466,17 +571,17 @@ function _showProfileCompletion(supabaseUser) {
     updatePcRole('team');
 
     document.getElementById('pcSaveBtn')?.addEventListener('click', async () => {
-        const role   = overlay.querySelector('input[name="pcRole"]:checked')?.value || 'public';
+        const role = overlay.querySelector('input[name="pcRole"]:checked')?.value || 'public';
         const assocId = document.getElementById('pcAssociation')?.value || null;
-        const errEl  = document.getElementById('pcErr');
-        const btn    = document.getElementById('pcSaveBtn');
+        const errEl = document.getElementById('pcErr');
+        const btn = document.getElementById('pcSaveBtn');
         btn.disabled = true; btn.textContent = 'Saving…';
         try {
             await supabase.from('user_profiles').update({
                 associated_id: assocId || null,
             }).eq('id', supabaseUser.id);
             if (role !== 'public') {
-                await api.setUserRole(supabaseUser.id, role).catch(() => {});
+                await api.setUserRole(supabaseUser.id, role).catch(() => { });
             }
             if (state.auth.currentUser) {
                 state.auth.currentUser.role = role;
@@ -495,7 +600,7 @@ function _showProfileCompletion(supabaseUser) {
 }
 
 // ── INACTIVITY TIMEOUT (1 hour) ──────────────────────────────────────────────
-const INACTIVITY_LIMIT = 60 * 60 * 10000; // 1 hour
+const INACTIVITY_LIMIT = 60 * 60 * 1000; // 1 hour (FIXED: was 10 hours)
 let _lastActivity = Date.now();
 let _inactivityTimer = null;
 
@@ -505,11 +610,12 @@ function _resetActivity() {
 
 function _initInactivityWatcher() {
     const touch = () => { _lastActivity = Date.now(); };
-    ['mousemove','keydown','click','touchstart','scroll'].forEach(ev =>
+    ['mousemove', 'keydown', 'click', 'touchstart', 'scroll'].forEach(ev =>
         window.addEventListener(ev, touch, { passive: true })
     );
     _inactivityTimer = setInterval(() => {
         if (!state.auth?.isAuthenticated) return;
+        if (!isOfflineMode && !state.auth.currentUser?.isLocal) return;
         if (Date.now() - _lastActivity > INACTIVITY_LIMIT) {
             showNotification('You were logged out due to inactivity.', 'info');
             logout();
@@ -581,11 +687,11 @@ function showLoginModal() {
     const judgeOptions = (state.judges || []).map(j =>
         `<option value="${escapeHTML(String(j.id))}">${escapeHTML(j.name)}</option>`
     ).join('');
-    const teamOptions  = (state.teams  || []).map(t =>
+    const teamOptions = (state.teams || []).map(t =>
         `<option value="${escapeHTML(String(t.id))}">${escapeHTML(t.name)}</option>`
     ).join('');
 
-    const oauthLinks = ''; 
+    const oauthLinks = '';
 
     modal.innerHTML = `
     <style>
@@ -699,19 +805,19 @@ function showLoginModal() {
 
     overlay.appendChild(modal);
     document.body.appendChild(overlay);
-    
+
     // Force a reflow and ensure visibility
     overlay.offsetHeight; // trigger reflow
     overlay.style.visibility = 'visible';
     overlay.style.opacity = '1';
 
     // Wire events
-    document.getElementById('loginTabBtn')    ?.addEventListener('click', () => switchAuthTab('login'));
-    document.getElementById('registerTabBtn') ?.addEventListener('click', () => switchAuthTab('register'));
-    document.getElementById('modalLoginBtn')  ?.addEventListener('click', handleLogin);
-    document.getElementById('modalGuestBtn')  ?.addEventListener('click', guestLogin);
+    document.getElementById('loginTabBtn')?.addEventListener('click', () => switchAuthTab('login'));
+    document.getElementById('registerTabBtn')?.addEventListener('click', () => switchAuthTab('register'));
+    document.getElementById('modalLoginBtn')?.addEventListener('click', handleLogin);
+    document.getElementById('modalGuestBtn')?.addEventListener('click', guestLogin);
     document.getElementById('modalRegisterBtn')?.addEventListener('click', registerUser);
-    document.getElementById('loginPassword')  ?.addEventListener('keydown', e => { if (e.key === 'Enter') handleLogin(); });
+    document.getElementById('loginPassword')?.addEventListener('keydown', e => { if (e.key === 'Enter') handleLogin(); });
     document.getElementById('registerConfirmPassword')?.addEventListener('keydown', e => { if (e.key === 'Enter') registerUser(); });
 
     // Role card → show/hide association
@@ -721,27 +827,27 @@ function showLoginModal() {
     _onRegRoleChange('team'); // default
 
     // OAuth — both tabs share the same buttons (duplicated ids avoided via querySelectorAll)
-    modal.querySelectorAll('#oauthGoogleBtn') .forEach(b => b.addEventListener('click', signInWithGoogle));
+    modal.querySelectorAll('#oauthGoogleBtn').forEach(b => b.addEventListener('click', signInWithGoogle));
     modal.querySelectorAll('#oauthDiscordBtn').forEach(b => b.addEventListener('click', signInWithDiscord));
-    modal.querySelectorAll('#oauthAppleBtn')  .forEach(b => b.addEventListener('click', signInWithApple));
+    modal.querySelectorAll('#oauthAppleBtn').forEach(b => b.addEventListener('click', signInWithApple));
 }
 
 function _onRegRoleChange(role) {
-    const group     = document.getElementById('associationGroup');
-    const label     = document.getElementById('assocLabel');
-    const judgeGrp  = document.getElementById('assocJudgeGroup');
-    const teamGrp   = document.getElementById('assocTeamGroup');
+    const group = document.getElementById('associationGroup');
+    const label = document.getElementById('assocLabel');
+    const judgeGrp = document.getElementById('assocJudgeGroup');
+    const teamGrp = document.getElementById('assocTeamGroup');
     if (!group) return;
     if (role === 'judge') {
         group.style.display = '';
         if (label) label.textContent = 'Which judge are you?';
         if (judgeGrp) judgeGrp.style.display = '';
-        if (teamGrp)  teamGrp.style.display  = 'none';
+        if (teamGrp) teamGrp.style.display = 'none';
     } else if (role === 'team') {
         group.style.display = '';
         if (label) label.textContent = 'Which team / speaker slot are you?';
         if (judgeGrp) judgeGrp.style.display = 'none';
-        if (teamGrp)  teamGrp.style.display  = '';
+        if (teamGrp) teamGrp.style.display = '';
     } else {
         group.style.display = 'none';
     }
@@ -749,19 +855,19 @@ function _onRegRoleChange(role) {
 
 // ── SWITCH AUTH TAB ─────────────────────────────────────────────────────────
 function switchAuthTab(tab) {
-    const loginForm    = document.getElementById('loginForm');
+    const loginForm = document.getElementById('loginForm');
     const registerForm = document.getElementById('registerForm');
-    const loginBtn     = document.getElementById('loginTabBtn');
-    const registerBtn  = document.getElementById('registerTabBtn');
+    const loginBtn = document.getElementById('loginTabBtn');
+    const registerBtn = document.getElementById('registerTabBtn');
     if (!loginForm || !registerForm) return;
 
     if (tab === 'login') {
-        loginForm.style.display    = '';
+        loginForm.style.display = '';
         registerForm.style.display = 'none';
         loginBtn?.classList.add('is-active');
         registerBtn?.classList.remove('is-active');
     } else {
-        loginForm.style.display    = 'none';
+        loginForm.style.display = 'none';
         registerForm.style.display = '';
         loginBtn?.classList.remove('is-active');
         registerBtn?.classList.add('is-active');
@@ -786,7 +892,7 @@ function renderProfile() {
             (() => {
                 const d = document.createElement('div');
                 d.style.textAlign = 'center';
-                d.style.padding   = '40px';
+                d.style.padding = '40px';
                 const p = document.createElement('p');
                 p.textContent = 'Please log in to view your profile.';
                 d.appendChild(p);
@@ -808,7 +914,7 @@ function renderProfile() {
         'font-weight:700;color:white;margin:0 auto 20px;';
     avatar.textContent = (user.name || 'U')[0].toUpperCase();
 
-    const name  = document.createElement('h2');
+    const name = document.createElement('h2');
     name.style.textAlign = 'center';
     name.textContent = user.name;
 
@@ -819,7 +925,7 @@ function renderProfile() {
     const roleBadge = document.createElement('div');
     roleBadge.style.cssText = 'text-align:center;margin-bottom:20px;';
     const rb = document.createElement('span');
-    rb.className  = `role-badge role-${user.role}`;
+    rb.className = `role-badge role-${user.role}`;
     rb.textContent = (user.role || 'public').toUpperCase();
     roleBadge.appendChild(rb);
 
@@ -848,4 +954,3 @@ export {
     signInWithDiscord,
     signInWithApple,
 };
-

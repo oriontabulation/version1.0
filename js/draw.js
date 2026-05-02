@@ -24,7 +24,7 @@ function isSpeech() { return getFormat() === 'speech'; }
 function teamLabel(team) {
     if (!team) return 'TBD';
     let savedPrefs = {};
-    try { savedPrefs = JSON.parse(localStorage.getItem('orion_draw_prefs') || '{}'); } catch(e) {}
+    try { savedPrefs = JSON.parse(localStorage.getItem('orion_draw_prefs') || '{}'); } catch(e) { /* ignore corrupt draw prefs */ }
     const displayMode = savedPrefs['display'] || 'names';
     if (displayMode === 'codes') {
         return escapeHTML(teamCode(team));
@@ -36,7 +36,7 @@ function teamLabel(team) {
 function _nameLabel(team) {
     if (!team) return 'TBD';
     let savedPrefs = {};
-    try { savedPrefs = JSON.parse(localStorage.getItem('orion_draw_prefs') || '{}'); } catch(e) {}
+    try { savedPrefs = JSON.parse(localStorage.getItem('orion_draw_prefs') || '{}'); } catch(e) { /* ignore corrupt draw prefs */ }
     const displayMode = savedPrefs['display'] || 'names';
     if (displayMode === 'codes') {
         return escapeHTML(teamCode(team));
@@ -50,7 +50,7 @@ function _nameLabel(team) {
 // Toggle between names and codes display
 function _toggleTeamNames() {
     let savedPrefs = {};
-    try { savedPrefs = JSON.parse(localStorage.getItem('orion_draw_prefs') || '{}'); } catch(e) {}
+    try { savedPrefs = JSON.parse(localStorage.getItem('orion_draw_prefs') || '{}'); } catch(e) { /* ignore corrupt draw prefs */ }
     const current = savedPrefs['display'] || 'names';
     const newDisplay = (current === 'names') ? 'codes' : 'names';
     savedPrefs['display'] = newDisplay;
@@ -61,7 +61,7 @@ function _toggleTeamNames() {
 // Set name display mode and refresh draw
 function _setNameDisplay(value) {
     let savedPrefs = {};
-    try { savedPrefs = JSON.parse(localStorage.getItem('orion_draw_prefs') || '{}'); } catch(e) {}
+    try { savedPrefs = JSON.parse(localStorage.getItem('orion_draw_prefs') || '{}'); } catch(e) { /* ignore corrupt draw prefs */ }
     savedPrefs['display'] = value;
     localStorage.setItem('orion_draw_prefs', JSON.stringify(savedPrefs));
     displayRounds();
@@ -254,7 +254,7 @@ export function renderDraw() {
 
     // Load saved selector preferences
     let savedPrefs = {};
-    try { savedPrefs = JSON.parse(localStorage.getItem('orion_draw_prefs') || '{}'); } catch(e) {}
+    try { savedPrefs = JSON.parse(localStorage.getItem('orion_draw_prefs') || '{}'); } catch(e) { /* ignore corrupt draw prefs */ }
 
     const savedPairMethod = savedPrefs['cr-pair'] || 'random';
     const savedFilter     = savedPrefs['round-filter'] || 'all';
@@ -448,8 +448,8 @@ function renderKnockoutBracket(rounds) {
         
         if (existingRound) {
             // Show actual debates from existing round
-            existingRound.debates.forEach(debate => {
-                bracketHtml += renderBracketMatch(debate);
+            existingRound.debates.forEach((debate, debateIdx) => {
+                bracketHtml += renderBracketMatch(debate, existingRound, 0, debateIdx);
             });
             
             // Add "Next Round" button if this round is complete and next doesn't exist
@@ -531,8 +531,8 @@ function renderFullKnockoutBracket(currentRound) {
         
         if (existingRound) {
             // Show existing debates
-            existingRound.debates.forEach(debate => {
-                html += renderBracketMatch(debate);
+            existingRound.debates.forEach((debate, debateIdx) => {
+                html += renderBracketMatch(debate, existingRound, 0, debateIdx);
             });
         } else {
             // Show seeded placeholders
@@ -577,7 +577,7 @@ function renderFullKnockoutBracket(currentRound) {
     return html;
 }
 
-function renderBracketMatch(debate) {
+function renderBracketMatch(debate, round = {}, roundIdx = 0, debateIdx = 0) {
     const gov = state.teams.find(t => t.id === debate.gov);
     const opp = state.teams.find(t => t.id === debate.opp);
 
@@ -831,7 +831,7 @@ function renderDebateCard(round, debate, roundIdx, debateIdx, previousMeetings) 
     const oppPresent = debate.attendance?.opp !== false;
     const room       = round.rooms?.[debateIdx] || `Room ${debateIdx + 1}`;
 
-    let _dp = {}; try { _dp = JSON.parse(localStorage.getItem('orion_draw_prefs') || '{}'); } catch(e) {}
+    let _dp = {}; try { _dp = JSON.parse(localStorage.getItem('orion_draw_prefs') || '{}'); } catch(e) { /* ignore corrupt draw prefs */ }
     const displayMode = _dp['display'] || 'names';
     // Judges always see code; others see it only when not in codes mode (code already primary) and not hiding names
     const showSecondaryCode = (isJudge && !isAdmin) || (displayMode !== 'codes' && !_dp['hide-names']);
@@ -2346,6 +2346,12 @@ export function moveJudgeToPanel(roundIdx, fromDebateIdx, toDebateIdx, judgeId) 
 // COPY ROOM URL
 // ============================================
 
+function getOrCreateRoomURL(roundIdx, debateIdx) {
+    const round = (state.rounds || [])[roundIdx];
+    const roundId = round?.id ?? roundIdx;
+    return `${window.location.origin}${window.location.pathname}?room=${encodeURIComponent(`${roundId}_${debateIdx}`)}`;
+}
+
 function copyRoomURL(roundIdx, debateIdx) {
     const roomURL = getOrCreateRoomURL(roundIdx, debateIdx);
     
@@ -3026,7 +3032,7 @@ export function submitResults(roundIdx, debateIdx) {
         const loser = govWon ? opp : gov;
 
         // ── Auto-create any new speakers typed into the ballot 
-        function ensureSpeaker(team, name) {
+        const ensureSpeaker = (team, name) => {
             if (!name) return;
             const trimmed = name.trim();
             if (!trimmed) return;
@@ -4304,7 +4310,7 @@ function addDebate(roundIdx, debateIdx) {
 
 function _toggleDrawView() {
     let prefs = {};
-    try { prefs = JSON.parse(localStorage.getItem('orion_draw_prefs') || '{}'); } catch(e) {}
+    try { prefs = JSON.parse(localStorage.getItem('orion_draw_prefs') || '{}'); } catch(e) { /* ignore corrupt draw prefs */ }
     const current = prefs['miniView'] || false;
     prefs['miniView'] = !current;
     localStorage.setItem('orion_draw_prefs', JSON.stringify(prefs));
@@ -4387,6 +4393,38 @@ function _avoidPreviousMeetingPairs(pairs) {
                 else if (s2 < before) { pairs[i]=[a,d]; pairs[j]=[b,c]; improved=true; }
             }
         }
+    }
+    return pairs;
+}
+
+function generateRoundRobinPairs(teams, rounds = []) {
+    const previousMeetings = getPreviousMeetings(rounds);
+    const ordered = [...teams].sort((a, b) =>
+        (b.wins || 0) - (a.wins || 0) || (b.total || 0) - (a.total || 0)
+    );
+    if (ordered.length % 2 !== 0) ordered.pop();
+
+    const pairs = [];
+    const used = new Set();
+    for (let i = 0; i < ordered.length; i++) {
+        const a = ordered[i];
+        if (!a || used.has(a.id)) continue;
+        let matchIndex = -1;
+        for (let j = i + 1; j < ordered.length; j++) {
+            const b = ordered[j];
+            if (!b || used.has(b.id)) continue;
+            const met = (previousMeetings[a.id]?.[b.id] || 0) + (previousMeetings[b.id]?.[a.id] || 0);
+            if (met === 0) {
+                matchIndex = j;
+                break;
+            }
+            if (matchIndex === -1) matchIndex = j;
+        }
+        if (matchIndex === -1) continue;
+        const b = ordered[matchIndex];
+        used.add(a.id);
+        used.add(b.id);
+        pairs.push([a, b]);
     }
     return pairs;
 }
@@ -4669,7 +4707,7 @@ export function displayRounds() {
     
     // Check mini view preference
     let prefs = {};
-    try { prefs = JSON.parse(localStorage.getItem('orion_draw_prefs') || '{}'); } catch(e) {}
+    try { prefs = JSON.parse(localStorage.getItem('orion_draw_prefs') || '{}'); } catch(e) { /* ignore corrupt draw prefs */ }
     const isMiniView = prefs['miniView'] || false;
 
     // Update button text
@@ -4749,7 +4787,7 @@ export function renderRoundCard(round, actualRoundIdx, previousMeetings) {
     const isBlinded = round.blinded || false;
     const isNoReply = round.disableReply || false;
     const isAdmin = state.auth?.currentUser?.role === 'admin';
-    let _dp = {}; try { _dp = JSON.parse(localStorage.getItem('orion_draw_prefs') || '{}'); } catch(e) {}
+    let _dp = {}; try { _dp = JSON.parse(localStorage.getItem('orion_draw_prefs') || '{}'); } catch(e) { /* ignore corrupt draw prefs */ }
     const _displayMode = _dp['display'] || 'names';
     const allDone = entered === total && total > 0;
     const badgeStyle = allDone
@@ -4845,7 +4883,7 @@ function renderRoundMiniTable(round) {
     
     // Get display preference (names or codes)
     let prefs = {};
-    try { prefs = JSON.parse(localStorage.getItem('orion_draw_prefs') || '{}'); } catch(e) {}
+    try { prefs = JSON.parse(localStorage.getItem('orion_draw_prefs') || '{}'); } catch(e) { /* ignore corrupt draw prefs */ }
     const displayMode = prefs['display'] || 'names';
     
     const getDisplayName = (team) => {
@@ -4941,7 +4979,7 @@ window.toggleRepeatMeetingForDebate = function(roundId, debateArg) {
 // Quick toggle for team name display (names vs codes) using existing prefs
 window.toggleTeamNamesDisplay = function() {
     let savedPrefs = {};
-    try { savedPrefs = JSON.parse(localStorage.getItem('orion_draw_prefs') || '{}'); } catch(e) {}
+    try { savedPrefs = JSON.parse(localStorage.getItem('orion_draw_prefs') || '{}'); } catch(e) { /* ignore corrupt draw prefs */ }
     const current = savedPrefs['display'] || 'names';
     savedPrefs['display'] = current === 'names' ? 'codes' : 'names';
     localStorage.setItem('orion_draw_prefs', JSON.stringify(savedPrefs));

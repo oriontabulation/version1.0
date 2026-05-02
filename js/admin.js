@@ -165,7 +165,7 @@ function _fillRoundsSidebar() {
     const rounds = state.rounds || [];
 
     let savedPrefs = {};
-    try { savedPrefs = JSON.parse(localStorage.getItem('orion_draw_prefs') || '{}'); } catch(e) {}
+    try { savedPrefs = JSON.parse(localStorage.getItem('orion_draw_prefs') || '{}'); } catch(e) { /* ignore corrupt draw prefs */ }
     const sp = savedPrefs['adm-pair-method'] || 'random';
     const ss = savedPrefs['adm-side-method'] || 'random';
 
@@ -1757,7 +1757,7 @@ export function adminCreateRound() {
     const autoAllocate = document.getElementById('adm-auto-allocate')?.checked ?? true;
     const blind        = document.getElementById('adm-blind-round')?.checked    ?? false;
 
-    const fn = typeof createRound === 'function' ? createRound : window.createRound;
+    const fn = window.createRound;
     if (typeof fn !== 'function') { showNotification('createRound not available — is draw.js loaded?','error'); return; }
     fn({ motion, method, sideMethod, autoAllocate, blind });
     _refreshAdminRounds();
@@ -2279,7 +2279,7 @@ export function initAdminDashboard() {
             const prefs = JSON.parse(localStorage.getItem('orion_draw_prefs') || '{}');
             prefs[key] = value;
             localStorage.setItem('orion_draw_prefs', JSON.stringify(prefs));
-        } catch(e) {}
+        } catch(e) { /* ignore storage errors for preference persistence */ }
     };
 
     /**

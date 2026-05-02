@@ -7,8 +7,10 @@
     "build": "vite build",
     "preview": "vite preview",
     "test:e2e": "playwright test",
-    "test:unit": "vitest run",
-    "lint": "eslint js/ --ext .js"
+    "test:unit": "node --test js/break.test.js",
+    "lint": "eslint js/ --ext .js",
+    "test": "node --test js/break.test.js",
+    "test:rls": "node --env-file-if-exists=.env --test js/rls.test.js"
   },
   "dependencies": {
     "@sentry/browser": "^7.110.0",

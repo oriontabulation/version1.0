@@ -32,10 +32,10 @@ window._toggleDropdown = function(btn) {
 try {
     const saved = localStorage.getItem('orion_disabled_speakers');
     if (saved) disabledSpeakers = new Set(JSON.parse(saved));
-} catch(e) {}
+} catch(e) { /* ignore corrupt disabled-speakers prefs */ }
 
 function saveDisabledSpeakers() {
-    try { localStorage.setItem('orion_disabled_speakers', JSON.stringify([...disabledSpeakers])); } catch(e) {}
+    try { localStorage.setItem('orion_disabled_speakers', JSON.stringify([...disabledSpeakers])); } catch(e) { /* ignore storage errors */ }
 }
 
 function toggleSpeakerDisabled(key) {
