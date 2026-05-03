@@ -1077,7 +1077,7 @@ function _openBPSwapModal(roundIdx, pIdx) {
 
     const modal = document.createElement('div');
     modal.className = 'modal ko-result-modal';
-    modal.style.maxWidth = '480px';
+    modal.style.cssText = 'max-width:480px;overflow-y:auto;max-height:90vh;';
     modal.innerHTML = `
         <h2 style="margin-top:0;">⇄ Rearrange BP Positions</h2>
         <p style="color:#64748b;font-size:14px;">Reassign which team occupies each position.</p>
@@ -1097,7 +1097,7 @@ function _openBPSwapModal(roundIdx, pIdx) {
             </div>`).join('')}
         </div>
         <div id="swap-error" style="color:#dc2626;margin-bottom:10px;display:none;font-size:13px;"></div>
-        <div style="display:flex;gap:10px;">
+        <div style="position:sticky;bottom:0;background:white;padding:12px 0 2px;border-top:1px solid #f1f5f9;margin-top:8px;display:flex;gap:10px;">
             <button onclick="window.applyBPSwap(${roundIdx},${pIdx})" class="primary" style="flex:2;padding:12px;">✅ Apply</button>
             <button onclick="window.closeAllModals()" class="secondary" style="flex:1;padding:12px;">Cancel</button>
         </div>
@@ -1141,6 +1141,7 @@ function enterKnockoutResult(roundIndex, pairingIndex) {
     _syncTournamentProgress(state.tournament);
     const pairing = state.tournament?.bracket?.[roundIndex]?.pairings?.[pairingIndex];
     if (!pairing) return;
+    console.log('[ko] enter', { roundIndex, pairingIndex, currentRound: state.tournament?.currentRound, role: state.auth?.currentUser?.role, canSubmit: _canSubmitPairing(pairing) });
     if (!_canSubmitPairing(pairing)) {
         showNotification('You are not assigned to this room', 'error');
         return;
@@ -1193,7 +1194,7 @@ function _enterBPResult(roundIndex, pairingIndex) {
 
     const modal = document.createElement('div');
     modal.className = 'modal ko-result-modal';
-    modal.style.maxWidth = '520px';
+    modal.style.cssText = 'max-width:520px;overflow-y:auto;max-height:90vh;';
     modal.innerHTML = `
         <h2 style="margin-top:0;">${isLastRound ? '🏆 Grand Final' : '✏️ Enter Results'}</h2>
         <p style="color:#64748b;font-size:14px;">${escapeHTML(round.name)} — ${escapeHTML(pairing.room)}</p>
@@ -1221,13 +1222,14 @@ function _enterBPResult(roundIndex, pairingIndex) {
             ${isLastRound ? 'No winner selected' : '0 / 2 advancing selected'}
         </div>
         <div id="bp-error" style="color:#dc2626;margin-bottom:10px;display:none;font-size:13px;"></div>
-        <div style="display:flex;gap:10px;">
+        <div style="position:sticky;bottom:0;background:white;padding:12px 0 2px;border-top:1px solid #f1f5f9;margin-top:8px;display:flex;gap:10px;">
             <button type="button" data-ko-submit-bp onclick="event.preventDefault();event.stopPropagation();window.submitKnockoutResult(${roundIndex},${pairingIndex})" class="primary" style="flex:2;padding:12px;">Submit</button>
             <button type="button" onclick="event.preventDefault();event.stopPropagation();window._bpAdvancing=[];window.closeAllModals()" class="secondary" style="flex:1;padding:12px;">Cancel</button>
         </div>
     `;
     overlay.appendChild(modal);
     document.body.appendChild(overlay);
+    document.body.classList.remove('modal-scroll-unlocked');
     document.body.classList.add('modal-open');
 
     modal.querySelectorAll('[data-bp-advancer-card]').forEach(card => {
@@ -1313,7 +1315,7 @@ function _enterWSDCResult(roundIndex, pairingIndex) {
 
     const modal = document.createElement('div');
     modal.className = 'modal ko-result-modal';
-    modal.style.maxWidth = '460px';
+    modal.style.cssText = 'max-width:460px;overflow-y:auto;max-height:90vh;';
     modal.innerHTML = `
         <h2 style="margin-top:0;">Select Winner</h2>
         <p style="color:#64748b;">${escapeHTML(round.name)} - ${escapeHTML(pairing.room)}</p>
@@ -1335,13 +1337,14 @@ function _enterWSDCResult(roundIndex, pairingIndex) {
         </div>
         <div id="ko-error" style="color:#dc2626;margin-bottom:10px;display:none;"></div>
         <div id="ko-status" style="color:#64748b;margin-bottom:10px;font-size:12px;min-height:16px;">Select a team to continue.</div>
-        <div style="display:flex;gap:10px;">
+        <div style="position:sticky;bottom:0;background:white;padding:12px 0 2px;border-top:1px solid #f1f5f9;margin-top:8px;display:flex;gap:10px;">
             <button type="button" data-ko-submit-wsdc onclick="event.preventDefault();event.stopPropagation();window.submitKnockoutResult(${roundIndex},${pairingIndex})" class="primary" style="flex:2;padding:12px;">Submit</button>
             <button type="button" onclick="window.closeAllModals()" class="secondary" style="flex:1;padding:12px;">Cancel</button>
         </div>
     `;
     overlay.appendChild(modal);
     document.body.appendChild(overlay);
+    document.body.classList.remove('modal-scroll-unlocked');
     document.body.classList.add('modal-open');
 
     modal.querySelectorAll('[data-wsdc-winner-card]').forEach(card => {
@@ -1451,6 +1454,8 @@ function submitKnockoutResult(roundIndex, pairingIndex) {
     window._koSubmitting = submitKey;
     try {
         _syncTournamentProgress(state.tournament);
+        const user = state.auth?.currentUser;
+        console.log('[ko] submit', { roundIndex, pairingIndex, currentRound: state.tournament?.currentRound, role: user?.role, canSubmit: _canSubmitPairing(pairing) });
         if (!_canSubmitPairing(pairing)) {
             showSubmitError('You are not assigned to this room');
             return;
@@ -1713,7 +1718,7 @@ function _showModalError(id, msg) {
 }
 
 function _forceUnlockPageScroll() {
-    document.body.classList.remove('modal-open');
+    document.body.classList.remove('modal-open', 'modal-scroll-unlocked');
     document.body.style.overflow = '';
     document.body.style.paddingRight = '';
     document.documentElement.style.overflow = '';

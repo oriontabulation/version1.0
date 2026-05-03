@@ -117,12 +117,48 @@ export const api = {
     // ── Tournament admins ─────────────────────────────────────────────────
     async getTournamentAdmins(tournamentId) {
         const r = await supabase.from('tournament_admins')
-            .select('id, user_id, added_by, created_at, user_profiles(name, email)')
+            .select('id, user_id, added_by, created_at')
             .eq('tournament_id', tournamentId)
             .order('created_at');
-        return _ok(r, 'getTournamentAdmins');
+        const admins = _ok(r, 'getTournamentAdmins');
+        if (!admins.length) return admins;
+        // user_profiles.id = auth user id — fetch separately since PostgREST
+        // can't infer the join through the auth.users FK
+        const ids = admins.map(a => a.user_id);
+        const pr = await supabase.from('user_profiles')
+            .select('id, name, email, status')
+            .in('id', ids);
+        const profileMap = Object.fromEntries(
+            _ok(pr, 'getTournamentAdminsProfiles').map(p => [p.id, p])
+        );
+        return admins.map(a => ({ ...a, user_profiles: profileMap[a.user_id] || null }));
+    },
+    async getMyTournamentAdminIds() {
+        const user = await api.getCurrentUser();
+        if (!user?.id) return [];
+        const r = await supabase.from('tournament_admins')
+            .select('tournament_id')
+            .eq('user_id', user.id);
+        return _ok(r, 'getMyTournamentAdminIds').map(row => row.tournament_id);
     },
     async addTournamentAdminByEmail(tournamentId, userEmail) {
+        const rpcResult = await supabase.rpc('add_tournament_admin_by_email', {
+            p_tournament_id: tournamentId,
+            p_email: userEmail
+        });
+        if (!rpcResult.error) return Array.isArray(rpcResult.data) ? rpcResult.data[0] : rpcResult.data;
+        const rpcMissing = ['42883', 'PGRST202'].includes(rpcResult.error.code)
+            || /function .*add_tournament_admin_by_email|could not find.*function/i.test(String(rpcResult.error.message || ''));
+        if (!rpcMissing) throw new Error(rpcResult.error.message || 'Failed to add tournament admin');
+
+        const functionResult = await supabase.functions.invoke('add-tournament-admin', {
+            body: { tournamentId, email: userEmail }
+        });
+        if (!functionResult.error && !functionResult.data?.error) return functionResult.data?.admin || functionResult.data;
+        const functionMessage = functionResult.data?.error || functionResult.error?.message;
+        const functionUnavailable = /not found|404|failed to fetch|failed to send|edge function|functions/i.test(String(functionMessage || ''));
+        if (!functionUnavailable) throw new Error(functionMessage || 'Failed to add tournament admin');
+
         const caller = await api.getCurrentUser();
         const email = userEmail.trim().toLowerCase();
         const lookup = await supabase.from('user_profiles')
@@ -130,7 +166,10 @@ export const api = {
             .ilike('email', email)
             .single();
         if (lookup.error || !lookup.data) {
-            throw new Error(`No registered account found for "${userEmail}". The user must sign up first.`);
+            throw new Error(
+                `Admin email lookup is not fully set up yet. Apply the latest Supabase migration ` +
+                `or deploy the add-tournament-admin Edge Function, then try "${userEmail}" again.`
+            );
         }
         const r = await supabase.from('tournament_admins').insert({
             tournament_id: tournamentId,
@@ -141,6 +180,21 @@ export const api = {
     },
     async removeTournamentAdmin(entryId) {
         _ok(await supabase.from('tournament_admins').delete().eq('id', entryId), 'removeTournamentAdmin');
+    },
+    async setTournamentAdminStatus(tournamentId, userId, status) {
+        const r = await supabase.rpc('set_tournament_admin_status', {
+            p_tournament_id: tournamentId,
+            p_user_id: userId,
+            p_status: status
+        });
+        return _ok(r, 'setTournamentAdminStatus');
+    },
+    async deleteTournamentAdminAccount(tournamentId, userId) {
+        const r = await supabase.rpc('delete_tournament_admin_account', {
+            p_tournament_id: tournamentId,
+            p_user_id: userId
+        });
+        return _ok(r, 'deleteTournamentAdminAccount');
     },
     // ── Tournament password lock ──────────────────────────────────────────
     async setTournamentPassword(tournamentId, password) {

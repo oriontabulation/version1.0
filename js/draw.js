@@ -156,8 +156,12 @@ function _normalizePanelRoles(debate) {
     debate.panel.forEach((entry, index) => {
         if (!entry) return;
         if (index === 0) entry.role = 'chair';
-        else if (!entry.role || entry.role === 'chair' || entry.role === 'wing') entry.role = 'panellist';
+        else entry.role = entry.role === 'trainee' ? 'trainee' : 'panellist';
     });
+}
+
+function _normalizeRoundPanels(round) {
+    (round?.debates || []).forEach(debate => _normalizePanelRoles(debate));
 }
 
 function _moveJudgeToPanelFront(debate, judgeId) {
@@ -252,8 +256,8 @@ function _injectDrawCSS() {
   .draw-name-blind:hover { filter:none; }
 
   /* Round Settings Dropdown */
-  .round-settings-wrap { position:relative; display:inline-block; }
-  .round-settings-menu { display:none; position:absolute; right:0; top:calc(100% + 4px); background:white; border:1px solid #e2e8f0; border-radius:10px; box-shadow:0 8px 24px rgba(0,0,0,.12); z-index:200; min-width:170px; padding:4px; }
+  .round-settings-wrap { position:relative; display:inline-block; z-index:20; }
+  .round-settings-menu { display:none; position:absolute; right:0; top:calc(100% + 4px); background:white; border:1px solid #e2e8f0; border-radius:10px; box-shadow:0 8px 24px rgba(0,0,0,.12); z-index:5000; min-width:170px; padding:4px; }
   .round-settings-menu.open { display:block; animation:fadeInDown 0.15s cubic-bezier(0.16,1,0.3,1); }
   .round-settings-menu button { display:flex; align-items:center; gap:8px; width:100%; text-align:left; padding:8px 12px; border:none; background:none; cursor:pointer; font-size:12px; font-weight:500; border-radius:6px; color:#334155; transition:background 0.1s; }
   .round-settings-menu button:hover:not(:disabled) { background:#f8fafc; }
@@ -278,8 +282,8 @@ function _injectDrawCSS() {
   .rmt-status { text-align:center; font-size:13px; }
 
   /* ── Round accordion cards ────────────────────────────────────── */
-  .round-card-wrap { background:#fff; border-radius:14px; border:1px solid #edf0f4; box-shadow:0 2px 8px rgba(0,0,0,.04); margin-bottom:14px; overflow:hidden; }
-  .round-card-hdr { display:flex; align-items:center; justify-content:space-between; padding:14px 16px; gap:10px; cursor:pointer; user-select:none; background:linear-gradient(to bottom,#fafbfc,#fff); border-bottom:1px solid #f1f5f9; flex-wrap:wrap; transition:background .15s ease; }
+  .round-card-wrap { background:#fff; border-radius:14px; border:1px solid #edf0f4; box-shadow:0 2px 8px rgba(0,0,0,.04); margin-bottom:14px; overflow:visible; position:relative; z-index:1; }
+  .round-card-hdr { display:flex; align-items:center; justify-content:space-between; padding:14px 16px; gap:10px; cursor:pointer; user-select:none; background:linear-gradient(to bottom,#fafbfc,#fff); border-bottom:1px solid #f1f5f9; flex-wrap:wrap; transition:background .15s ease; position:relative; z-index:2; }
   .round-card-hdr:hover { background:#f8fafc; }
   .round-card-body { padding:16px; }
   .round-card-body.collapsed { display:none; }
@@ -837,7 +841,6 @@ function renderBPDebateCard(round, debate, roundIdx, debateIdx) {
                 <span style="font-size:12px;font-weight:600;color:${debate.entered?'#10b981':'#f59e0b'}">${statusLabel}</span>
             </div>
             <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
-                ${isAdmin && !debate.entered ? `<button onclick="window.showJudgeManagement(${roundIdx},${debateIdx})" class="btn-secondary" style="padding:4px 10px;font-size:12px">⚖️ Panel</button>` : ''}
                 ${!debate.entered && isAdmin ? `
                     <button onclick="window.showEnterResults(${roundIdx},${debateIdx})" class="btn-primary" style="padding:4px 12px;font-size:12px">Enter Results</button>
                 ` : !debate.entered && isMyRoom ? `
@@ -2120,6 +2123,7 @@ function getPreviousJudgeAllocations(isKnockout) {
 async function persistStandardRound(round, roundNumber) {
     const tournamentId = state.activeTournamentId;
     if (!tournamentId) throw new Error('My Tournament is not ready yet');
+    _normalizeRoundPanels(round);
     if (String(tournamentId).startsWith('__') || String(tournamentId) === 'test_tournament') {
         return null;
     }
@@ -2293,6 +2297,11 @@ function assignSides(teamA, teamB, sideMethod, seedRankA, sidePref = 'random') {
 // ============================================
 
 function showJudgeManagement(roundIdx, debateIdx) {
+    if (!window.__enableJudgeManagementOverlay) {
+        showNotification('Use the inline judge dropdown in the room panel to add judges.', 'info');
+        return;
+    }
+
     const round = state.rounds[roundIdx];
     const debate = round.debates[debateIdx];
     const isSpeechDebate = debate.format === 'speech';
@@ -2513,8 +2522,7 @@ export async function addJudgeToPanel(roundIdx, debateIdx, judgeId) {
         showNotification(`Failed to persist judge assignment: ${error.message}`, 'error');
         return;
     }
-    closeAllModals();
-    setTimeout(() => showJudgeManagement(roundIdx, debateIdx), 100);
+    displayRounds();
 }
 
 export async function removeJudgeFromPanel(roundIdx, debateIdx, judgeId) {
@@ -2531,8 +2539,7 @@ export async function removeJudgeFromPanel(roundIdx, debateIdx, judgeId) {
         showNotification(`Failed to persist judge removal: ${error.message}`, 'error');
         return;
     }
-    closeAllModals();
-    setTimeout(() => showJudgeManagement(roundIdx, debateIdx), 100);
+    displayRounds();
 }
 
 // Toggle a judge's role (chair ↔ wing) within their current panel
@@ -2599,7 +2606,7 @@ export async function moveJudgeToPanel(roundIdx, fromDebateIdx, toDebateIdx, jud
         return;
     }
     closeAllModals();
-    setTimeout(() => showJudgeManagement(roundIdx, toDebateIdx), 100);
+    displayRounds();
 }
 
 // ============================================
@@ -3561,6 +3568,7 @@ export async function submitResults(roundIdx, debateIdx) {
 // ============================================================================
 
 function renderSpeechDebateCard(round, debate, roundIdx, debateIdx) {
+    _normalizePanelRoles(debate);
     const isAdmin   = state.auth?.currentUser?.role === 'admin';
     const isJudge   = state.auth?.currentUser?.role === 'judge';
     const myJudgeId = isJudge ? String(state.auth?.currentUser?.associatedId ?? '') : null;
@@ -3627,11 +3635,8 @@ function renderSpeechDebateCard(round, debate, roundIdx, debateIdx) {
 
     const canScore = !debate.entered && (isAdmin || isMyRoom);
     const canEdit  = debate.entered && !isBlinded;
-    const managePanelBtn = (!debate.entered && isAdmin)
-        ? '<button onclick="window.showJudgeManagement(' + roundIdx + ',' + debateIdx + ')" class="btn-secondary" style="padding:4px 10px;font-size:12px" title="Manage judge panel">⚙️ Panel</button>'
-        : '';
     const btnHtml  = canScore
-        ? managePanelBtn + '<button onclick="window.showEnterResults(' + roundIdx + ',' + debateIdx + ')" class="btn-primary" style="padding:4px 12px;font-size:12px' + (isMyRoom && !isAdmin ? ';background:#7c3aed' : '') + '">📝 ' + (isAdmin ? 'Enter Scores' : 'Submit Scores') + '</button>'
+        ? '<button onclick="window.showEnterResults(' + roundIdx + ',' + debateIdx + ')" class="btn-primary" style="padding:4px 12px;font-size:12px' + (isMyRoom && !isAdmin ? ';background:#7c3aed' : '') + '">📝 ' + (isAdmin ? 'Enter Scores' : 'Submit Scores') + '</button>'
         : (canEdit
             ? (isAdmin ? '<button onclick="window.editResults(' + roundIdx + ',' + debateIdx + ')" class="btn-secondary" style="padding:4px 10px;font-size:12px">✏️ Edit Results</button>' : '')
             : '');
@@ -4695,15 +4700,66 @@ window._setNameDisplay      = _setNameDisplay;
 window._toggleDrawView      = _toggleDrawView;
 window.renderRoundMiniTable = renderRoundMiniTable;
 
+function _restoreRoundSettingsMenu(menu) {
+    if (!menu) return;
+    const roundId = menu.id?.replace('round-settings-', '');
+    const card = roundId ? document.getElementById(`round-card-${roundId}`) : null;
+    const wrap = card?.querySelector('.round-settings-wrap');
+    if (wrap && menu.parentElement !== wrap) wrap.appendChild(menu);
+    menu.classList.remove('round-settings-menu--portal');
+    menu.style.position = '';
+    menu.style.left = '';
+    menu.style.right = '';
+    menu.style.top = '';
+    menu.style.zIndex = '';
+    menu.style.visibility = '';
+}
+
+function _positionRoundSettingsMenu(menu, roundId) {
+    const card = document.getElementById(`round-card-${roundId}`);
+    const trigger = card?.querySelector('.draw-settings-trigger');
+    if (!trigger) return;
+
+    document.body.appendChild(menu);
+    menu.classList.add('round-settings-menu--portal');
+    menu.style.position = 'fixed';
+    menu.style.display = 'block';
+    menu.style.visibility = 'hidden';
+    menu.style.zIndex = '100000';
+
+    const rect = trigger.getBoundingClientRect();
+    const width = menu.offsetWidth || 190;
+    const gap = 6;
+    const left = Math.max(8, Math.min(rect.right - width, window.innerWidth - width - 8));
+    const top = Math.min(rect.bottom + gap, window.innerHeight - menu.offsetHeight - 8);
+    menu.style.left = `${left}px`;
+    menu.style.right = 'auto';
+    menu.style.top = `${Math.max(8, top)}px`;
+    menu.style.visibility = '';
+}
+
 window._toggleRoundSettings = function(roundId) {
     const menu = document.getElementById(`round-settings-${roundId}`);
     if (!menu) return;
     const wasOpen = menu.style.display !== 'none';
-    document.querySelectorAll('.round-settings-menu').forEach(m => { m.style.display = 'none'; });
-    menu.style.display = wasOpen ? 'none' : 'block';
+    document.querySelectorAll('.round-card-wrap').forEach(card => { card.style.zIndex = ''; });
+    document.querySelectorAll('.round-settings-menu').forEach(m => {
+        m.style.display = 'none';
+        _restoreRoundSettingsMenu(m);
+    });
+    if (wasOpen) return;
+    _positionRoundSettingsMenu(menu, roundId);
+    if (!wasOpen) {
+        const card = menu.closest('.round-card-wrap');
+        if (card) card.style.zIndex = '3000';
+    }
 };
 window._closeRoundSettings = function() {
-    document.querySelectorAll('.round-settings-menu').forEach(m => { m.style.display = 'none'; });
+    document.querySelectorAll('.round-settings-menu').forEach(m => {
+        m.style.display = 'none';
+        _restoreRoundSettingsMenu(m);
+    });
+    document.querySelectorAll('.round-card-wrap').forEach(card => { card.style.zIndex = ''; });
 };
 window._editRoundMotion = async function(roundId) {
     const round = (state.rounds || []).find(r => r.id === roundId);
@@ -4723,8 +4779,14 @@ window._editRoundMotion = async function(roundId) {
 };
 if (!window._roundSettingsListenerBound) {
     document.addEventListener('click', () => {
-        document.querySelectorAll('.round-settings-menu').forEach(m => { m.style.display = 'none'; });
+        document.querySelectorAll('.round-settings-menu').forEach(m => {
+            m.style.display = 'none';
+            _restoreRoundSettingsMenu(m);
+        });
+        document.querySelectorAll('.round-card-wrap').forEach(card => { card.style.zIndex = ''; });
     });
+    window.addEventListener('resize', () => window._closeRoundSettings?.());
+    window.addEventListener('scroll', () => window._closeRoundSettings?.(), true);
     window._roundSettingsListenerBound = true;
 }
 window.showEnterResults     = showEnterResults;
@@ -5378,6 +5440,7 @@ window._openOutroundResultModal = function(roundIdx, pairingIdx) {
 
 
 export function renderRoundCard(round, actualRoundIdx, previousMeetings) {
+    _normalizeRoundPanels(round);
     const debates = round.debates || [];
     const entered = debates.filter(d => d.entered).length;
     const total   = debates.length;

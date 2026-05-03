@@ -402,7 +402,41 @@ function _defaultPublishState(tournamentId = DEFAULT_TOURNAMENT_ID) {
 }
 
 function _shouldAutoCreateTournamentForCurrentUser() {
-    return state.auth?.isAuthenticated && state.auth.currentUser?.role === 'admin';
+    const user = state.auth?.currentUser;
+    return state.auth?.isAuthenticated && (user?.baseRole || user?.role) === 'admin';
+}
+
+async function applyActiveTournamentAccess(activeId = state.activeTournamentId) {
+    const user = state.auth?.currentUser;
+    if (!state.auth?.isAuthenticated || !user?.id || !activeId) return false;
+
+    const baseRole = user.baseRole || user.role || 'public';
+    user.baseRole = baseRole;
+
+    const tournament = state.tournaments?.[activeId];
+    const isGlobalAdmin = baseRole === 'admin';
+    const isOwner = !!(tournament?.owner_id && String(tournament.owner_id) === String(user.id));
+    let isListedAdmin = false;
+
+    if (!isGlobalAdmin && !isOwner && !String(activeId).startsWith('__')) {
+        try {
+            const admins = await api.getTournamentAdmins(activeId);
+            isListedAdmin = admins.some(a => String(a.user_id) === String(user.id));
+        } catch (_) {
+            isListedAdmin = false;
+        }
+    }
+
+    const canManage = isGlobalAdmin || isOwner || isListedAdmin;
+    user.role = canManage ? 'admin' : baseRole;
+    user.tournamentRole = canManage ? 'admin' : null;
+    user.isTournamentOwner = isOwner;
+    user.isTournamentAdmin = isListedAdmin;
+
+    updateTabsForRole();
+    updateNavDropdowns();
+    updateAdminNavVisibility();
+    return canManage;
 }
 
 async function ensureDefaultTournamentForAdmin() {
@@ -634,6 +668,7 @@ function _setupRealtimeSync(tournamentId) {
 // Exposed so admin.js can re-wire channels after a tournament switch
 window._setupRealtimeSyncForTournament = id => { _cleanupRealtimeChannels(); _setupRealtimeSync(id); };
 window.ensureDefaultTournamentForAdmin = ensureDefaultTournamentForAdmin;
+window.applyActiveTournamentAccess = applyActiveTournamentAccess;
 
 // ── App initialization ────────────────────────────────────────────────────────
 async function init() {
@@ -710,10 +745,31 @@ async function init() {
             ];
         }
 
+        const currentUser = state.auth?.currentUser;
+        const currentBaseRole = currentUser?.baseRole || currentUser?.role || 'public';
+        let manageableTournamentIds = [];
+        if (state.auth?.isAuthenticated && currentUser?.id && currentBaseRole !== 'admin') {
+            manageableTournamentIds = await api.getMyTournamentAdminIds().catch(() => []);
+        }
+
         // 4. Determine active tournament
         let activeId = storedActiveId;
         if (!activeId || !tournaments.find(t => t.id === activeId)) {
             activeId = tournaments[0]?.id;
+        }
+        if (state.auth?.isAuthenticated && currentUser?.id && currentBaseRole !== 'admin') {
+            const managed = tournaments.find(t =>
+                String(t.owner_id) === String(currentUser.id) ||
+                manageableTournamentIds.some(id => String(id) === String(t.id))
+            );
+            const storedTournament = tournaments.find(t => String(t.id) === String(storedActiveId));
+            const storedIsManageable = storedTournament && (
+                String(storedTournament.owner_id) === String(currentUser.id) ||
+                manageableTournamentIds.some(id => String(id) === String(storedTournament.id))
+            );
+            if (managed && !storedIsManageable) {
+                activeId = managed.id;
+            }
         }
 
         // 5. Use prefetched data if it matched the resolved tournament, else fetch now
@@ -741,6 +797,7 @@ async function init() {
 
         // 6. Hydrate in-memory state cache
         hydrateState({ activeTournamentId: activeId, tournaments, teams, judges, rounds, publish });
+        await applyActiveTournamentAccess(activeId);
         if (activeId === LOCAL_TEST_TOURNAMENT_ID && localTest?.bracket) {
             state.tournament = localTest.bracket;
         }

@@ -547,6 +547,7 @@ async function adminSwitchTournament(id, opts = {}) {
 
         localStorage.setItem('orion_active_tournament_id', id);
         await _reloadTournamentCatalog(id, { teams, judges, rounds, publish });
+        await window.applyActiveTournamentAccess?.(id);
         window._setupRealtimeSyncForTournament?.(id);
 
         // Debugging logs to help diagnose issues when switching tournaments
@@ -632,7 +633,7 @@ async function adminTournamentSettings(tournId, tournName) {
                 <h3 style="margin:0;font-size:14px;font-weight:700;color:#1e293b;">Tournament Admins</h3>
             </div>
             <p style="font-size:12px;color:#64748b;margin:0 0 14px;">
-                These users can fully manage this tournament. Add them by their registered email address.
+                These registered users can fully manage this tournament. Suspend blocks login; delete removes the account.
             </p>
             <div id="ts-admins-list" style="margin-bottom:12px;min-height:36px;">
                 <span style="color:#94a3b8;font-size:13px;">Loading…</span>
@@ -701,12 +702,13 @@ async function adminTournamentSettings(tournId, tournName) {
 
     overlay.appendChild(modal);
     document.body.appendChild(overlay);
+    document.body.classList.remove('modal-scroll-unlocked');
     document.body.classList.add('modal-open');
 
     _tsRefreshAdminList(tournId);
 }
 
-async function _tsRefreshAdminList(tournId) {
+let _tsRefreshAdminList = async function _tsRefreshAdminList(tournId) {
     const list = document.getElementById('ts-admins-list');
     if (!list) return;
     try {
@@ -733,7 +735,57 @@ async function _tsRefreshAdminList(tournId) {
     } catch (e) {
         list.innerHTML = `<p style="color:#dc2626;font-size:13px;margin:0;">Failed to load admins: ${escapeHTML(e.message)}</p>`;
     }
+};
+
+async function _tsRefreshAdminListExpanded(tournId) {
+    const list = document.getElementById('ts-admins-list');
+    if (!list) return;
+    try {
+        const admins = await api.getTournamentAdmins(tournId);
+        if (!admins.length) {
+            list.innerHTML = `<p style="color:#94a3b8;font-size:13px;margin:0;">No extra admins assigned.</p>`;
+            return;
+        }
+        list.innerHTML = admins.map(a => {
+            const name = a.user_profiles?.name || '';
+            const email = a.user_profiles?.email || '—';
+            const status = a.user_profiles?.status || 'active';
+            const isSuspended = status === 'suspended';
+            const isSelf = String(a.user_id) === String(state.auth?.currentUser?.id);
+            return `
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;margin-bottom:6px;">
+                <div>
+                    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                        <span style="font-size:13px;font-weight:600;color:#1e293b;">${escapeHTML(name || email)}</span>
+                        <span style="font-size:10px;font-weight:800;text-transform:uppercase;padding:2px 7px;border-radius:999px;background:${isSuspended ? '#fee2e2' : '#dcfce7'};color:${isSuspended ? '#991b1b' : '#166534'};">${escapeHTML(status)}</span>
+                    </div>
+                    ${name ? `<div style="font-size:11px;color:#64748b;">${escapeHTML(email)}</div>` : ''}
+                    ${isSelf ? `<div style="font-size:11px;color:#6366f1;margin-top:2px;">This is you</div>` : ''}
+                </div>
+                <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;">
+                    <button onclick="window._tsToggleAdminStatus('${tournId}','${a.user_id}','${isSuspended ? 'active' : 'suspended'}')"
+                            ${isSelf ? 'disabled title="You cannot suspend yourself"' : ''}
+                            style="padding:5px 10px;background:${isSuspended ? '#dcfce7' : '#fff7ed'};color:${isSuspended ? '#166534' : '#c2410c'};border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;opacity:${isSelf ? '.45' : '1'};">
+                        ${isSuspended ? 'Reactivate' : 'Suspend'}
+                    </button>
+                    <button onclick="window._tsRemoveAdmin('${a.id}','${tournId}')"
+                            style="padding:5px 10px;background:#f1f5f9;color:#475569;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;">
+                        Remove
+                    </button>
+                    <button onclick="window._tsDeleteAdminAccount('${tournId}','${a.user_id}')"
+                            ${isSelf ? 'disabled title="You cannot delete yourself"' : ''}
+                            style="padding:5px 10px;background:#fee2e2;color:#dc2626;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;opacity:${isSelf ? '.45' : '1'};">
+                        Delete
+                    </button>
+                </div>
+            </div>`;
+        }).join('');
+    } catch (e) {
+        list.innerHTML = `<p style="color:#dc2626;font-size:13px;margin:0;">Failed to load admins: ${escapeHTML(e.message)}</p>`;
+    }
 }
+
+_tsRefreshAdminList = _tsRefreshAdminListExpanded;
 
 window._tsAddAdmin = async function(tournId) {
     const input = document.getElementById('ts-admin-email');
@@ -757,9 +809,38 @@ window._tsRemoveAdmin = async function(entryId, tournId) {
     try {
         await api.removeTournamentAdmin(entryId);
         await _tsRefreshAdminList(tournId);
+        const canStillManage = await window.applyActiveTournamentAccess?.(tournId);
+        if (!canStillManage && String(state.activeTournamentId) === String(tournId)) {
+            closeAllModals();
+            window.switchTab?.('public');
+        }
         showNotification('Admin removed', 'success');
     } catch (e) {
         showNotification(`Remove failed: ${e.message}`, 'error');
+    }
+};
+
+window._tsToggleAdminStatus = async function(tournId, userId, nextStatus) {
+    const verb = nextStatus === 'suspended' ? 'suspend' : 'reactivate';
+    if (!confirm(`Really ${verb} this admin account?`)) return;
+    try {
+        await api.setTournamentAdminStatus(tournId, userId, nextStatus);
+        await _tsRefreshAdminList(tournId);
+        showNotification(nextStatus === 'suspended' ? 'Admin suspended' : 'Admin reactivated', 'success');
+    } catch (e) {
+        showNotification(`Status update failed: ${e.message}`, 'error');
+    }
+};
+
+window._tsDeleteAdminAccount = async function(tournId, userId) {
+    if (!confirm('Delete this admin account permanently? This removes the user login, not just tournament access.')) return;
+    if (!confirm('Final confirmation: permanently delete this registered account?')) return;
+    try {
+        await api.deleteTournamentAdminAccount(tournId, userId);
+        await _tsRefreshAdminList(tournId);
+        showNotification('Admin account deleted', 'success');
+    } catch (e) {
+        showNotification(`Delete failed: ${e.message}`, 'error');
     }
 };
 

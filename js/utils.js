@@ -33,11 +33,33 @@ function showNotification(message, type = 'info') {
 // Close all modals
 function closeAllModals() {
     document.querySelectorAll('.modal-overlay, .modal').forEach(el => el.remove());
-    document.body.classList.remove('modal-open');
+    document.body.classList.remove('modal-open', 'modal-scroll-unlocked');
     document.body.style.overflow = '';
     document.body.style.paddingRight = '';
     document.documentElement.style.overflow = '';
 }
+
+// Escape = unlock body scroll without closing the modal.
+// The modal stays visible (position:fixed over the viewport); the page behind
+// it becomes scrollable so you can access any content around the modal.
+// Pressing Escape again after scroll is already unlocked closes the modal.
+(function _initEscapeScrollRelease() {
+    document.addEventListener('keydown', function(e) {
+        if (e.key !== 'Escape') return;
+        if (!document.querySelector('.modal-overlay')) return;
+        if (!document.body.classList.contains('modal-scroll-unlocked')) {
+            // First Escape: release scroll lock, keep modal open
+            document.body.classList.remove('modal-open');
+            document.body.classList.add('modal-scroll-unlocked');
+            document.body.style.overflow = '';
+            document.body.style.paddingRight = '';
+            document.documentElement.style.overflow = '';
+        } else {
+            // Second Escape: close the modal
+            closeAllModals();
+        }
+    });
+}());
 
 // Update public counts
 function updatePublicCounts() {
