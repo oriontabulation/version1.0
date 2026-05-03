@@ -11,7 +11,7 @@ import { showNotification, escapeHTML, closeAllModals } from './utils.js';
 import { updateTabsForRole, updateNavDropdowns } from './tab.js';
 import { displayAdminRounds } from './draw.js';
 // renderRoundMiniTable will be assigned via window after load
-import { calculateBreak } from './knockout.js';
+import { calculateBreak, suggestPartialConfig } from './knockout.js';
 import { exportData, fullReset } from './file-manager.js';
 import { getLocalUsers, registerLocalUser, deleteLocalUser, updateLocalUserRole } from './local-auth.js';
 
@@ -253,7 +253,7 @@ function _updateMainHeaderForAdmin(show) {
         if (adminInfo) {
             adminInfo.style.display = 'flex';
             if (tournamentName) {
-                tournamentName.textContent = tour?.name || 'No Tournament';
+                tournamentName.textContent = tour?.name || 'My Tournament';
                 tournamentName.title = tour?.name || '';
             }
             if (userNameDisplay) {
@@ -292,7 +292,7 @@ function _buildAdminHeader() {
                     <button class="adm-hamburger" onclick="window.toggleAdmSidebar()" aria-label="Open navigation">
                         <span></span><span></span><span></span>
                     </button>
-                    <span class="adm-top-bar-tournament">${escapeHTML(tour?.name || 'No Tournament')}</span>
+                    <span class="adm-top-bar-tournament">${escapeHTML(tour?.name || 'My Tournament')}</span>
                     <span class="adm-top-bar-user">${escapeHTML(user?.name || 'Admin')}</span>
                 </div>
                 <div class="adm-top-bar-right">
@@ -529,9 +529,18 @@ async function adminSwitchTournament(id, opts = {}) {
     showNotification('Loading tournament data...', 'info');
     try {
         const [teams, judges, rounds] = await Promise.all([
-            api.getTeams(id),
-            api.getJudges(id),
-            api.getRounds(id),
+            api.getTeams(id).catch(error => {
+                console.warn('[admin] teams load failed:', error);
+                return [];
+            }),
+            api.getJudges(id).catch(error => {
+                console.warn('[admin] judges load failed:', error);
+                return [];
+            }),
+            api.getRounds(id).catch(error => {
+                console.warn('[admin] rounds load failed:', error);
+                return [];
+            }),
         ]);
         const publish = await api.getPublishState(id).catch(() => ({}));
 
@@ -580,7 +589,7 @@ async function adminDeleteTournament(id) {
             await adminSwitchTournament(remaining[0].id, { skipConfirm: true });
         } else {
             localStorage.removeItem('orion_active_tournament_id');
-            hydrateState({ activeTournamentId: null, tournaments: [], teams: [], judges: [], rounds: [], publish: {} });
+            hydrateState({ tournaments: [] });
             adminSwitchSection('tournaments');
         }
         showNotification('Tournament deleted', 'success');
@@ -911,41 +920,75 @@ function _sectionBreak() {
             <div class="adm-break-controls-stat-lbl">Breaking</div>
         </div>` : ''}
         <div class="adm-break-controls-divider"></div>
-        <div class="adm-break-size-col">
-            <label class="adm-label adm-label--light">Break Size</label>
-            <select id="adm-break-size" class="adm-select adm-select--dark adm-select--dark-wide">
-                ${isBP ? `
-                    <option value="4">Grand Final (4 teams)</option>
-                    <option value="8">Semi-Finals (8 teams)</option>
-                    <option value="16" selected>Quarter-Finals (16 teams)</option>
-                    <option value="32">Octo-Finals (32 teams)</option>
-                    <option value="64">Round of 64 (64 teams)</option>
-                    <option disabled>──────────</option>
-                    <option value="6p">Partial Finals (6 total: 2 bye + 4 play)</option>
-                    <option value="12p">Partial Semi-Finals (12 total: 4 bye + 8 play)</option>
-                    <option value="24p">Partial Quarter-Finals (24 total: 8 bye + 16 play)</option>
-                    <option value="48p">Partial Octo-Finals (48 total: 16 bye + 32 play)</option>
-                ` : `
-                    <option value="2">Grand Final (2 teams)</option>
-                    <option value="4">Semi-Finals (4 teams)</option>
-                    <option value="8" selected>Quarter-Finals (8 teams)</option>
-                    <option value="16">Octo-Finals (16 teams)</option>
-                    <option value="32">Round of 32 (32 teams)</option>
-                    <option value="64">Round of 64 (64 teams)</option>
-                    <option disabled>──────────</option>
-                    <option value="3p">Partial Finals (3 total: 1 bye + 2 play)</option>
-                    <option value="6p">Partial Semi-Finals (6 total: 2 bye + 4 play)</option>
-                    <option value="12p">Partial Quarter-Finals (12 total: 4 bye + 8 play)</option>
-                    <option value="24p">Partial Octo-Finals (24 total: 8 bye + 16 play)</option>
-                `}
-            </select>
+        <div class="adm-break-size-col" style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;">
+            <div>
+                <label class="adm-label adm-label--light">Break Size</label>
+                <select id="adm-break-size" class="adm-select adm-select--dark adm-select--dark-wide" onchange="window._admBreakOptionChange()">
+                    ${isBP ? `
+                        <option value="direct:4">Grand Final (4 teams)</option>
+                        <option value="direct:8">Semi-Finals (8 teams)</option>
+                        <option value="direct:16" selected>Quarter-Finals (16 teams)</option>
+                        <option value="direct:32">Octo-Finals (32 teams)</option>
+                        <option value="direct:64">Round of 64 (64 teams)</option>
+                        <option value="partial:2:4">Partial Finals (6 total: 2 bye + 4 play)</option>
+                        <option value="partial:4:8">Partial Semi-Finals (12 total: 4 bye + 8 play)</option>
+                        <option value="partial:8:16">Partial Quarter-Finals (24 total: 8 bye + 16 play)</option>
+                        <option value="partial:16:32">Partial Octo-Finals (48 total: 16 bye + 32 play)</option>
+                    ` : `
+                        <option value="direct:2">Grand Final (2 teams)</option>
+                        <option value="direct:4">Semi-Finals (4 teams)</option>
+                        <option value="direct:8" selected>Quarter-Finals (8 teams)</option>
+                        <option value="direct:16">Octo-Finals (16 teams)</option>
+                        <option value="direct:32">Round of 32 (32 teams)</option>
+                        <option value="direct:64">Round of 64 (64 teams)</option>
+                        <option value="partial:1:2">Partial Finals (3 total: 1 bye + 2 play)</option>
+                        <option value="partial:2:4">Partial Semi-Finals (6 total: 2 bye + 4 play)</option>
+                        <option value="partial:4:8">Partial Quarter-Finals (12 total: 4 bye + 8 play)</option>
+                        <option value="partial:8:16">Partial Octo-Finals (24 total: 8 bye + 16 play)</option>
+                    `}
+                    <option value="custom">Custom break size...</option>
+                </select>
+            </div>
+            <div id="adm-custom-break-inputs" style="display:none;gap:8px;align-items:flex-end;flex-wrap:wrap;">
+                <div>
+                    <label class="adm-label adm-label--light">Custom Total</label>
+                    <input type="number" id="adm-break-total" min="2" max="100"
+                           value="${isBP ? 16 : 8}"
+                           class="adm-select adm-select--dark" style="width:82px;"
+                           oninput="window._admBreakTotalChange()">
+                </div>
+                <div>
+                <label class="adm-label adm-label--light">Type</label>
+                <select id="adm-break-type" class="adm-select adm-select--dark" onchange="window._admBreakTypeChange()">
+                    <option value="direct">Direct</option>
+                    <option value="partial">Partial</option>
+                </select>
+                </div>
+            </div>
+            <div id="adm-partial-inputs" style="display:none;gap:6px;align-items:flex-end;flex-wrap:wrap;">
+                <div>
+                    <label class="adm-label adm-label--light">Seeded (byes)</label>
+                    <input type="number" id="adm-break-seeded" min="0" max="98" placeholder="e.g. 8"
+                           class="adm-select adm-select--dark" style="width:72px;"
+                           oninput="window._admPartialSummary()">
+                </div>
+                <div>
+                    <label class="adm-label adm-label--light">Playoff</label>
+                    <input type="number" id="adm-break-playoff" min="2" max="98" placeholder="e.g. 16"
+                           class="adm-select adm-select--dark" style="width:72px;"
+                           oninput="window._admPartialSummary()">
+                </div>
+                <button onclick="window._admAutoSuggestPartial()" title="Auto-suggest seeded/playoff split"
+                    style="padding:5px 8px;font-size:11px;border-radius:6px;border:1px solid #f59e0b;background:transparent;cursor:pointer;color:#f59e0b;align-self:flex-end;">
+                    ✨ Auto
+                </button>
+                <span id="adm-partial-summary" style="font-size:11px;align-self:flex-end;padding-bottom:6px;white-space:nowrap;"></span>
+            </div>
         </div>
         <div class="adm-break-controls-actions">
             <button class="adm-btn light sm" onclick="window.adminPreviewBreak()">Preview</button>
-            <button class="adm-btn glow sm" onclick="window.adminConfirmBreak()">✅ Confirm Break</button>
-            <div class="adm-break-controls-divider"></div>           
-            <button class="adm-btn light sm" onclick="window.generateKnockout?.()">Start Outrounds</button>
-            <button class="adm-btn light sm" onclick="window.switchTab('knockout')">View Draw →</button>
+            <button class="adm-btn glow sm" onclick="window.adminConfirmBreak()">Confirm &amp; Open Draw</button>
+            
         </div>        
     </div>
 
@@ -995,8 +1038,8 @@ function _sectionBreak() {
             ${breakingTable}
             ${breaking.length > 0 ? `
             <div class="adm-brk-pane-actions">
-                <button class="adm-btn primary" onclick="window.generateKnockout?.()">⚔️ Start Knockout</button>
-                <button class="adm-btn secondary" onclick="window.switchTab('knockout')">View Bracket →</button>
+                <button class="adm-btn primary" onclick="window.generateKnockout?.()">Open Outround Draw</button>
+                <button class="adm-btn secondary" onclick="window.switchTab('draw')">View Draw</button>
             </div>` : ''}
         </div>
         <div id="brk-pane-inelig" class="adm-brk-pane" style="display:none">
@@ -1430,7 +1473,7 @@ function _sectionSample() {
     return `
     <div class="adm-section-head">
         <h2>🚀 Test Data</h2>
-        <p>Generate a realistic sample tournament to explore all features without setting up real participants.</p>
+        <p>Generate a realistic <strong>Test Tournament</strong> to explore all features without setting up real participants.</p>
     </div>
 
     <div class="adm-two-col">
@@ -1496,7 +1539,7 @@ function _sectionSample() {
             </div>
 
             <div class="adm-info-banner adm-info-banner--mt">
-                ⚠️ <strong>Warning:</strong> This will replace all existing tournament data. Export first if needed.
+                ⚠️ <strong>Warning:</strong> This will replace the generated Test Tournament data. Export first if needed.
             </div>
 
             <div class="adm-card-actions">
@@ -1858,9 +1901,9 @@ function _computeBreak(size) {
 }
 
 export function adminPreviewBreak() {
-    const sizeVal = document.getElementById('adm-break-size')?.value || '8';
-    const isPartial = sizeVal.endsWith('p');
-    const totalSize = parseInt(sizeVal) || 8;
+    const config = _readAdminBreakConfig();
+    if (!config) return;
+    const { totalSize, isPartial, seededCount, playoffCount } = config;
     const catId = window._brkSelectedCat || '';
     const isBP = (activeTournament()?.format === 'bp');
     const winsLabel = isBP ? '1st/2nd' : 'Wins';
@@ -1880,22 +1923,23 @@ export function adminPreviewBreak() {
         </tr>`;
     };
 
+    if (!_validateAdminBreakConfig(config, isBP)) return;
+
     let bodyHtml;
     if (isPartial) {
-        const reservedCount = Math.floor(totalSize / 3);
-        const byeTeams  = breaking.slice(0, reservedCount);
-        const playTeams = breaking.slice(reservedCount);
+        const byeTeams  = breaking.slice(0, seededCount);
+        const playTeams = breaking.slice(seededCount, totalSize);
         bodyHtml = `
             ${byeTeams.map((t,i) => row(t, i+1, 'green', ' 🏅')).join('')}
             <tr class="adm-brk-bubble-row"><td colspan="6">— Preliminary Elimination Round (${playTeams.length} teams play) —</td></tr>
-            ${playTeams.map((t,i) => row(t, reservedCount+i+1, 'amber')).join('')}`;
+            ${playTeams.map((t,i) => row(t, seededCount+i+1, 'amber')).join('')}`;
     } else {
         bodyHtml = breaking.map((t,i) => row(t, i+1)).join('');
     }
 
     let html = `
         ${isPartial ? `<div style="padding:8px 12px;background:#fef9e7;border-radius:6px;margin-bottom:10px;font-size:12px;color:#92400e;">
-            <strong>Partial Break:</strong> top ${Math.floor(totalSize/3)} get byes (🏅), seeds ${Math.floor(totalSize/3)+1}–${totalSize} play the Preliminary Elimination Round.
+            <strong>Partial Break:</strong> top ${seededCount} get byes (🏅), seeds ${seededCount+1}–${totalSize} play the Preliminary Elimination Round.
         </div>` : ''}
         <div class="adm-table-wrap"><table class="adm-table">
             <thead><tr><th>Seed</th><th>Team</th><th>Code</th><th>${winsLabel}</th><th>Points</th><th>Avg</th></tr></thead>
@@ -1925,26 +1969,16 @@ export function adminPreviewBreak() {
 }
 
 export function adminConfirmBreak() {
-    const sizeVal = document.getElementById('adm-break-size')?.value || '8';
-    const isPartial = sizeVal.endsWith('p');
-    const totalSize = parseInt(sizeVal) || 8;
+    const config = _readAdminBreakConfig();
+    if (!config) return;
+    const { totalSize, isPartial, seededCount, playoffCount } = config;
     const catId = window._brkSelectedCat || '';
+    const bp = activeTournament()?.format === 'bp';
 
-    // Reset break data for all teams in scope
-    (state.teams||[]).forEach(t => {
-        if (!catId) {
-            t.broke = false; t.seed = null; t.reserved = false;
-        } else {
-            const matches = (typeof window.teamMatchesCategory === 'function')
-                ? window.teamMatchesCategory(t, catId)
-                : (t.categories||[]).includes(catId);
-            if (matches) {
-                if (!t.categoryBreaks) t.categoryBreaks = {};
-                t.categoryBreaks[catId] = { broke: false, seed: null, reserved: false };
-            }
-        }
-    });
+    // Validate partial break inputs BEFORE touching any state
+    if (!_validateAdminBreakConfig(config, bp)) return;
 
+    // Compute eligible list before resetting (eligibility uses breakIneligible, not broke)
     const eligible = (state.teams||[])
         .filter(t => !_isCatIneligible(t, catId))
         .filter(t => {
@@ -1960,9 +1994,24 @@ export function adminConfirmBreak() {
         return;
     }
 
+    // All validations passed — now safe to reset
+    (state.teams||[]).forEach(t => {
+        if (!catId) {
+            t.broke = false; t.seed = null; t.reserved = false;
+        } else {
+            const matches = (typeof window.teamMatchesCategory === 'function')
+                ? window.teamMatchesCategory(t, catId)
+                : (t.categories||[]).includes(catId);
+            if (matches) {
+                if (!t.categoryBreaks) t.categoryBreaks = {};
+                t.categoryBreaks[catId] = { broke: false, seed: null, reserved: false };
+            }
+        }
+    });
+
     let reservedCount = 0;
     if (isPartial) {
-        reservedCount = Math.floor(totalSize / 3);
+        reservedCount = seededCount;
         eligible.slice(0, reservedCount).forEach((t, i) => {
             if (catId) {
                 if (!t.categoryBreaks) t.categoryBreaks = {};
@@ -2012,13 +2061,201 @@ export function adminConfirmBreak() {
     const prev = document.getElementById('adm-break-preview');
     if (prev) prev.style.display = 'none';
     setTimeout(() => {
-        adminSwitchSection('break');
+        window.generateKnockout?.();
         window.renderBreakDisplay?.();
     }, 150);
 }
 
 // Backward-compat alias
 export function adminCalculateBreak() { adminConfirmBreak(); }
+
+// ── Admin break UI helpers ────────────────────────────────────────────────
+
+function _readAdminBreakConfig() {
+    const selected = document.getElementById('adm-break-size')?.value || 'custom';
+    let totalSize = 0;
+    let isPartial = false;
+    let seededCount = 0;
+    let playoffCount = 0;
+
+    if (selected.startsWith('direct:')) {
+        totalSize = parseInt(selected.split(':')[1], 10);
+    } else if (selected.startsWith('partial:')) {
+        const [, seeded, playoff] = selected.split(':');
+        seededCount = parseInt(seeded, 10) || 0;
+        playoffCount = parseInt(playoff, 10) || 0;
+        totalSize = seededCount + playoffCount;
+        isPartial = true;
+    } else {
+        totalSize = parseInt(document.getElementById('adm-break-total')?.value || '0', 10);
+        isPartial = document.getElementById('adm-break-type')?.value === 'partial';
+        if (isPartial) {
+            seededCount  = parseInt(document.getElementById('adm-break-seeded')?.value  || '0', 10) || 0;
+            playoffCount = parseInt(document.getElementById('adm-break-playoff')?.value || '0', 10) || 0;
+        }
+    }
+
+    if (!totalSize || totalSize < 2 || totalSize > 100) {
+        showNotification('Enter a break size between 2 and 100 teams', 'error');
+        return null;
+    }
+
+    return { totalSize, isPartial, seededCount, playoffCount };
+}
+
+function _validateAdminBreakConfig(config, bp) {
+    const { totalSize, isPartial, seededCount, playoffCount } = config;
+    const perRoom = bp ? 4 : 2;
+    const minFull = bp ? 4 : 2;
+
+    if (!isPartial) {
+        if (totalSize < minFull) {
+            showNotification(`${bp ? 'BP' : 'WSDC'} needs at least ${minFull} breaking teams`, 'error');
+            return false;
+        }
+        if ((totalSize & (totalSize - 1)) !== 0 || totalSize % perRoom !== 0) {
+            showNotification(`Direct ${bp ? 'BP' : 'WSDC'} breaks must be standard bracket sizes (${bp ? '4, 8, 16, 32...' : '2, 4, 8, 16...'})`, 'error');
+            return false;
+        }
+        return true;
+    }
+
+    if (seededCount < 0 || playoffCount < minFull) {
+        showNotification(`Seeded teams cannot be negative; playoff teams must be at least ${minFull}`, 'error');
+        return false;
+    }
+    if (seededCount + playoffCount !== totalSize) {
+        showNotification(`Seeded (${seededCount}) + Playoff (${playoffCount}) must equal total break size (${totalSize})`, 'error');
+        return false;
+    }
+    if ((playoffCount & (playoffCount - 1)) !== 0 || playoffCount % perRoom !== 0) {
+        showNotification(`Playoff teams must be a valid first-round bracket size (${bp ? '4, 8, 16...' : '2, 4, 8...'})`, 'error');
+        return false;
+    }
+
+    const advancers = playoffCount / 2;
+    const round2Size = advancers + seededCount;
+    if (round2Size < minFull || (round2Size & (round2Size - 1)) !== 0 || round2Size % perRoom !== 0) {
+        showNotification(`Invalid partial break: ${playoffCount} playoff teams create ${round2Size} teams in the next round`, 'error');
+        return false;
+    }
+    return true;
+}
+
+function _isStandardAdminBreakSize(total, bp) {
+    const perRoom = bp ? 4 : 2;
+    const minFull = bp ? 4 : 2;
+    return total >= minFull && (total & (total - 1)) === 0 && total % perRoom === 0;
+}
+
+window._admBreakOptionChange = function() {
+    const selected = document.getElementById('adm-break-size')?.value || 'custom';
+    const customWrap = document.getElementById('adm-custom-break-inputs');
+    const partialWrap = document.getElementById('adm-partial-inputs');
+    const totalEl = document.getElementById('adm-break-total');
+    const typeEl = document.getElementById('adm-break-type');
+    const seededEl = document.getElementById('adm-break-seeded');
+    const playoffEl = document.getElementById('adm-break-playoff');
+
+    const isCustom = selected === 'custom';
+    if (customWrap) customWrap.style.display = isCustom ? 'flex' : 'none';
+
+    if (selected.startsWith('direct:')) {
+        const total = parseInt(selected.split(':')[1], 10);
+        if (totalEl) totalEl.value = total;
+        if (typeEl) typeEl.value = 'direct';
+        if (partialWrap) partialWrap.style.display = 'none';
+    } else if (selected.startsWith('partial:')) {
+        const [, seeded, playoff] = selected.split(':');
+        if (totalEl) totalEl.value = (parseInt(seeded, 10) || 0) + (parseInt(playoff, 10) || 0);
+        if (typeEl) typeEl.value = 'partial';
+        if (seededEl) seededEl.value = seeded;
+        if (playoffEl) playoffEl.value = playoff;
+        if (partialWrap) partialWrap.style.display = 'flex';
+    } else {
+        window._admBreakTypeChange();
+    }
+    window._admPartialSummary();
+};
+
+window._admBreakTotalChange = function() {
+    const selector = document.getElementById('adm-break-size');
+    if (selector && selector.value !== 'custom') selector.value = 'custom';
+
+    const total = parseInt(document.getElementById('adm-break-total')?.value || '0', 10);
+    const bp = activeTournament()?.format === 'bp';
+    const typeEl = document.getElementById('adm-break-type');
+
+    if (total && !_isStandardAdminBreakSize(total, bp)) {
+        const config = suggestPartialConfig(total, bp);
+        if (config) {
+            if (typeEl) typeEl.value = 'partial';
+            const seededEl = document.getElementById('adm-break-seeded');
+            const playoffEl = document.getElementById('adm-break-playoff');
+            if (seededEl) seededEl.value = config.reserved;
+            if (playoffEl) playoffEl.value = config.breaking;
+        }
+    }
+
+    window._admBreakTypeChange();
+    window._admPartialSummary();
+};
+
+window._admBreakTypeChange = function() {
+    const selected = document.getElementById('adm-break-size')?.value || 'custom';
+    const isPartial = selected.startsWith('partial:') ||
+        (selected === 'custom' && document.getElementById('adm-break-type')?.value === 'partial');
+    const partialInputs = document.getElementById('adm-partial-inputs');
+    if (partialInputs) partialInputs.style.display = isPartial ? 'flex' : 'none';
+    if (isPartial && selected === 'custom') {
+        const total = parseInt(document.getElementById('adm-break-total')?.value || '0', 10);
+        const seeded = parseInt(document.getElementById('adm-break-seeded')?.value || '0', 10) || 0;
+        const playoff = parseInt(document.getElementById('adm-break-playoff')?.value || '0', 10) || 0;
+        if (total && seeded + playoff !== total) {
+            const config = suggestPartialConfig(total, activeTournament()?.format === 'bp');
+            if (config) {
+                const seededEl = document.getElementById('adm-break-seeded');
+                const playoffEl = document.getElementById('adm-break-playoff');
+                if (seededEl) seededEl.value = config.reserved;
+                if (playoffEl) playoffEl.value = config.breaking;
+            }
+        }
+    }
+    if (isPartial) window._admPartialSummary();
+};
+
+window._admPartialSummary = function() {
+    const total   = parseInt(document.getElementById('adm-break-total')?.value   || '0', 10);
+    const seeded  = parseInt(document.getElementById('adm-break-seeded')?.value  || '',  10);
+    const playoff = parseInt(document.getElementById('adm-break-playoff')?.value || '',  10);
+    const el = document.getElementById('adm-partial-summary');
+    if (!el) return;
+    if (!total || isNaN(seeded) || isNaN(playoff)) { el.textContent = ''; return; }
+    const sum = seeded + playoff;
+    const ok  = sum === total;
+    el.textContent = ok ? `✓ ${sum} = ${total}` : `⚠️ ${sum} ≠ ${total}`;
+    el.style.color = ok ? '#4ade80' : '#f87171';
+};
+
+window._admAutoSuggestPartial = function() {
+    const selector = document.getElementById('adm-break-size');
+    if (selector) selector.value = 'custom';
+    window._admBreakOptionChange();
+    const typeEl = document.getElementById('adm-break-type');
+    if (typeEl) typeEl.value = 'partial';
+    const total = parseInt(document.getElementById('adm-break-total')?.value || '0', 10);
+    if (!total || total < 3) { showNotification('Enter a break size first', 'warning'); return; }
+    const bp = activeTournament()?.format === 'bp';
+    const config = suggestPartialConfig(total, bp);
+    if (!config) { showNotification(`No valid partial config for ${total} teams`, 'error'); return; }
+    const seededEl  = document.getElementById('adm-break-seeded');
+    const playoffEl = document.getElementById('adm-break-playoff');
+    if (seededEl)  seededEl.value  = config.reserved;
+    if (playoffEl) playoffEl.value = config.breaking;
+    window._admBreakTypeChange();
+    window._admPartialSummary();
+    showNotification(`Suggested: ${config.reserved} seeded + ${config.breaking} playoff`, 'info');
+};
 
 export async function adminTogglePublish(tabId) {
     if (!state?.publish) return;

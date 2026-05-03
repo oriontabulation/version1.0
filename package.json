@@ -1,6 +1,7 @@
 {
   "name": "orion-tabulation",
   "version": "1.0.0",
+  "type": "module",
   "description": "Orion Tabulation System",
   "scripts": {
     "dev": "vite",

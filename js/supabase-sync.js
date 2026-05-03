@@ -7,10 +7,10 @@
 // ============================================================
 
 import { save as saveState } from './state.js';
+import { supabase } from './supabase.js';
 
 export async function loadFromSupabase() {
     try {
-        const { supabase } = await import('./supabase.js');
         const { data: { user } } = await supabase.auth.getUser();
         return !!user;
     } catch {

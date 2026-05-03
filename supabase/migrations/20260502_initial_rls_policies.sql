@@ -1,0 +1,2 @@
+-- Placeholder: initial RLS policies were applied via dashboard.
+-- Content superseded by 20260503_fix_rls_recursion.sql.

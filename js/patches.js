@@ -198,25 +198,43 @@
   };
 
   /* ── Dark mode toggle ─────────────────────────────────────────────────────── */
-  window.toggleBackgroundMode = function() {
-    const isDark = document.body.classList.contains('theme-dark');
-    document.body.classList.toggle('theme-dark', !isDark);
+  function applyThemeMode(mode) {
+    const isDark = mode === 'dark';
+    document.body.classList.toggle('theme-dark', isDark);
     const root = document.documentElement;
-    if (isDark) {
-      root.style.setProperty('--t-bg',       '#f8fafc');
-      root.style.setProperty('--t-text',     '#1e293b');
-      root.style.setProperty('--t-text-light','#64748b');
-      root.style.setProperty('--t-border',   '#e2e8f0');
-      root.style.setProperty('--t-bg-hover', '#f1f5f9');
-      localStorage.setItem('orion_theme_mode', 'light');
-    } else {
+    if (mode === 'dark') {
       root.style.setProperty('--t-bg',       '#0f172a');
       root.style.setProperty('--t-text',     '#f1f5f9');
       root.style.setProperty('--t-text-light','#94a3b8');
       root.style.setProperty('--t-border',   '#334155');
       root.style.setProperty('--t-bg-hover', '#1e293b');
-      localStorage.setItem('orion_theme_mode', 'dark');
+    } else {
+      root.style.setProperty('--t-bg',       '#f8fafc');
+      root.style.setProperty('--t-text',     '#1e293b');
+      root.style.setProperty('--t-text-light','#64748b');
+      root.style.setProperty('--t-border',   '#e2e8f0');
+      root.style.setProperty('--t-bg-hover', '#f1f5f9');
     }
+    try {
+      localStorage.setItem('orion_theme_mode', mode);
+      localStorage.removeItem('orion_theme');
+    } catch(_) { /* ignore unavailable localStorage */ }
+  }
+
+  function refreshThemePanels() {
+    ['theme-picker-container', 'adm-top-settings-theme'].forEach(id => {
+      if (document.getElementById(id)) window.renderThemePicker(id);
+    });
+  }
+
+  window.setBackgroundMode = function(mode) {
+    applyThemeMode(mode === 'dark' ? 'dark' : 'light');
+    refreshThemePanels();
+  };
+
+  window.toggleBackgroundMode = function() {
+    const next = document.body.classList.contains('theme-dark') ? 'light' : 'dark';
+    window.setBackgroundMode(next);
   };
 
   /* ── Settings panel renderer ──────────────────────────────────────────────── */
@@ -275,14 +293,14 @@
       btn.addEventListener('click', e => {
         e.stopPropagation();
         applyColor(btn.dataset.color);
-        window.renderThemePicker(containerId);
+        refreshThemePanels();
       });
     });
 
     // Colour wheel
     const wheel = el.querySelector('.stp-wheel');
     wheel.addEventListener('input',  () => applyColor(wheel.value));
-    wheel.addEventListener('change', () => { applyColor(wheel.value); window.renderThemePicker(containerId); });
+    wheel.addEventListener('change', () => { applyColor(wheel.value); refreshThemePanels(); });
     wheel.addEventListener('click',  e => e.stopPropagation());
     el.querySelector('.stp-wheel-label').addEventListener('click', e => {
       e.stopPropagation();
@@ -293,7 +311,6 @@
     el.querySelector('[data-action="dark"]').addEventListener('click', e => {
       e.stopPropagation();
       window.toggleBackgroundMode();
-      window.renderThemePicker(containerId);
     });
 
     // Sliders
@@ -319,15 +336,7 @@
   function restoreThemeModePrefs() {
     try {
       applyColor(loadColor());
-      if (localStorage.getItem('orion_theme_mode') === 'dark') {
-        document.body.classList.add('theme-dark');
-        const root = document.documentElement;
-        root.style.setProperty('--t-bg',        '#0f172a');
-        root.style.setProperty('--t-text',      '#f1f5f9');
-        root.style.setProperty('--t-text-light','#94a3b8');
-        root.style.setProperty('--t-border',    '#334155');
-        root.style.setProperty('--t-bg-hover',  '#1e293b');
-      }
+      applyThemeMode(localStorage.getItem('orion_theme_mode') === 'dark' ? 'dark' : 'light');
       const brightness = parseFloat(localStorage.getItem('orion_brightness') || '1');
       if (brightness !== 1) window.applyBrightness(brightness);
       const fontSize = parseInt(localStorage.getItem('orion_font_size') || '16');

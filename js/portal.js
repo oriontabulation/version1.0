@@ -832,7 +832,6 @@ window._portalSwitchTab = function(tab) {
 window._portalCheckIn = async function(judgeId, status) {
     if (!judgeId) return;
     try {
-        const { api } = await import('./api.js');
         await api.checkInJudge(judgeId, status);
         patchJudge(judgeId, { checked_in: status });
         const offBtn = document.getElementById('ci-unavail-btn');
@@ -860,6 +859,36 @@ window._fbJudgeChanged = function(fbKey) {
     if (fields) fields.style.display = sel?.value ? 'block' : 'none';
 };
 
+function _panelHasJudge(panel, judgeId) {
+    return (panel || []).some(p => String(p.id || p.judge_id) === String(judgeId));
+}
+
+function _judgeFeedbackTargetAllowed(myId, debateId, toJudgeId) {
+    if (!myId || !toJudgeId || String(myId) === String(toJudgeId)) return false;
+    for (const round of state.rounds || []) {
+        for (const debate of round.debates || []) {
+            if (debateId != null && String(debate.id) !== String(debateId)) continue;
+            const panel = debate.panel || debate.debate_judges || [];
+            if (_panelHasJudge(panel, myId) && _panelHasJudge(panel, toJudgeId)) return true;
+        }
+    }
+    return false;
+}
+
+function _teamFeedbackTargetAllowed(teamId, debateId, toJudgeId) {
+    const ctx = window._portalCtx || {};
+    return (ctx.participatedDebates || []).some(({ debate, judges }) => {
+        if (String(debate?.id) !== String(debateId)) return false;
+        const sides = [
+            debate.gov, debate.opp, debate.og, debate.oo, debate.cg, debate.co,
+            debate.gov_team_id, debate.opp_team_id,
+            debate.og_team_id, debate.oo_team_id, debate.cg_team_id, debate.co_team_id
+        ];
+        return sides.some(s => String(s) === String(teamId)) &&
+            (judges || []).some(j => String(j.id) === String(toJudgeId));
+    });
+}
+
 // ── Submit inline feedback ────────────────────────────────────────────────────
 window._submitInlineFeedback = async function(fbKey, debateId, tournamentId) {
     const myId     = state.auth?.currentUser?.associatedId;
@@ -871,9 +900,12 @@ window._submitInlineFeedback = async function(fbKey, debateId, tournamentId) {
     if (!toJudgeId)      { showNotification('Select a judge to review', 'error'); return; }
     if (!agc)            { showNotification('Please indicate if you agreed with the call', 'error'); return; }
     if (!rating || rating < 1) { showNotification('Please select a rating', 'error'); return; }
+    if (!_judgeFeedbackTargetAllowed(myId, debateId, toJudgeId)) {
+        showNotification('You can only review judges allocated to your room', 'error');
+        return;
+    }
 
     try {
-        const { api } = await import('./api.js');
         await api.submitFeedback({ tournamentId, debateId, fromJudgeId: myId, toJudgeId, rating, agreeWithCall: agc, comment });
 
         // Mirror to in-memory state
@@ -906,6 +938,10 @@ window._submitStandaloneFeedback = async function() {
     if (!toJudgeId)      { showNotification('Select a judge to review', 'error'); return; }
     if (!agc)            { showNotification('Please indicate if you agreed with the call', 'error'); return; }
     if (!rating || rating < 1) { showNotification('Please select a rating (1 – 5)', 'error'); return; }
+    if (!_judgeFeedbackTargetAllowed(myId, debateId, toJudgeId)) {
+        showNotification('You can only review judges allocated to your room', 'error');
+        return;
+    }
 
     const already = (state.feedback || []).some(fb =>
         String(fb.fromJudgeId || fb.from_judge_id) === String(myId) &&
@@ -914,7 +950,6 @@ window._submitStandaloneFeedback = async function() {
     if (already) { showNotification('You have already submitted feedback for this judge', 'error'); return; }
 
     try {
-        const { api } = await import('./api.js');
         await api.submitFeedback({ tournamentId: tournId, debateId, fromJudgeId: myId, toJudgeId, rating, agreeWithCall: agc, comment });
 
         if (!state.feedback) state.feedback = [];
@@ -1211,6 +1246,10 @@ window._submitTeamFeedback = async function(key, debateId, toJudgeId) {
         .find(j => String(j.id) === String(toJudgeId));
     const judgeName = judgeInState?.name || judgeInPortal?.name || 'Judge';
     if (!teamId) { showNotification('Could not identify your team', 'error'); return; }
+    if (!_teamFeedbackTargetAllowed(teamId, debateId, toJudgeId)) {
+        showNotification('You can only review judges allocated to your debate', 'error');
+        return;
+    }
 
     const agc    = document.getElementById(`${key}-agc`)?.value || null;
     const rating = parseFloat(document.getElementById(`${key}_val`)?.value || '0');
@@ -1424,7 +1463,6 @@ function _renderAdminPortalView(container) {
 
 window._adminOverrideCheckIn = async function(judgeId, status) {
     try {
-        const { api } = await import('./api.js');
         await api.checkInJudge(judgeId, status);
         patchJudge(judgeId, { checked_in: status });
         showNotification(`Judge ${status ? 'checked in' : 'marked out'}`, 'info');
@@ -1468,7 +1506,6 @@ function _starDisplay(rating) {
 // ── submitPortalBallot (kept for backward compat) ─────────────────────────────
 export async function submitPortalBallot({ debateId, tournamentId, winnerSide, govTotal, oppTotal, speakerScores }) {
     try {
-        const { api } = await import('./api.js');
         await api.submitBallot({ debateId, tournamentId, winnerSide, govTotal, oppTotal, speakerScores });
         showNotification('Ballot submitted successfully!', 'success');
         renderJudgePortal();

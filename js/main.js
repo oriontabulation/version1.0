@@ -1,6 +1,28 @@
 console.log('[main.js] Module loading...');
 
 const env = (typeof import.meta !== 'undefined' && import.meta.env) ? import.meta.env : (window.ENV || {});
+const LOCAL_TEST_TOURNAMENT_ID = 'test_tournament';
+const LOCAL_TEST_TOURNAMENT_NAME = 'Test Tournament';
+
+function _loadLocalTestTournament() {
+    try {
+        const raw = localStorage.getItem('orion_test_tournament');
+        if (!raw) return null;
+        const data = JSON.parse(raw);
+        if (!data?.tournament?.id) return null;
+        return data;
+    } catch {
+        return null;
+    }
+}
+
+function _loadLocalTeams(tournamentId) {
+    try {
+        return JSON.parse(localStorage.getItem(`orion_local_teams_${tournamentId}`) || '[]');
+    } catch {
+        return [];
+    }
+}
 
 // Global error handler to prevent blank screen on errors
 window.addEventListener('error', (e) => {
@@ -30,7 +52,7 @@ window.addEventListener('unhandledrejection', (e) => {
 import { api } from './api.js';
 import {
     hydrateState, state,
-    restoreUIPrefs
+    restoreUIPrefs, reapplyBreakData
 } from './state.js';
 import {
     cache, loadTeams,
@@ -62,7 +84,7 @@ import {
     switchTab as _legacySwitchTab,
     renderStandings, renderMotions, renderResults,
     updateTabsForRole, updateNavDropdowns,
-    switchCategoryTab, updateStandingsFilter
+    switchCategoryTab, updateStandingsFilter, resetStandingsFilter
 } from './tab.js';
 import {
     renderTeams, displayTeams,
@@ -191,10 +213,10 @@ registerActions({
 
     // Standings filters
     updateStandingsFilter: (k, v) => {
-        import('./tab.js').then(m => m.updateStandingsFilter(k, v));
+        updateStandingsFilter(k, v);
     },
     resetStandingsFilter: () => {
-        import('./tab.js').then(m => m.resetStandingsFilter());
+        resetStandingsFilter();
     },
 
     // Samples
@@ -366,9 +388,9 @@ function _defaultEmptyTournament() {
     };
 }
 
-function _defaultPublishState() {
+function _defaultPublishState(tournamentId = DEFAULT_TOURNAMENT_ID) {
     return {
-        tournament_id: DEFAULT_TOURNAMENT_ID,
+        tournament_id: tournamentId,
         draw: true,
         standings: true,
         speakers: true,
@@ -471,6 +493,7 @@ function _setupRealtimeSync(tournamentId) {
             const teams = await api.getTeams(tournamentId);
             if (isCurrentRealtimeContext()) {
                 state.teams = teams;
+                reapplyBreakData();
                 _refreshVisibleRealtimeView();
             }
         } catch (e) { console.warn('[rt] teams refetch:', e); }
@@ -504,6 +527,7 @@ function _setupRealtimeSync(tournamentId) {
             ]);
             if (isCurrentRealtimeContext()) {
                 state.teams  = teams;
+                reapplyBreakData();
                 state.rounds = rounds;
                 _refreshVisibleRealtimeView();
             }
@@ -520,6 +544,7 @@ function _setupRealtimeSync(tournamentId) {
             ]);
             if (isCurrentRealtimeContext()) {
                 state.teams = teams;
+                reapplyBreakData();
                 state.judges = judges;
                 state.rounds = rounds;
                 const { tournament_id, ...flags } = publish || {};
@@ -634,9 +659,28 @@ async function init() {
 
         // 3. Load tournament list + active tournament data in parallel (optimistic prefetch)
         const storedActiveId = localStorage.getItem('orion_active_tournament_id');
+        let localTest = storedActiveId === LOCAL_TEST_TOURNAMENT_ID ? _loadLocalTestTournament() : null;
+        const shouldUseLocalTest = storedActiveId === LOCAL_TEST_TOURNAMENT_ID;
+        if (shouldUseLocalTest && !localTest) {
+            localTest = {
+                tournament: {
+                    id: LOCAL_TEST_TOURNAMENT_ID,
+                    name: LOCAL_TEST_TOURNAMENT_NAME,
+                    format: 'standard',
+                    speechMode: false,
+                    created_at: new Date().toISOString(),
+                    isLocalSample: true
+                },
+                teams: [],
+                judges: [],
+                rounds: [],
+                bracket: { active: false, bracket: [], currentRound: 0, champion: null, breakingTeams: [] },
+                publish: _defaultPublishState(LOCAL_TEST_TOURNAMENT_ID)
+            };
+        }
         let [tournaments, prefetched] = await Promise.all([
             api.getTournaments().catch(() => []),
-            storedActiveId ? Promise.all([
+            storedActiveId && !shouldUseLocalTest ? Promise.all([
                 api.getTeams(storedActiveId),
                 api.getJudges(storedActiveId),
                 api.getRounds(storedActiveId),
@@ -653,6 +697,19 @@ async function init() {
             tournaments = [_defaultEmptyTournament()];
         }
 
+        if (shouldUseLocalTest) {
+            tournaments = [
+                localTest.tournament,
+                ...tournaments.filter(t => String(t.id) !== LOCAL_TEST_TOURNAMENT_ID)
+            ];
+            prefetched = [
+                localTest.teams || [],
+                localTest.judges || [],
+                localTest.rounds || [],
+                localTest.publish || {}
+            ];
+        }
+
         // 4. Determine active tournament
         let activeId = storedActiveId;
         if (!activeId || !tournaments.find(t => t.id === activeId)) {
@@ -663,24 +720,37 @@ async function init() {
         console.log('[main] Active Tournament ID:', activeId);
         const usingDefaultTournament = activeId === DEFAULT_TOURNAMENT_ID;
         let [teams, judges, rounds, publish] = usingDefaultTournament
-            ? [[], [], [], _defaultPublishState()]
+            ? [_loadLocalTeams(DEFAULT_TOURNAMENT_ID), [], [], _defaultPublishState()]
             : prefetched && storedActiveId === activeId
                 ? prefetched
                 : await Promise.all([
-                    api.getTeams(activeId),
-                    api.getJudges(activeId),
-                    api.getRounds(activeId),
+                    api.getTeams(activeId).catch(error => {
+                        console.warn('[main] teams load failed:', error);
+                        return [];
+                    }),
+                    api.getJudges(activeId).catch(error => {
+                        console.warn('[main] judges load failed:', error);
+                        return [];
+                    }),
+                    api.getRounds(activeId).catch(error => {
+                        console.warn('[main] rounds load failed:', error);
+                        return [];
+                    }),
                     api.getPublishState(activeId).catch(() => ({}))
                 ]);
 
         // 6. Hydrate in-memory state cache
         hydrateState({ activeTournamentId: activeId, tournaments, teams, judges, rounds, publish });
+        if (activeId === LOCAL_TEST_TOURNAMENT_ID && localTest?.bracket) {
+            state.tournament = localTest.bracket;
+        }
 
         // 6b. Update header with tournament name
         updateHeaderTournamentName();
 
         // 7. Set up real-time subscription for persisted tournaments
-        if (!usingDefaultTournament) _setupRealtimeSync(activeId);
+        const activeTournamentMeta = tournaments.find(t => String(t.id) === String(activeId));
+        if (!usingDefaultTournament && !activeTournamentMeta?.isLocalSample) _setupRealtimeSync(activeId);
 
         // 8. Check URL for judge token (portal access via URL param)
         await checkUrlForJudgeToken();

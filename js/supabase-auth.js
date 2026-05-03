@@ -470,15 +470,15 @@ function updateHeaderControls() {
     if (headerName) headerName.textContent = user?.name || 'Guest';
     if (headerInfo) headerInfo.style.display = isAuth ? '' : 'none';
     if (headerLogin) headerLogin.style.display = isAuth ? 'none' : '';
-    if (settingsWrapper) settingsWrapper.style.display = isAuth ? '' : 'none';
+    if (settingsWrapper) settingsWrapper.style.display = '';
 
-    // Settings dropdown (only visible when logged in)
+    // Settings dropdown: theme/display controls are always visible; account actions are auth-only.
     const settingsDropdown = document.getElementById('header-settings-dropdown');
-    if (settingsDropdown && isAuth) {
+    if (settingsDropdown) {
         const profileItem = settingsDropdown.querySelector('button[onclick*="profile"]');
         const logoutItem = settingsDropdown.querySelector('[data-action="logout"]');
-        if (profileItem) profileItem.style.display = '';
-        if (logoutItem) logoutItem.style.display = '';
+        if (profileItem) profileItem.style.display = isAuth ? '' : 'none';
+        if (logoutItem) logoutItem.style.display = isAuth ? '' : 'none';
     }
 
     // Admin nav item

@@ -18,6 +18,10 @@ import { getJudgeAssignments, buildTeamMap } from './maps.js';
 // ── Permission helpers ────────────────────────────────────────────────────────
 function _isAdmin() { return !!(state.auth?.isAuthenticated && state.auth?.currentUser?.role === 'admin'); }
 function _myJudgeId() { return state.auth?.currentUser?.associatedId ?? null; }
+function _isLocalTournament(tournament) {
+    const id = String(tournament?.id || '');
+    return tournament?.isLocalDefault || tournament?.isLocalSample || id.startsWith('__') || id === 'test_tournament';
+}
 
 function _requireActiveTournament() {
     const tournament = activeTournament();
@@ -319,15 +323,28 @@ async function addJudge() {
     const checkedAffils = [...document.querySelectorAll('.judge-affil:checked')].map(cb => cb.value);
 
     try {
-        const judge = await api.createJudge({
-            tournamentId: tournId,
-            name,
-            role,
-            email,
-            affiliations: checkedAffils
-        });
+        const judge = _isLocalTournament(tournament)
+            ? {
+                id: crypto?.randomUUID?.() || `local_judge_${Date.now()}`,
+                tournament_id: tournId,
+                name,
+                role,
+                email: email || null,
+                judge_conflicts: checkedAffils.map(id => ({ team_id: id }))
+            }
+            : await api.createJudge({
+                tournamentId: tournId,
+                name,
+                role,
+                email,
+                affiliations: checkedAffils
+            });
         addJudgeToCache({ ...judge, judge_conflicts: checkedAffils.map(id => ({ team_id: id })) });
-        await _reloadJudgesForTournament(tournId);
+        if (!_isLocalTournament(tournament)) {
+            _reloadJudgesForTournament(tournId).catch(error => {
+                console.warn('[judges] Created judge, but reload failed:', error);
+            });
+        }
         displayJudges();
         updatePublicCounts?.();
         showNotification(`Judge "${name}" added`, 'success');
