@@ -8,12 +8,11 @@ export default defineConfig({
     build: {
         target: 'esnext',
         outDir: 'dist',
+        chunkSizeWarningLimit: 900,
         rollupOptions: {
             output: {
                 manualChunks(id) {
-                    if (id.includes('/js/draw.js') || id.includes('/js/knockout.js')) return 'draw';
-                    if (id.includes('/js/admin.js') || id.includes('/js/teams.js') || id.includes('/js/judges.js')) return 'admin';
-                    if (id.includes('/js/speakers.js')) return 'speakers';
+                    if (id.includes('node_modules')) return 'vendor';
                 },
             },
         },

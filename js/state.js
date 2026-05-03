@@ -21,6 +21,31 @@ import { buildTeamMap, getJudgeAssignments } from './maps.js';
 
 console.log('[state.js] Module loading...');
 
+export const DEFAULT_TOURNAMENT_ID = '__orion_default_tournament__';
+
+export function createDefaultTournament() {
+    return {
+        id: DEFAULT_TOURNAMENT_ID,
+        name: 'My Tournament',
+        format: 'standard',
+        created_at: new Date(0).toISOString(),
+        isLocalDefault: true
+    };
+}
+
+export function createDefaultPublishState() {
+    return {
+        tournament_id: DEFAULT_TOURNAMENT_ID,
+        draw: true,
+        standings: true,
+        speakers: true,
+        break: true,
+        knockout: true,
+        motions: true,
+        results: true
+    };
+}
+
 // ── Private internal store ────────────────────────────────────────────────────
 let _state = {
     activeTournamentId: null,
@@ -176,8 +201,18 @@ Object.defineProperty(state, 'tournaments', {
  * @param {Object}  options.publish       — tournament_publish row
  */
 export function hydrateState({ activeTournamentId, tournaments = [], teams = [], judges = [], rounds = [], publish = {} }) {
+    if (!tournaments.length) {
+        tournaments = [createDefaultTournament()];
+        activeTournamentId = DEFAULT_TOURNAMENT_ID;
+        teams = [];
+        judges = [];
+        rounds = [];
+        publish = createDefaultPublishState();
+    }
+
     // Build tournament map
     _state.tournaments = {};
+    delete _state.__toursProxy; // invalidate stale proxy — getter will re-wrap the new object
     for (const t of tournaments) {
         _state.tournaments[t.id] = {
             ...t,
@@ -193,7 +228,9 @@ export function hydrateState({ activeTournamentId, tournaments = [], teams = [],
         };
     }
 
-    const activeId = activeTournamentId || tournaments[0]?.id;
+    const activeId = activeTournamentId && _state.tournaments[activeTournamentId]
+        ? activeTournamentId
+        : tournaments[0]?.id;
     _state.activeTournamentId = activeId;
 
     // Core tournament records come from Supabase. Only keep explicit per-browser
@@ -211,10 +248,42 @@ export function hydrateState({ activeTournamentId, tournaments = [], teams = [],
         } catch {
             // Ignore corrupt local bracket cache; Supabase state still loads.
         }
+
+        _reapplyBreakData(activeId, active.teams);
     }
 
     // Notify all watchers
     Object.keys(_watchers).forEach(k => notify(k));
+}
+
+// Re-merge break flags (broke/seed/reserved/etc.) from localStorage into a teams array.
+// Called after any teams replacement (hydrateState, refetchTeams) because these fields
+// are not stored in Supabase — they live only in localStorage and in-memory.
+function _reapplyBreakData(tid, teamArr) {
+    if (!tid || !teamArr?.length) return;
+    try {
+        const raw = localStorage.getItem(`orion_breakdata_${tid}`);
+        if (!raw) return;
+        const breakData = JSON.parse(raw);
+        if (!breakData?.length) return;
+        const byId = new Map(breakData.map(b => [String(b.id), b]));
+        teamArr.forEach(tm => {
+            const b = byId.get(String(tm.id));
+            if (!b) return;
+            if (b.broke     !== undefined) tm.broke     = b.broke;
+            if (b.seed      !== undefined) tm.seed      = b.seed;
+            if (b.reserved  !== undefined) tm.reserved  = b.reserved;
+            if (b.tournamentWins   !== undefined) tm.tournamentWins   = b.tournamentWins;
+            if (b.tournamentLosses !== undefined) tm.tournamentLosses = b.tournamentLosses;
+            if (b.eliminated !== undefined) tm.eliminated = b.eliminated;
+        });
+    } catch { /* corrupt break data — ignore */ }
+}
+
+export function reapplyBreakData() {
+    const tid = _state.activeTournamentId;
+    const t   = _state.tournaments[tid];
+    if (t?.teams) _reapplyBreakData(tid, t.teams);
 }
 
 /**
@@ -317,10 +386,14 @@ export function patchDebate(roundId, debateId, patch) {
 
 // ── Tournament management ─────────────────────────────────────────────────────
 export function activeTournament() {
-    return _state.tournaments[_state.activeTournamentId] || null;
+    return _state.tournaments[_state.activeTournamentId] || _state.tournaments[DEFAULT_TOURNAMENT_ID] || createDefaultTournament();
 }
 
 export function switchTournamentCache(id, { teams = [], judges = [], rounds = [], publish = {} }) {
+    if (!id || !_state.tournaments[id]) {
+        hydrateState({ tournaments: [] });
+        return;
+    }
     _state.activeTournamentId = id;
     const t = _state.tournaments[id];
     if (t) {
@@ -339,7 +412,7 @@ export function switchTournamentCache(id, { teams = [], judges = [], rounds = []
 export function restoreUIPrefs() {
     try {
         const theme = localStorage.getItem('orion_theme');
-        if (theme && window.applyTheme) window.applyTheme(theme);
+        if (theme && !theme.startsWith('#') && window.applyTheme) window.applyTheme(theme);
 
         const drawPrefs = JSON.parse(localStorage.getItem('orion_draw_prefs') || '{}');
         return drawPrefs;

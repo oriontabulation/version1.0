@@ -141,10 +141,7 @@ function _rebuildStandingsNav(cats) {
 }
 
 function _rebuildOutroundsNav(cats) {
-    const knockoutLink =
-        `<div class="dropdown-divider" style="border-top:1px solid #e2e8f0;margin:4px 0;"></div>` +
-        `<button class="dropdown-item" onclick="window.switchTab('knockout')">⚔️ Knockout</button>`;
-    _rebuildCategoryNav('outrounds-nav-group', 'break', 'All Break', knockoutLink);
+    _rebuildCategoryNav('outrounds-nav-group', 'break', 'All Break');
 }
 
 window.switchCategoryTab  = switchCategoryTab;
@@ -988,6 +985,11 @@ const THEMES = {
 };
 
 function applyTheme(themeId) {
+    if (typeof themeId === 'string' && themeId.startsWith('#')) {
+        try { localStorage.setItem('orion_color', themeId); } catch(e) { /* ignore theme storage errors */ }
+        if (typeof window.applyColor === 'function') window.applyColor(themeId);
+        return;
+    }
     const theme = THEMES[themeId] || THEMES.default;
     const root  = document.documentElement;
     Object.values(THEMES).forEach(t => Object.keys(t.vars).forEach(k => root.style.removeProperty(k)));
@@ -1044,7 +1046,7 @@ function renderThemePicker(containerId) {
 // Auto-apply saved theme on load
 try {
     const savedTheme = localStorage.getItem('orion_theme');
-    if (savedTheme && savedTheme !== 'default') applyTheme(savedTheme);
+    if (savedTheme && savedTheme !== 'default' && !savedTheme.startsWith('#')) applyTheme(savedTheme);
 } catch(e) { /* ignore theme restoration errors */ }
 
 window.applyTheme      = applyTheme;

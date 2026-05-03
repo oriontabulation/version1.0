@@ -4,7 +4,7 @@
 // ============================================
 
 import { save, saveNow} from './supabase-sync.js';
-import { state, watch, switchTournamentCache, hydrateState } from './state.js';
+import { state, watch } from './state.js';
 import { api } from './api.js';
 import { showNotification, escapeHTML, closeAllModals, getPreviousMeetings, teamCode } from './utils.js';
 import { hasConflict, buildConflictMap, buildTeamMap } from './maps.js';
@@ -45,7 +45,6 @@ function showTournamentRequiredPrompt() {
         <p class="u-text-muted">Create or select a tournament before generating a draw.</p>
         <div class="modal-actions">
             <button class="btn btn-secondary" type="button" id="draw-open-tournament-manager">Open Tournament Manager</button>
-            <button class="btn btn-primary" type="button" id="draw-create-placeholder-tournament">Create Placeholder Tournament</button>
         </div>`;
     overlay.appendChild(modal);
     document.body.appendChild(overlay);
@@ -53,34 +52,6 @@ function showTournamentRequiredPrompt() {
         overlay.remove();
         window.switchTab?.('admin-dashboard');
         setTimeout(() => window.adminSwitchSection?.('tournaments'), 0);
-    };
-    modal.querySelector('#draw-create-placeholder-tournament').onclick = async () => {
-        const btn = modal.querySelector('#draw-create-placeholder-tournament');
-        btn.disabled = true;
-        btn.textContent = 'Creating...';
-        try {
-            const t = await api.createTournament('Placeholder Tournament');
-            const tournaments = await api.getTournaments().catch(() => []);
-            localStorage.setItem('orion_active_tournament_id', t.id);
-            hydrateState({
-                activeTournamentId: t.id,
-                tournaments,
-                teams: [],
-                judges: [],
-                rounds: [],
-                publish: {}
-            });
-            switchTournamentCache(t.id, { teams: [], judges: [], rounds: [], publish: {} });
-            window._setupRealtimeSyncForTournament?.(t.id);
-            overlay.remove();
-            showNotification('Placeholder tournament created. Add teams before generating a draw.', 'success');
-            renderDraw();
-            window.updateHeaderTournamentName?.();
-        } catch (error) {
-            btn.disabled = false;
-            btn.textContent = 'Create Placeholder Tournament';
-            showNotification(`Could not create tournament: ${error.message}`, 'error');
-        }
     };
 }
 
@@ -129,7 +100,6 @@ function _setNameDisplay(value) {
     savedPrefs['display'] = value;
     localStorage.setItem('orion_draw_prefs', JSON.stringify(savedPrefs));
     displayRounds();
-    if (typeof window.renderKnockout === 'function') window.renderKnockout();
     if (typeof window.refreshAdminRounds === 'function') window.refreshAdminRounds();
 }
 
@@ -186,7 +156,7 @@ function _normalizePanelRoles(debate) {
     debate.panel.forEach((entry, index) => {
         if (!entry) return;
         if (index === 0) entry.role = 'chair';
-        else if (!entry.role || entry.role === 'chair') entry.role = 'wing';
+        else if (!entry.role || entry.role === 'chair' || entry.role === 'wing') entry.role = 'panellist';
     });
 }
 
@@ -338,8 +308,8 @@ export function renderDraw() {
                 <h2>Draw</h2>
                 <div style="text-align:center;padding:60px 20px;color:#64748b">
                     <div style="font-size:48px;margin-bottom:12px">🏛️</div>
-                    <h3 style="margin:0 0 8px;color:#1e293b">No Tournament Selected</h3>
-                    <p style="margin:0 0 16px">Please select or create a tournament first.</p>
+                    <h3 style="margin:0 0 8px;color:#1e293b">My Tournament is loading</h3>
+                    <p style="margin:0 0 16px">Create a tournament when you are ready to save data online.</p>
                     <button onclick="window.showTournamentRequiredPrompt()" class="btn btn-primary">Create or Select Tournament</button>
                 </div>
             </div>`;
@@ -388,12 +358,12 @@ export function renderDraw() {
                        <option value="completed" ${savedFilter==='completed'?'selected':''}>Completed</option>
                        <option value="blinded"   ${savedFilter==='blinded'  ?'selected':''}>Blind</option>
                    </select>
-                   <select id="draw-name-display" class="draw-round-filter"
+                   ${isAdmin ? `<select id="draw-name-display" class="draw-round-filter"
                            onchange="window._setNameDisplay(this.value)"
                            title="Show names or codes">
                        <option value="names" ${(savedPrefs['display']||'names')==='names'?'selected':''}>Names</option>
                        <option value="codes" ${savedPrefs['display']==='codes'?'selected':''}>Codes</option>
-                   </select>
+                   </select>` : ''}
 <button id="draw-view-toggle" onclick="window._toggleDrawView()" 
                             class="btn-secondary" style="padding:8px 14px;font-size:13px;font-weight:600"
                             title="Toggle between edit mode and list mode">
@@ -1223,7 +1193,7 @@ export async function redrawRound(roundIdx) {
             await Promise.all(createdDebates.map((created, i) =>
                 api.assignJudgesToDebate(
                     created.id,
-                    (debates[i]?.panel || []).map(p => ({ judgeId: p.id, role: p.role || 'panellist' }))
+                    (debates[i]?.panel || []).map(p => ({ judgeId: p.id, role: p.role === 'chair' ? 'chair' : 'panellist' }))
                 )
             ));
             await _reloadRoundsFromSupabase();
@@ -2149,7 +2119,10 @@ function getPreviousJudgeAllocations(isKnockout) {
 
 async function persistStandardRound(round, roundNumber) {
     const tournamentId = state.activeTournamentId;
-    if (!tournamentId) throw new Error('No active tournament selected');
+    if (!tournamentId) throw new Error('My Tournament is not ready yet');
+    if (String(tournamentId).startsWith('__') || String(tournamentId) === 'test_tournament') {
+        return null;
+    }
     if ((round.debates || []).some(d => d.format === 'bp' || d.format === 'speech' || d.og || d.oo || d.cg || d.co)) {
         return null;
     }
@@ -2173,11 +2146,16 @@ async function persistStandardRound(round, roundNumber) {
 
     await Promise.all(createdDebates.map((debate, i) => {
         const panel = (round.debates[i]?.panel || [])
-            .map(p => ({ judgeId: p.id, role: p.role || 'panellist' }));
+            .map(p => ({ judgeId: p.id, role: p.role === 'chair' ? 'chair' : 'panellist' }));
         return api.assignJudgesToDebate(debate.id, panel);
     }));
 
-    return api.getRounds(tournamentId);
+    try {
+        return await api.getRounds(tournamentId);
+    } catch (error) {
+        console.warn('[draw] round was written, but refresh failed:', error);
+        return null;
+    }
 }
 
 function nextRoundNumber() {
@@ -2220,7 +2198,7 @@ async function _persistDebate(round, debate) {
     });
     await api.assignJudgesToDebate(
         debate.id,
-        (debate.panel || []).map(p => ({ judgeId: p.id, role: p.role || 'panellist' }))
+        (debate.panel || []).map(p => ({ judgeId: p.id, role: p.role === 'chair' ? 'chair' : 'panellist' }))
     );
     return true;
 }
@@ -4563,6 +4541,7 @@ let _drawRenderTimer = null;
 function _debouncedRenderDraw() {
     clearTimeout(_drawRenderTimer);
     _drawRenderTimer = setTimeout(() => {
+        if (document.querySelector('.modal-overlay')) return;
         // Only re-render if the draw tab is currently visible to avoid wasted work
         if (document.getElementById('draw')?.offsetParent !== null) renderDraw();
     }, 30);
@@ -5062,9 +5041,8 @@ export function createRound(params) {
         })
         .catch(error => {
             console.error('[draw] persist round failed:', error);
-            state.rounds = (state.rounds || []).filter(r => String(r.id) !== String(roundId));
             displayRounds();
-            showNotification(`Round save failed and was rolled back: ${error.message}`, 'error');
+            showNotification(`Round kept locally; online save failed: ${error.message}`, 'error');
         });
 
     const label = isKnockout ? 'Knockout' : isRoundRobin ? 'Round Robin' : (method||'random').charAt(0).toUpperCase()+(method||'random').slice(1);
@@ -5087,11 +5065,16 @@ export function displayRounds() {
     const myJudgeId = isJudge ? String(state.auth?.currentUser?.associatedId ?? '') : null;
 
     // Shallow copy rounds and ensure each has a debates array
-    let filteredRounds = (state.rounds || []).map(r => {
+    const allRounds = (state.rounds || []).map(r => {
         const copy = { ...r };
         if (!Array.isArray(copy.debates)) copy.debates = [];
         return copy;
     });
+
+    // Knockout rounds are never subject to prelim filters (pending/completed/blinded).
+    // Split BEFORE filtering so a "Blind" filter doesn't erase the outround draw.
+    const knockoutRounds = allRounds.filter(r => r.type === 'knockout');
+    let filteredRounds   = allRounds.filter(r => r.type !== 'knockout');
 
     if (filter === 'pending') {
         filteredRounds = filteredRounds.filter(r => (r.debates || []).some(d => !d.entered));
@@ -5100,6 +5083,8 @@ export function displayRounds() {
     } else if (filter === 'blinded') {
         filteredRounds = filteredRounds.filter(r => r.blinded);
     }
+
+    const hasOutroundDraw = !!state.tournament?.active || knockoutRounds.length > 0;
 
     // ── Judge portal: show only the debates this judge is allocated to ────────
     if (isJudge && myJudgeId) {
@@ -5112,7 +5097,7 @@ export function displayRounds() {
             }))
             .filter(r => r.debates.length > 0);
 
-        if (filteredRounds.length === 0) {
+        if (filteredRounds.length === 0 && !hasOutroundDraw) {
             list.innerHTML = `
             <div style="text-align:center;padding:60px 20px;color:#64748b">
                 <div style="font-size:48px;margin-bottom:12px">📋</div>
@@ -5123,13 +5108,14 @@ export function displayRounds() {
         }
     }
 
-    if (filteredRounds.length === 0) {
+    // Only bail early when there is truly nothing to show (prelim filtered + no outrounds)
+    if (filteredRounds.length === 0 && !hasOutroundDraw) {
         list.innerHTML = '<p style="color: #64748b; text-align: center; padding: 40px;">No rounds match the current filter</p>';
         return;
     }
 
     const previousMeetings = getPreviousMeetings();
-    
+
     // Check mini view preference
     let prefs = {};
     try { prefs = JSON.parse(localStorage.getItem('orion_draw_prefs') || '{}'); } catch(e) { /* ignore corrupt draw prefs */ }
@@ -5139,9 +5125,7 @@ export function displayRounds() {
     const viewBtn = document.getElementById('draw-view-toggle');
     if (viewBtn) viewBtn.textContent = isMiniView ? '📝 Edit Mode' : '📋 List Mode';
 
-    // Group rounds by bracket for knockout rounds
-    const knockoutRounds = filteredRounds.filter(r => r.type === 'knockout');
-    const prelimRounds   = filteredRounds.filter(r => r.type !== 'knockout').slice().reverse();
+    const prelimRounds = filteredRounds.slice().reverse();
 
     let html = '';
 
@@ -5158,25 +5142,36 @@ export function displayRounds() {
         </div>`;
     }
 
-    // Display prelim rounds — newest first
-    prelimRounds.forEach(round => {
-        if (isMiniView) {
-            html += renderRoundMiniTable(round);
-        } else {
-            html += renderRoundCard(round, state.rounds.findIndex(r => r.id === round.id), previousMeetings);
-        }
-    });
-
-    // Display knockout rounds in bracket format
-    if (knockoutRounds.length > 0) {
-        html += renderKnockoutBracket(knockoutRounds);
+    // Display prelim rounds only while the tournament is still in prelim mode.
+    if (!hasOutroundDraw) {
+        prelimRounds.forEach(round => {
+            if (isMiniView) {
+                html += renderRoundMiniTable(round);
+            } else {
+                html += renderRoundCard(round, state.rounds.findIndex(r => r.id === round.id), previousMeetings);
+            }
+        });
     }
+
+    // Display knockout rounds created in the Draw tab with the same card UI.
+    if (knockoutRounds.length > 0) {
+        html += `
+        <div style="margin-top:18px">
+            ${knockoutRounds.slice().reverse().map(round => (
+                isMiniView
+                    ? renderRoundMiniTable(round)
+                    : renderRoundCard(round, state.rounds.findIndex(r => r.id === round.id), previousMeetings)
+            )).join('')}
+        </div>`;
+    }
+
+    if (state.tournament?.active) html += renderActiveOutroundDraw(isMiniView);
 
     // Render jump pills (all prelim rounds, newest first mirrors display order)
     const pillsEl = document.getElementById('draw-jump-pills');
     if (pillsEl) {
         const allPrelim = (state.rounds || []).filter(r => r.type !== 'knockout');
-        if (allPrelim.length > 1) {
+        if (!hasOutroundDraw && allPrelim.length > 1) {
             pillsEl.innerHTML = allPrelim.slice().reverse().map(r => {
                 const done = (r.debates || []).every(d => d.entered) && (r.debates||[]).length > 0;
                 const clr  = done ? 'background:#d1fae5;border-color:#6ee7b7;color:#065f46'
@@ -5203,6 +5198,183 @@ export function displayRounds() {
             </div>`;
     }
 }
+
+export function renderActiveOutroundDraw(isListMode = false) {
+    window.repairOutroundProgression?.();
+    const tournament = state.tournament || {};
+    const bracket = tournament.bracket || [];
+    if (!bracket.length) return '';
+
+    const currentRound = tournament.currentRound || 0;
+    const bp = tournament.format === 'bp' || isBP();
+
+    return `
+    <div style="margin-top:18px">
+        ${bracket.map((round, roundIdx) => (
+            isListMode
+                ? renderActiveOutroundMini(round, roundIdx, bp)
+                : renderActiveOutroundCard(round, roundIdx, currentRound, bp)
+        )).join('')}
+    </div>`;
+}
+
+function renderActiveOutroundCard(round, roundIdx, currentRound, bp) {
+    const pairings = round.pairings || [];
+    const done = pairings.filter(p => p.entered).length;
+    const total = pairings.length;
+    const allDone = done === total && total > 0;
+    const isOpen = roundIdx === currentRound;
+    const badgeStyle = allDone
+        ? 'background:#d1fae5;color:#065f46'
+        : 'background:#fef3c7;color:#92400e';
+
+    return `
+    <div id="round-card-ko-${roundIdx}" class="round-card-wrap">
+        <div class="round-card-hdr" onclick="window._toggleRoundCard('ko-${roundIdx}')">
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;flex:1;min-width:0">
+                <span id="round-chevron-ko-${roundIdx}" class="round-chevron${isOpen?' open':''}">▶</span>
+                <strong style="font-size:16px;color:#1e293b">${escapeHTML(round.name || `Outround ${roundIdx + 1}`)}</strong>
+                <span style="background:#fee2e2;color:#991b1b;padding:2px 10px;border-radius:20px;font-size:11px;font-weight:700">KNOCKOUT</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap" onclick="event.stopPropagation()">
+                <span style="${badgeStyle};padding:4px 12px;border-radius:20px;font-size:12px;font-weight:700">${done}/${total} results</span>
+            </div>
+        </div>
+        <div id="round-mini-ko-${roundIdx}" class="round-mini-summary hidden"></div>
+        <div id="round-body-ko-${roundIdx}" class="round-card-body${isOpen?'':' collapsed'}">
+            <div style="display:grid;gap:14px">
+                ${pairings.map((pairing, pairingIdx) => renderActiveOutroundRoom(round, pairing, roundIdx, pairingIdx, roundIdx === currentRound, bp)).join('')}
+            </div>
+        </div>
+    </div>`;
+}
+
+function renderActiveOutroundRoom(round, pairing, roundIdx, pairingIdx, isCurrent, bp) {
+    const statusDot = pairing.entered ? '#10b981' : (pairing.panel?.length ? '#f59e0b' : '#ef4444');
+    const statusLabel = pairing.entered ? 'Done' : isCurrent ? 'Current' : 'Pending';
+    const canSubmit = canSubmitOutroundPairing(pairing);
+
+    return `
+    <div class="draw-room ${pairing.entered?'done':'pending-partial'}" style="border-left-color:${statusDot}">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <strong>${escapeHTML(pairing.room || `Room ${pairingIdx + 1}`)}</strong>
+                <span style="color:${statusDot};font-size:12px;font-weight:600">${statusLabel}</span>
+                ${pairing.entered ? renderOutroundResultText(pairing, bp) : ''}
+            </div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+                ${isCurrent && !pairing.entered && canSubmit ? `<button type="button" onpointerdown="event.preventDefault();event.stopPropagation();window._openOutroundResultModal(${roundIdx},${pairingIdx})" onclick="event.preventDefault();event.stopPropagation()" class="btn-primary" style="padding:4px 12px;font-size:12px">${bp ? 'Select Advancers' : 'Select Winner'}</button>` : ''}
+            </div>
+        </div>
+        ${bp ? renderOutroundBPCells(pairing) : renderOutroundWSDCCells(pairing)}
+        <div class="dnd-judge-zone" style="background:#f8fafc;border-radius:6px;padding:6px 8px;display:flex;flex-wrap:wrap;align-items:center;gap:3px;min-height:34px;">
+            <strong style="font-size:11px;font-weight:700;color:#64748b;margin-right:4px;text-transform:uppercase;letter-spacing:.04em;">Panel</strong>
+            ${renderOutroundPanelChips(pairing.panel || [])}
+        </div>
+    </div>`;
+}
+
+function canSubmitOutroundPairing(pairing) {
+    const user = state.auth?.currentUser;
+    if (!state.auth?.isAuthenticated || !user) return true;
+    if (user.role === 'admin') return true;
+    if (user.role !== 'judge' || user.associatedId == null) return false;
+    const judgeId = String(user.associatedId);
+    return (pairing?.panel || []).some(p => String(p.id || p.judge_id) === judgeId);
+}
+
+function renderOutroundBPCells(pairing) {
+    const positions = [
+        ['og', 'OG'], ['oo', 'OO'], ['cg', 'CG'], ['co', 'CO']
+    ];
+    return `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">
+        ${positions.map(([key, label]) => {
+            const team = _getTeam(pairing[key]);
+            const seed = pairing[`${key}Seed`];
+            return `
+            <div style="padding:10px;background:#f8fafc;border-radius:8px;border:1.5px solid #e2e8f0;text-align:center">
+                <div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">${label}${seed ? ` #${seed}` : ''}</div>
+                <div style="font-weight:700;color:#1e293b;font-size:13px;word-break:break-word;">${team ? escapeHTML(team.name) : 'TBD'}</div>
+            </div>`;
+        }).join('')}
+    </div>`;
+}
+
+function renderOutroundWSDCCells(pairing) {
+    const gov = _getTeam(pairing.gov);
+    const opp = _getTeam(pairing.opp);
+    return `
+    <div style="display:grid;grid-template-columns:1fr auto 1fr;gap:12px;align-items:center;margin-bottom:10px">
+        <div style="text-align:center;padding:12px;background:${pairing.winner === pairing.gov ? '#dcfce7' : '#eff6ff'};border-radius:8px;border:1px solid #bfdbfe">
+            <div style="font-size:10px;font-weight:700;color:#1d4ed8;margin-bottom:4px">GOV${pairing.govSeed ? ` #${pairing.govSeed}` : ''}</div>
+            <strong>${gov ? escapeHTML(gov.name) : 'TBD'}</strong>
+        </div>
+        <div style="font-size:12px;font-weight:700;color:#94a3b8">VS</div>
+        <div style="text-align:center;padding:12px;background:${pairing.winner === pairing.opp ? '#dcfce7' : '#fdf2f8'};border-radius:8px;border:1px solid #fbcfe8">
+            <div style="font-size:10px;font-weight:700;color:#be185d;margin-bottom:4px">OPP${pairing.oppSeed ? ` #${pairing.oppSeed}` : ''}</div>
+            <strong>${opp ? escapeHTML(opp.name) : 'TBD'}</strong>
+        </div>
+    </div>`;
+}
+
+function renderOutroundPanelChips(panel) {
+    if (!panel.length) return '<span style="font-size:12px;color:#ef4444;font-style:italic;">No judges assigned</span>';
+    return panel.map(p => {
+        const judge = _getJudge(p.id);
+        return `<span class="dnd-judge-chip"><span class="chip-role ${p.role === 'chair' ? 'chair' : ''}">${escapeHTML(p.role || 'wing')}</span>${escapeHTML(judge?.name || p.id)}</span>`;
+    }).join('');
+}
+
+function renderOutroundResultText(pairing, bp) {
+    if (!pairing.entered) return '';
+    if (bp) {
+        const first = _getTeam(pairing.first);
+        const second = _getTeam(pairing.second);
+        return `<span style="background:#dcfce7;color:#166534;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:700">${escapeHTML(first?.name || 'Winner')} + ${escapeHTML(second?.name || 'runner-up')} advance</span>`;
+    }
+    const winner = _getTeam(pairing.winner);
+    return `<span style="background:#dcfce7;color:#166534;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:700">${escapeHTML(winner?.name || 'Winner')} advances</span>`;
+}
+
+function renderActiveOutroundMini(round, roundIdx, bp) {
+    const rows = (round.pairings || []).map((pairing, pairingIdx) => {
+        const teams = bp
+            ? ['og', 'oo', 'cg', 'co'].map(key => _getTeam(pairing[key])?.name || 'TBD').join(' / ')
+            : `${_getTeam(pairing.gov)?.name || 'TBD'} vs ${_getTeam(pairing.opp)?.name || 'TBD'}`;
+        const result = pairing.entered
+            ? (bp
+                ? `${_getTeam(pairing.first)?.name || 'Winner'} + ${_getTeam(pairing.second)?.name || 'runner-up'}`
+                : `${_getTeam(pairing.winner)?.name || 'Winner'}`)
+            : 'Pending';
+        return `
+        <tr>
+            <td>${escapeHTML(pairing.room || `Room ${pairingIdx + 1}`)}</td>
+            <td>${escapeHTML(teams)}</td>
+            <td>${escapeHTML(result)}</td>
+        </tr>`;
+    }).join('');
+
+    return `
+    <div style="margin-bottom:16px;">
+        <div style="background:#f8fafc;padding:8px 12px;border-radius:6px 6px 0 0;border:1px solid #e2e8f0;border-bottom:none;">
+            <strong style="font-size:14px;color:#1e293b;">${escapeHTML(round.name || `Outround ${roundIdx + 1}`)}</strong>
+            <span style="background:#fee2e2;color:#991b1b;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;margin-left:8px;">KO</span>
+        </div>
+        <table class="round-mini-table">
+            <thead><tr><th>Room</th><th>Teams</th><th>Result</th></tr></thead>
+            <tbody>${rows}</tbody>
+        </table>
+    </div>`;
+}
+
+window._openOutroundResultModal = function(roundIdx, pairingIdx) {
+    if (typeof window.enterKnockoutResult === 'function') {
+        window.enterKnockoutResult(roundIdx, pairingIdx);
+        return;
+    }
+    showNotification('Outround result modal is still loading. Try again in a moment.', 'error');
+};
 
 
 export function renderRoundCard(round, actualRoundIdx, previousMeetings) {
@@ -5250,7 +5422,7 @@ export function renderRoundCard(round, actualRoundIdx, previousMeetings) {
                 </div>` : ''}
             </div>
         </div>
-        <div id="round-mini-${round.id}" class="round-mini-summary${isOpen?' hidden':''}">
+        <div id="round-mini-${round.id}" class="round-mini-summary hidden">
             <table class="round-mini-table">
                 <thead><tr>
                     <th>Room</th><th>Teams</th><th>Chair</th><th>Wings</th><th>T</th><th></th>
@@ -5379,13 +5551,11 @@ function renderRoundMiniTable(round) {
 
 window._toggleRoundCard = function(roundId) {
     const body    = document.getElementById(`round-body-${roundId}`);
-    const mini    = document.getElementById(`round-mini-${roundId}`);
     const chevron = document.getElementById(`round-chevron-${roundId}`);
     if (!body) return;
     body.classList.toggle('collapsed');
     const open = !body.classList.contains('collapsed');
     if (chevron) chevron.classList.toggle('open', open);
-    if (mini) mini.classList.toggle('hidden', open);
     localStorage.setItem(`orion_round_open_${roundId}`, open ? 'true' : 'false');
 };
 

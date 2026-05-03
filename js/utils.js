@@ -34,6 +34,9 @@ function showNotification(message, type = 'info') {
 function closeAllModals() {
     document.querySelectorAll('.modal-overlay, .modal').forEach(el => el.remove());
     document.body.classList.remove('modal-open');
+    document.body.style.overflow = '';
+    document.body.style.paddingRight = '';
+    document.documentElement.style.overflow = '';
 }
 
 // Update public counts
@@ -52,10 +55,10 @@ function updateHeaderTournamentName() {
     const el = document.getElementById('header-tournament-name');
     if (el && state.activeTournamentId) {
         const t = state.tournaments?.[state.activeTournamentId];
-        el.textContent = t?.name || '';
+        el.textContent = t?.name || 'My Tournament';
     } else {
         const el = document.getElementById('header-tournament-name');
-        if (el) el.textContent = '';
+        if (el) el.textContent = 'My Tournament';
     }
 }
 

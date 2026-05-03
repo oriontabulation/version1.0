@@ -5,8 +5,12 @@
 // ============================================
 
 import { state, save } from './state.js';
-import { showNotification } from './utils.js';
+import { showNotification, updatePublicCounts } from './utils.js';
 import { renderSpeakerStandings } from './speakers.js';
+import { calculateBreak, generateKnockout } from './knockout.js';
+
+const TEST_TOURNAMENT_ID = 'test_tournament';
+const TEST_TOURNAMENT_NAME = 'Test Tournament';
 
 // ============================================
 // READ CONFIG FROM INLINE FORM & GENERATE
@@ -25,8 +29,7 @@ function generateCustomSampleData() {
 // MAIN GENERATOR FUNCTION
 // ============================================
 function generateCustomData(numTeams, numRounds, numJudges, includeKnockout, randomizeScores) {
-    const activeId = state.activeTournamentId;
-    const tour = state.tournaments?.[activeId];
+    const tour = state.tournaments?.[TEST_TOURNAMENT_ID] || state.tournaments?.[state.activeTournamentId] || {};
     const format = tour?.format || 'standard';
     const isBP     = format === 'bp';
     const isSpeech = tour?.speechMode || format === 'speech';
@@ -34,13 +37,16 @@ function generateCustomData(numTeams, numRounds, numJudges, includeKnockout, ran
     const formatLabel = isBP ? 'BP' : isSpeech ? 'Speech' : 'Standard';
     const unitLabel   = isSpeech ? 'speakers' : 'teams';
 
-    if (!confirm(`Generate ${formatLabel} sample data with:\n• ${numTeams} ${unitLabel}\n• ${numRounds} rounds\n• ${numJudges} judges\n• ${includeKnockout ? 'With' : 'Without'} knockout rounds\n\nThis will replace all existing data.`)) {
+    if (!confirm(`Generate ${formatLabel} sample data in ${TEST_TOURNAMENT_NAME} with:\n• ${numTeams} ${unitLabel}\n• ${numRounds} rounds\n• ${numJudges} judges\n• ${includeKnockout ? 'With' : 'Without'} knockout rounds\n\nThis will replace the existing ${TEST_TOURNAMENT_NAME} data.`)) {
         return;
     }
+
+    ensureTestTournament();
 
     state.teams  = [];
     state.judges = [];
     state.rounds = [];
+    state.tournament = { active: false, bracket: [], currentRound: 0, champion: null, breakingTeams: [] };
 
     if (isSpeech) {
         generateSpeechSpeakers(numTeams);
@@ -49,28 +55,104 @@ function generateCustomData(numTeams, numRounds, numJudges, includeKnockout, ran
     } else if (isBP) {
         generateCustomTeams(numTeams);
         generateCustomJudges(numJudges);
-        generateBPRounds(numRounds, includeKnockout, randomizeScores);
+        generateBPRounds(numRounds, false, randomizeScores);
     } else {
         generateCustomTeams(numTeams);
         generateCustomJudges(numJudges);
-        generateCustomRounds(numRounds, includeKnockout, randomizeScores);
+        generateCustomRounds(numRounds, false, randomizeScores);
+    }
+
+    if (includeKnockout && !isSpeech) {
+        generateLiveSampleOutround(isBP);
     }
 
     save();
+    persistTestTournament();
 
-    import('./utils.js').then(utils => {
-        if (utils.updatePublicCounts) utils.updatePublicCounts();
-    });
+    updatePublicCounts();
 
     if (typeof renderSpeakerStandings === 'function') renderSpeakerStandings();
+    window.renderTeams?.();
+    window.renderDraw?.();
+    window.renderStandings?.();
+    window.renderResults?.();
 
-    showNotification(`✅ Generated ${numTeams} ${unitLabel}, ${numJudges} judges, ${numRounds} rounds! (${formatLabel})`, 'success');
+    window.updateHeaderTournamentName?.();
 
-    if (typeof window.adminSwitchSection === 'function') {
-        window.adminSwitchSection('overview');
-    } else if (typeof window.switchTab === 'function') {
-        window.switchTab('standings');
+    showNotification(`Generated ${TEST_TOURNAMENT_NAME}: ${numTeams} ${unitLabel}, ${numJudges} judges, ${numRounds} rounds (${formatLabel})`, 'success');
+
+    if (typeof window.switchTab === 'function') window.switchTab('draw');
+    else if (typeof window.adminSwitchSection === 'function') window.adminSwitchSection('overview');
+}
+
+function ensureTestTournament() {
+    const active = state.tournaments?.[state.activeTournamentId];
+    const existing = state.tournaments?.[TEST_TOURNAMENT_ID];
+    const source = existing || active || {};
+    const format = source.format || 'standard';
+    const speechMode = !!(source.speechMode || format === 'speech');
+
+    state.tournaments[TEST_TOURNAMENT_ID] = {
+        id: TEST_TOURNAMENT_ID,
+        name: TEST_TOURNAMENT_NAME,
+        format: speechMode ? 'speech' : format,
+        speechMode,
+        created_at: existing?.created_at || new Date().toISOString(),
+        isLocalSample: true,
+        teams: existing?.teams || [],
+        judges: existing?.judges || [],
+        rounds: existing?.rounds || [],
+        tournament: existing?.tournament || null,
+        publish: existing?.publish || {
+            tournament_id: TEST_TOURNAMENT_ID,
+            draw: true,
+            standings: true,
+            speakers: true,
+            break: true,
+            knockout: true,
+            motions: true,
+            results: true
+        },
+        feedback: existing?.feedback || [],
+        judgeTokens: existing?.judgeTokens || {},
+        roomURLs: existing?.roomURLs || {}
+    };
+    state.activeTournamentId = TEST_TOURNAMENT_ID;
+    try { localStorage.setItem('orion_active_tournament_id', TEST_TOURNAMENT_ID); } catch(e) { /* ignore unavailable localStorage */ }
+    return state.tournaments[TEST_TOURNAMENT_ID];
+}
+
+function persistTestTournament() {
+    try {
+        localStorage.setItem('orion_test_tournament', JSON.stringify({
+            tournament: {
+                id: TEST_TOURNAMENT_ID,
+                name: TEST_TOURNAMENT_NAME,
+                format: state.tournaments?.[TEST_TOURNAMENT_ID]?.format || 'standard',
+                speechMode: !!state.tournaments?.[TEST_TOURNAMENT_ID]?.speechMode,
+                created_at: state.tournaments?.[TEST_TOURNAMENT_ID]?.created_at || new Date().toISOString(),
+                isLocalSample: true
+            },
+            teams: state.teams || [],
+            judges: state.judges || [],
+            rounds: state.rounds || [],
+            bracket: state.tournament || null,
+            publish: state.publish || {}
+        }));
+    } catch(e) {
+        console.warn('[sample] Could not persist Test Tournament', e);
     }
+}
+
+function generateLiveSampleOutround(isBP) {
+    const eligibleCount = (state.teams || []).filter(t => !t.eliminated).length;
+    const breakSize = isBP
+        ? (eligibleCount >= 8 ? 8 : 4)
+        : (eligibleCount >= 8 ? 8 : 4);
+
+    if (eligibleCount < breakSize) return;
+    calculateBreak(breakSize, isBP ? 'points' : 'wins', true);
+    generateKnockout();
 }
 
 // ============================================

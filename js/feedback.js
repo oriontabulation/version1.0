@@ -2,11 +2,27 @@
 // FEEDBACK.JS — Admin feedback dashboard + judge view
 // ============================================================
 import { state, save } from './state.js';
+import { api } from './api.js';
 import { escapeHTML, showNotification, closeAllModals } from './utils.js';
 
 function _isAdmin() { return state.auth?.isAuthenticated && state.auth?.currentUser?.role === 'admin'; }
 function _isJudge() { return state.auth?.isAuthenticated && state.auth?.currentUser?.role === 'judge'; }
 function _myJudgeId() { return state.auth?.currentUser?.associatedId ?? null; }
+
+function _panelHasJudge(panel, judgeId) {
+    return (panel || []).some(p => String(p.id || p.judge_id) === String(judgeId));
+}
+
+function _canJudgeReview(myId, toJudgeId) {
+    if (!myId || !toJudgeId || String(myId) === String(toJudgeId)) return false;
+    for (const round of state.rounds || []) {
+        for (const debate of round.debates || []) {
+            const panel = debate.panel || debate.debate_judges || [];
+            if (_panelHasJudge(panel, myId) && _panelHasJudge(panel, toJudgeId)) return true;
+        }
+    }
+    return false;
+}
 
 const AGC_LABELS = { yes: '✅ Agreed', mostly: '👍 Mostly', partially: '🤷 Partially', no: '❌ Disagreed', na: '—' };
 
@@ -327,6 +343,10 @@ async function submitFeedback() {
     const myId     = _myJudgeId();
     const toJudgeId = document.getElementById('fb-target-judge')?.value;
     if (!toJudgeId) { showNotification('Select a judge to review', 'error'); return; }
+    if (!_canJudgeReview(myId, toJudgeId)) {
+        showNotification('You can only review judges allocated to your room', 'error');
+        return;
+    }
 
     const agc    = document.getElementById('fb-agc')?.value;
     if (!agc)    { showNotification('Please indicate if you agreed with the call', 'error'); return; }
@@ -349,7 +369,6 @@ async function submitFeedback() {
     const tournId  = state.activeTournamentId;
 
     try {
-        const { api } = await import('./api.js');
         await api.submitFeedback({ tournamentId: tournId, debateId: null, fromJudgeId: myId, toJudgeId, rating, agreeWithCall: agc, comment });
 
         if (!state.feedback) state.feedback = [];

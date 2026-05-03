@@ -4,9 +4,10 @@
 // ============================================
 
 import { state, save, activeTournament } from './state.js';
-import { showNotification, escapeHTML, closeAllModals, teamCode } from './utils.js';
+import { showNotification, escapeHTML, closeAllModals, teamCode, getPreviousMeetings } from './utils.js';
 import { renderStandings } from './tab.js';
 import { buildConflictMap, buildTeamMap, hasConflict } from './maps.js';
+import { renderRoundCard, renderActiveOutroundDraw } from './draw.js';
 
 // ── Constants ────────────────────────────────────────────────────────────────
 const BP_TEAMS_PER_ROOM = 4;
@@ -17,6 +18,9 @@ const MAX_BREAK_SIZE = 100;
 // Module-level O(1) team lookup — rebuild at start of each render entry point
 let _teamById = null;
 const _getTeam = id => { if (!_teamById) _teamById = buildTeamMap(state.teams || []); return _teamById.get(String(id)) ?? null; };
+function _refreshTeamCache() {
+    _teamById = buildTeamMap(state.teams || []);
+}
 
 function _teamDisplayName(team) {
     if (!team) return '';
@@ -75,15 +79,42 @@ function _allocateOutroundPanels(stages, bp) {
     });
 }
 
-function _panelHtml(pairing) {
-    const panel = pairing.panel || [];
-    if (!panel.length) return '<div style="font-size:12px;color:#ef4444;font-style:italic;margin-bottom:10px;">No panel allocated</div>';
-    return `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">
-        ${panel.map(p => `<span class="dnd-judge-chip"><span class="chip-role ${p.role === 'chair' ? 'chair' : ''}">${escapeHTML(p.role || 'wing')}</span>${escapeHTML(p.name || '')}</span>`).join('')}
-    </div>`;
+function _getJudge(judgeId) {
+    return (state.judges || []).find(j => String(j.id) === String(judgeId)) || null;
 }
 
-// ── Validation helpers ────────────────────────────────────────────────────────
+function _normalizePanelRoles(pairing) {
+    if (!Array.isArray(pairing?.panel)) {
+        if (pairing) pairing.panel = [];
+        return;
+    }
+    pairing.panel.forEach((entry, index) => {
+        entry.role = index === 0 ? 'chair' : (entry.role === 'trainee' ? 'trainee' : 'wing');
+    });
+}
+
+function _panelLabel(entry) {
+    const judge = _getJudge(entry.id);
+    return judge?.name || entry.name || 'Unknown judge';
+}
+
+function _currentJudgeId() {
+    const user = state.auth?.currentUser;
+    return user?.role === 'judge' && user.associatedId != null ? String(user.associatedId) : null;
+}
+
+function _isPanelJudge(pairing) {
+    const judgeId = _currentJudgeId();
+    if (!judgeId) return false;
+    return (pairing?.panel || []).some(p => String(p.id || p.judge_id) === judgeId);
+}
+
+function _canSubmitPairing(pairing) {
+    const user = state.auth?.currentUser;
+    const isAdmin = user?.role === 'admin';
+    const isLocalSession = !state.auth?.isAuthenticated || !user;
+    return isAdmin || isLocalSession || _isPanelJudge(pairing);
+}
 
 function validateBreakSize(teamCount, bp) {
     const warnings = [];
@@ -123,7 +154,10 @@ function isBP() {
 }
 
 function tournamentIsBP() {
-    return state.tournament?.format === 'bp' || isBP();
+    if (state.tournament?.active && state.tournament?.format) {
+        return state.tournament.format === 'bp';
+    }
+    return isBP();
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -191,6 +225,85 @@ function _blankWSDCPairing(idx) {
     };
 }
 
+function _hasTeamId(id) {
+    return id !== null && id !== undefined && id !== '';
+}
+
+function _pairingReady(pairing, bp) {
+    return bp
+        ? _BP_POSITIONS.every(pos => _hasTeamId(pairing[pos.key]))
+        : _hasTeamId(pairing.gov) && _hasTeamId(pairing.opp);
+}
+
+function _pairingComplete(pairing, bp, isLastRound = false) {
+    if (!pairing?.entered) return false;
+    if (bp) {
+        return _hasTeamId(pairing.first) && (isLastRound || _hasTeamId(pairing.second));
+    }
+    return _hasTeamId(pairing.winner);
+}
+
+function _roundComplete(round, bp, isLastRound = false) {
+    const pairings = round?.pairings || [];
+    return pairings.length > 0 && pairings.every(p => _pairingComplete(p, bp, isLastRound));
+}
+
+function _syncTournamentProgress(tournament = state.tournament) {
+    const bracket = tournament?.bracket || [];
+    if (!bracket.length) return 0;
+
+    const bp = tournament.format === 'bp' || tournamentIsBP();
+    let firstIncomplete = bracket.length - 1;
+
+    bracket.forEach((round, idx) => {
+        round.completed = _roundComplete(round, bp, idx === bracket.length - 1);
+        if (!round.completed && firstIncomplete === bracket.length - 1) {
+            firstIncomplete = idx;
+        }
+    });
+
+    const finalRound = bracket[bracket.length - 1];
+    const finalPairing = finalRound?.pairings?.[0];
+    if (finalRound?.completed && finalPairing) {
+        tournament.champion = bp ? finalPairing.first : finalPairing.winner;
+    } else {
+        tournament.champion = null;
+    }
+
+    tournament.currentRound = firstIncomplete;
+    return firstIncomplete;
+}
+
+function _repairWSDCProgression(tournament = state.tournament) {
+    const bracket = tournament?.bracket || [];
+    if (tournament?.format === 'bp') return;
+    for (let roundIdx = 0; roundIdx < bracket.length - 1; roundIdx++) {
+        const round = bracket[roundIdx];
+        const nextRound = bracket[roundIdx + 1];
+        (round?.pairings || []).forEach((pairing, pairingIdx) => {
+            if (!pairing?.entered || !_hasTeamId(pairing.winner)) return;
+            let nextSlotIndex, side;
+            if (tournament.isPartial && roundIdx === 0) {
+                nextSlotIndex = pairingIdx;
+                side = 'opp';
+            } else {
+                nextSlotIndex = Math.floor(pairingIdx / 2);
+                side = pairingIdx % 2 === 0 ? 'gov' : 'opp';
+            }
+            if (!nextRound.pairings[nextSlotIndex]) nextRound.pairings[nextSlotIndex] = _blankWSDCPairing(nextSlotIndex);
+            const target = nextRound.pairings[nextSlotIndex];
+            if (target.entered) return;
+            const otherSide = side === 'gov' ? 'opp' : 'gov';
+            if (String(target[otherSide]) === String(pairing.winner)) {
+                target[otherSide] = null;
+                target[`${otherSide}Seed`] = null;
+            }
+            target[side] = pairing.winner;
+            target[`${side}Seed`] = _getTeam(pairing.winner)?.seed ?? null;
+        });
+    }
+}
+
 // ── Render break tab ───────────────────────────────────────────────────────
 function renderBreak() {
     const container = document.getElementById('break');
@@ -205,49 +318,112 @@ function renderBreak() {
         <div class="section">
             <h2>⚙️ Break Settings</h2>
             <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:15px;margin-bottom:20px;">
-                <select id="break-size" style="padding:12px;" onchange="window._handleBreakSizeChange()">
-                    ${bp ? `
-                        <option value="4">Grand Final (4 teams)</option>
-                        <option value="8">Semi-finals (8 teams)</option>
-                        <option value="16">Quarter-finals (16 teams)</option>
-                        <option value="32">Octo-finals (32 teams)</option>
-                        <option value="64">Pre-octo-finals (64 teams)</option>
-                        <option value="96">Round of 96 (96 teams)</option>
-                        <option value="custom">Custom…</option>
-                    ` : `
-                        <option value="2">Grand Final (2 teams)</option>
-                        <option value="4">Semi-finals (4 teams)</option>
-                        <option value="8">Quarter-finals (8 teams)</option>
-                        <option value="16">Octo-finals (16 teams)</option>
-                        <option value="32">Pre-octo-finals (32 teams)</option>
-                        <option value="64">Round of 64 (64 teams)</option>
-                        <option value="96">Round of 96 (96 teams)</option>
-                        <option value="custom">Custom…</option>
-                    `}
-                </select>
-                <div id="custom-break-container" style="display:none;">
+                <div>
                     <label style="font-size:12px;font-weight:600;color:#374151;margin-bottom:4px;display:block;">
-                        Number of breaking teams (max ${MAX_BREAK_SIZE})
+                        Break Size
                     </label>
-                    <input type="number" id="custom-break-size" min="2" max="${MAX_BREAK_SIZE}"
-                           style="padding:12px;width:100%;"
-                           placeholder="e.g. 72 or 96">
+                    <select id="break-size-select" style="padding:12px;width:100%;box-sizing:border-box;" onchange="window._handleBreakSizeSelect()">
+                        ${bp ? `
+                            <option value="direct:4">Grand Final (4 teams)</option>
+                            <option value="direct:8">Semi-Finals (8 teams)</option>
+                            <option value="direct:16" selected>Quarter-Finals (16 teams)</option>
+                            <option value="direct:32">Octo-Finals (32 teams)</option>
+                            <option value="direct:64">Round of 64 (64 teams)</option>
+                            <option value="partial:2:4">Partial Finals (6 total: 2 bye + 4 play)</option>
+                            <option value="partial:4:8">Partial Semi-Finals (12 total: 4 bye + 8 play)</option>
+                            <option value="partial:8:16">Partial Quarter-Finals (24 total: 8 bye + 16 play)</option>
+                            <option value="partial:16:32">Partial Octo-Finals (48 total: 16 bye + 32 play)</option>
+                        ` : `
+                            <option value="direct:2">Grand Final (2 teams)</option>
+                            <option value="direct:4">Semi-Finals (4 teams)</option>
+                            <option value="direct:8" selected>Quarter-Finals (8 teams)</option>
+                            <option value="direct:16">Octo-Finals (16 teams)</option>
+                            <option value="direct:32">Round of 32 (32 teams)</option>
+                            <option value="direct:64">Round of 64 (64 teams)</option>
+                            <option value="partial:1:2">Partial Finals (3 total: 1 bye + 2 play)</option>
+                            <option value="partial:2:4">Partial Semi-Finals (6 total: 2 bye + 4 play)</option>
+                            <option value="partial:4:8">Partial Quarter-Finals (12 total: 4 bye + 8 play)</option>
+                            <option value="partial:8:16">Partial Octo-Finals (24 total: 8 bye + 16 play)</option>
+                        `}
+                        <option value="custom">Custom break size...</option>
+                    </select>
+                    <input type="number" id="break-size-input" min="2" max="${MAX_BREAK_SIZE}"
+                           style="padding:12px;width:100%;box-sizing:border-box;margin-top:8px;display:none;"
+                           placeholder="${bp ? 'e.g. 8, 16, 40' : 'e.g. 4, 8, 40'}"
+                           oninput="window._handleBreakTotalChange()">
                 </div>
-                <select id="break-criteria" style="padding:12px;">
-                    <option value="wins">Wins + Points</option>
-                    <option value="points">Total Points + Wins</option>
-                    <option value="speaker">Speaker Avg + Wins</option>
-                    <option value="adjusted">Adjusted Points (Drop Lowest)</option>
-                </select>
-                <label style="display:flex;align-items:center;gap:8px;padding:12px;background:#f8fafc;border-radius:8px;cursor:pointer;">
+                <div>
+                    <label style="font-size:12px;font-weight:600;color:#374151;margin-bottom:4px;display:block;">
+                        Break Criteria
+                    </label>
+                    <select id="break-criteria" style="padding:12px;width:100%;box-sizing:border-box;">
+                        <option value="wins">Wins + Points</option>
+                        <option value="points">Total Points + Wins</option>
+                        <option value="speaker">Speaker Avg + Wins</option>
+                        <option value="adjusted">Adjusted Points (Drop Lowest)</option>
+                    </select>
+                </div>
+                <label style="display:flex;align-items:center;gap:8px;padding:12px;background:#f8fafc;border-radius:8px;cursor:pointer;align-self:end;">
                     <input type="checkbox" id="include-eliminated"> Include Eliminated Teams
                 </label>
-                <button onclick="window.calculateBreak()" class="primary" style="padding:12px;">📊 Calculate Break</button>
             </div>
-            ${breakingTeams.length > 0 ? `
-            <button onclick="window.generateKnockout()" class="primary" style="padding:12px;margin-bottom:10px;">
-                ⚔️ Start Knockout (${breakingTeams.length} teams)
-            </button>` : ''}
+
+            <div style="margin-bottom:16px;">
+                <div style="font-size:12px;font-weight:700;color:#374151;margin-bottom:8px;">Break Type</div>
+                <div style="display:flex;gap:12px;flex-wrap:wrap;">
+                    <label style="display:flex;align-items:center;gap:10px;padding:12px 16px;background:#f8fafc;border-radius:8px;cursor:pointer;border:2px solid #e2e8f0;flex:1;min-width:180px;">
+                        <input type="radio" name="break-type" value="direct" checked onchange="window._handleBreakTypeChange()">
+                        <div>
+                            <div style="font-weight:600;font-size:14px;">Direct Break</div>
+                            <div style="font-size:12px;color:#64748b;">All teams go straight to bracket</div>
+                        </div>
+                    </label>
+                    <label style="display:flex;align-items:center;gap:10px;padding:12px 16px;background:#f8fafc;border-radius:8px;cursor:pointer;border:2px solid #e2e8f0;flex:1;min-width:180px;">
+                        <input type="radio" name="break-type" value="partial" onchange="window._handleBreakTypeChange()">
+                        <div>
+                            <div style="font-weight:600;font-size:14px;">Partial Break</div>
+                            <div style="font-size:12px;color:#64748b;">Top seeds get byes; rest play a prelim round</div>
+                        </div>
+                    </label>
+                </div>
+            </div>
+
+            <div id="partial-break-config" style="display:none;background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:16px;margin-bottom:16px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+                    <div style="font-weight:600;font-size:14px;color:#92400e;">Partial Break Configuration</div>
+                    <button onclick="window._autoSuggestPartial()"
+                        style="font-size:12px;padding:6px 12px;border-radius:6px;border:1px solid #f59e0b;background:white;cursor:pointer;color:#92400e;font-weight:600;">
+                        ✨ Auto-suggest
+                    </button>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+                    <div>
+                        <label style="font-size:12px;font-weight:600;color:#374151;margin-bottom:4px;display:block;">Seeded Teams (get byes)</label>
+                        <input type="number" id="break-seeded" min="0" max="${MAX_BREAK_SIZE - 2}"
+                               style="padding:12px;width:100%;box-sizing:border-box;" placeholder="e.g. 8"
+                               oninput="window._updatePartialSummary()">
+                        <div style="font-size:11px;color:#64748b;margin-top:3px;">Skip the preliminary round</div>
+                    </div>
+                    <div>
+                        <label style="font-size:12px;font-weight:600;color:#374151;margin-bottom:4px;display:block;">Playoff Teams (play prelim)</label>
+                        <input type="number" id="break-playoff" min="2" max="${MAX_BREAK_SIZE - 1}"
+                               style="padding:12px;width:100%;box-sizing:border-box;" placeholder="e.g. 16"
+                               oninput="window._updatePartialSummary()">
+                        <div style="font-size:11px;color:#64748b;margin-top:3px;">Play in preliminary elimination round</div>
+                    </div>
+                </div>
+                <div id="partial-summary" style="font-size:13px;color:#92400e;min-height:20px;"></div>
+            </div>
+
+            <div id="break-validation-msg" style="margin-bottom:12px;"></div>
+
+            <div style="display:flex;gap:10px;flex-wrap:wrap;">
+                <button onclick="window.calculateBreak()" class="primary" style="padding:12px;">📊 Calculate Break</button>
+                ${breakingTeams.length > 0 ? `
+                <button onclick="window.generateKnockout()" class="primary" style="padding:12px;">
+                    ⚔️ Start Knockout (${breakingTeams.length} teams)
+                </button>` : ''}
+            </div>
         </div>` : `
         <div class="section">
             <h2>🏆 Break</h2>
@@ -264,40 +440,158 @@ function renderBreak() {
         </div>
     `;
 
-    // Restore previously used break size from localStorage
+    window._handleBreakSizeSelect();
+
+    // Restore previously saved custom break size
     const saved = localStorage.getItem('orion_break_size_custom');
     if (saved) {
-        const breakSelect = document.getElementById('break-size');
-        const customContainer = document.getElementById('custom-break-container');
-        const customInput = document.getElementById('custom-break-size');
-
-        const matchesOption = breakSelect.querySelector(`option[value="${saved}"]`);
-        if (matchesOption) {
-            breakSelect.value = saved;
-            customContainer.style.display = 'none';
-            if (customInput) customInput.value = '';
+        const selector = document.getElementById('break-size-select');
+        const input = document.getElementById('break-size-input');
+        const matchingDirect = `direct:${saved}`;
+        if (selector && [...selector.options].some(o => o.value === matchingDirect)) {
+            selector.value = matchingDirect;
+            window._handleBreakSizeSelect();
         } else {
-            if (customInput) customInput.value = saved;
-            breakSelect.value = 'custom';
-            customContainer.style.display = '';
+            if (selector) selector.value = 'custom';
+            if (input) input.value = saved;
+            window._handleBreakSizeSelect();
+        }
+    }
+
+    // Restore partial break state from saved tournament data
+    if (state.tournament?.isPartial && state.tournament?.reservedCount > 0) {
+        const partialRadio = document.querySelector('input[name="break-type"][value="partial"]');
+        if (partialRadio) {
+            partialRadio.checked = true;
+            const configDiv = document.getElementById('partial-break-config');
+            if (configDiv) configDiv.style.display = '';
+            const totalBreaking = state.tournament.breakingTeams?.length || 0;
+            const seededInput = document.getElementById('break-seeded');
+            const playoffInput = document.getElementById('break-playoff');
+            if (seededInput) seededInput.value = state.tournament.reservedCount;
+            if (playoffInput && totalBreaking) playoffInput.value = totalBreaking - state.tournament.reservedCount;
+            window._updatePartialSummary();
         }
     }
 
     if (breakingTeams.length > 0) displayBreakingTeams();
 }
 
-window._handleBreakSizeChange = function() {
-    const select = document.getElementById('break-size');
-    const container = document.getElementById('custom-break-container');
-    if (!select || !container) return;
-
-    if (select.value === 'custom') {
-        container.style.display = '';
-        const input = document.getElementById('custom-break-size');
-        if (input && !input.value) { input.focus(); }
-    } else {
-        container.style.display = 'none';
+window._handleBreakTypeChange = function () {
+    const selected = document.getElementById('break-size-select')?.value || 'custom';
+    const isPartial = selected.startsWith('partial:') ||
+        (selected === 'custom' && document.querySelector('input[name="break-type"][value="partial"]')?.checked);
+    const configDiv = document.getElementById('partial-break-config');
+    if (!configDiv) return;
+    configDiv.style.display = isPartial ? '' : 'none';
+    if (isPartial && selected === 'custom') {
+        const total = parseInt(document.getElementById('break-size-input')?.value || '0', 10);
+        const seeded = parseInt(document.getElementById('break-seeded')?.value || '0', 10) || 0;
+        const playoff = parseInt(document.getElementById('break-playoff')?.value || '0', 10) || 0;
+        if (total && seeded + playoff !== total) {
+            const config = suggestPartialConfig(total, isBP());
+            if (config) {
+                const seededInput = document.getElementById('break-seeded');
+                const playoffInput = document.getElementById('break-playoff');
+                if (seededInput) seededInput.value = config.reserved;
+                if (playoffInput) playoffInput.value = config.breaking;
+            }
+        }
     }
+    if (isPartial) window._updatePartialSummary();
+};
+
+function _isStandardBreakSize(total, bp) {
+    const perRoom = bp ? BP_TEAMS_PER_ROOM : WSDC_TEAMS_PER_ROOM;
+    const minFull = bp ? 4 : 2;
+    return total >= minFull && _isPowerOfTwo(total) && total % perRoom === 0;
+}
+
+window._handleBreakTotalChange = function () {
+    const selector = document.getElementById('break-size-select');
+    if (selector && selector.value !== 'custom') selector.value = 'custom';
+
+    const total = parseInt(document.getElementById('break-size-input')?.value || '0', 10);
+    const bp = isBP();
+    const directRadio = document.querySelector('input[name="break-type"][value="direct"]');
+    const partialRadio = document.querySelector('input[name="break-type"][value="partial"]');
+
+    if (total && !_isStandardBreakSize(total, bp)) {
+        const config = suggestPartialConfig(total, bp);
+        if (config) {
+            if (partialRadio) partialRadio.checked = true;
+            const seededInput = document.getElementById('break-seeded');
+            const playoffInput = document.getElementById('break-playoff');
+            if (seededInput) seededInput.value = config.reserved;
+            if (playoffInput) playoffInput.value = config.breaking;
+        }
+    } else if (total && directRadio && partialRadio) {
+        directRadio.checked = true;
+    }
+
+    window._handleBreakTypeChange();
+};
+
+window._handleBreakSizeSelect = function () {
+    const selected = document.getElementById('break-size-select')?.value || 'custom';
+    const customInput = document.getElementById('break-size-input');
+    const directRadio = document.querySelector('input[name="break-type"][value="direct"]');
+    const partialRadio = document.querySelector('input[name="break-type"][value="partial"]');
+    const seededInput = document.getElementById('break-seeded');
+    const playoffInput = document.getElementById('break-playoff');
+
+    if (customInput) customInput.style.display = selected === 'custom' ? '' : 'none';
+
+    if (selected.startsWith('direct:')) {
+        if (customInput) customInput.value = selected.split(':')[1];
+        if (directRadio) directRadio.checked = true;
+    } else if (selected.startsWith('partial:')) {
+        const [, seeded, playoff] = selected.split(':');
+        if (customInput) customInput.value = (parseInt(seeded, 10) || 0) + (parseInt(playoff, 10) || 0);
+        if (partialRadio) partialRadio.checked = true;
+        if (seededInput) seededInput.value = seeded;
+        if (playoffInput) playoffInput.value = playoff;
+    }
+    window._handleBreakTypeChange();
+};
+
+window._updatePartialSummary = function () {
+    const total = parseInt(document.getElementById('break-size-input')?.value || '0', 10);
+    const seeded = parseInt(document.getElementById('break-seeded')?.value ?? '', 10);
+    const playoff = parseInt(document.getElementById('break-playoff')?.value ?? '', 10);
+    const summary = document.getElementById('partial-summary');
+    if (!summary) return;
+    if (!total || isNaN(seeded) || isNaN(playoff)) { summary.innerHTML = ''; return; }
+
+    const sum = seeded + playoff;
+    const ok = sum === total;
+    const bp = isBP();
+    const advancers = playoff > 0 ? Math.floor(playoff / 2) : 0;
+    const round2Size = advancers + seeded;
+
+    summary.innerHTML =
+        `<span style="color:${ok ? '#16a34a' : '#dc2626'};">${ok ? '✓' : '⚠️'} ${seeded} seeded + ${playoff} playoff = ${sum}${ok ? '' : ` (need ${total})`}</span>` +
+        (ok && playoff > 0 ? ` <span style="color:#64748b;">· ${playoff} playoff → ${advancers} advance + ${seeded} seeded = ${round2Size} in ${getRoundName(round2Size, bp)}</span>` : '');
+};
+
+window._autoSuggestPartial = function () {
+    const selector = document.getElementById('break-size-select');
+    if (selector) selector.value = 'custom';
+    window._handleBreakSizeSelect();
+    const partialRadio = document.querySelector('input[name="break-type"][value="partial"]');
+    if (partialRadio) partialRadio.checked = true;
+    const total = parseInt(document.getElementById('break-size-input')?.value || '0', 10);
+    if (isNaN(total) || total < 3) { showNotification('Enter a total break size of at least 3 first', 'warning'); return; }
+    const bp = isBP();
+    const config = suggestPartialConfig(total, bp);
+    if (!config) { showNotification(`No valid partial break config found for ${total} teams`, 'error'); return; }
+    const seededInput = document.getElementById('break-seeded');
+    const playoffInput = document.getElementById('break-playoff');
+    if (seededInput) seededInput.value = config.reserved;
+    if (playoffInput) playoffInput.value = config.breaking;
+    window._handleBreakTypeChange();
+    window._updatePartialSummary();
+    showNotification(`Suggested: ${config.reserved} seeded + ${config.breaking} playoff`, 'info');
 };
 
 function displayBreakingTeams() {
@@ -331,11 +625,11 @@ function displayBreakingTeams() {
             </thead>
             <tbody>
                 ${sorted.map(team => {
-                    const spkrs = team.speakers.filter(s => s.substantiveCount > 0);
-                    const avg = spkrs.length
-                        ? (spkrs.reduce((s, x) => s + x.substantiveTotal / x.substantiveCount, 0) / spkrs.length).toFixed(2)
-                        : '—';
-                    return `<tr>
+        const spkrs = team.speakers.filter(s => s.substantiveCount > 0);
+        const avg = spkrs.length
+            ? (spkrs.reduce((s, x) => s + x.substantiveTotal / x.substantiveCount, 0) / spkrs.length).toFixed(2)
+            : '—';
+        return `<tr>
                         <td style="padding:12px;"><strong style="background:#f59e0b;color:white;padding:4px 12px;border-radius:40px;">#${team.seed}</strong></td>
                         <td style="padding:12px;"><strong>${_teamDisplayHtml(team)}</strong></td>
                         <td style="padding:12px;">${escapeHTML(team.code || '')}</td>
@@ -343,7 +637,7 @@ function displayBreakingTeams() {
                         <td style="padding:12px;text-align:center;">${(team.total || 0).toFixed(1)}</td>
                         <td style="padding:12px;text-align:center;">${avg}</td>
                     </tr>`;
-                }).join('')}
+    }).join('')}
             </tbody>
         </table>
     `;
@@ -351,67 +645,99 @@ function displayBreakingTeams() {
 
 // ── Calculate break ────────────────────────────────────────────────────────
 
-function calculateBreak(breakSize, criteria, includeEliminated) {
-    if (breakSize === undefined) {
-        const select = document.getElementById('break-size');
-        breakSize = select?.value;
-        if (breakSize === 'custom') {
-            const custom = document.getElementById('custom-break-size')?.value;
-            breakSize = custom ? parseInt(custom, 10) : undefined;
-        }
-    }
-    if (criteria === undefined)       criteria         = document.getElementById('break-criteria')?.value;
-    if (includeEliminated === undefined) includeEliminated = document.getElementById('include-eliminated')?.checked;
+function calculateBreak(breakSizeArg, criteriaArg, includeEliminatedArg) {
+    const bp = isBP();
+    const validationEl = document.getElementById('break-validation-msg');
+    if (validationEl) validationEl.innerHTML = '';
 
-    let actualBreakSize = typeof breakSize === 'string' ? parseInt(breakSize) : breakSize;
-    let isPartial = false;
-    let partialConfig = null;
-    let reservedCount = 0;
-
-    if (isNaN(actualBreakSize)) {
-        partialConfig = getPartialBreakConfig(breakSize, isBP());
-        if (partialConfig) {
-            actualBreakSize = partialConfig.reserved + partialConfig.breaking;
-            reservedCount = partialConfig.reserved;
-            isPartial = true;
-        }
+    // Read total break size from preset/custom UI or fallback arg
+    let actualBreakSize;
+    if (breakSizeArg !== undefined) {
+        actualBreakSize = typeof breakSizeArg === 'number' ? breakSizeArg : parseInt(breakSizeArg, 10);
     } else {
-        if (actualBreakSize > MAX_BREAK_SIZE) {
-            showNotification(`Break size cannot exceed ${MAX_BREAK_SIZE} teams`, 'error');
-            return;
-        }
-        const bp = isBP();
-        if (needsPartialBreak(actualBreakSize, bp)) {
-            partialConfig = suggestPartialConfig(actualBreakSize, bp);
-            if (partialConfig) {
-                reservedCount = partialConfig.reserved;
-                isPartial = true;
-            } else {
-                showNotification(`No valid partial break configuration found for ${actualBreakSize} teams. Try 4,8,16,32,64,96 (or 2,4,8,16,32,64,96 for WSDC).`, 'error');
-                return;
-            }
+        const selected = document.getElementById('break-size-select')?.value || 'custom';
+        if (selected.startsWith('direct:')) {
+            actualBreakSize = parseInt(selected.split(':')[1], 10);
+        } else if (selected.startsWith('partial:')) {
+            const [, seeded, playoff] = selected.split(':');
+            actualBreakSize = (parseInt(seeded, 10) || 0) + (parseInt(playoff, 10) || 0);
+        } else {
+            actualBreakSize = parseInt(document.getElementById('break-size-input')?.value ?? '', 10);
         }
     }
 
     if (isNaN(actualBreakSize) || actualBreakSize < 2) {
-        showNotification('Please select or enter a valid break size', 'error');
+        showNotification('Please enter a valid break size (minimum 2)', 'error');
+        return;
+    }
+    if (actualBreakSize > MAX_BREAK_SIZE) {
+        showNotification(`Break size cannot exceed ${MAX_BREAK_SIZE} teams`, 'error');
         return;
     }
 
-    localStorage.setItem('orion_break_size_custom', actualBreakSize);
+    const criteria = criteriaArg ?? document.getElementById('break-criteria')?.value ?? 'wins';
+    const includeEliminated = includeEliminatedArg ?? document.getElementById('include-eliminated')?.checked ?? false;
 
-    let eligible = includeEliminated ? state.teams : state.teams.filter(t => !t.eliminated);
-    if (eligible.length < actualBreakSize) {
-        showNotification(`Only ${eligible.length} teams available. Cannot break to ${actualBreakSize}.`, 'error');
-        return;
-    }
-
-    const bp = isBP();
-    const validationEl = document.getElementById('break-validation-msg');
+    // Determine break type from radio selection
+    const selectedBreak = document.getElementById('break-size-select')?.value || 'custom';
+    const isPartial = selectedBreak.startsWith('partial:') ||
+        (selectedBreak === 'custom' && (document.querySelector('input[name="break-type"][value="partial"]')?.checked ?? false));
+    let reservedCount = 0;
 
     if (isPartial) {
-        if (validationEl) validationEl.innerHTML = '';
+        let seededCount;
+        let playoffCount;
+        if (selectedBreak.startsWith('partial:')) {
+            const [, seeded, playoff] = selectedBreak.split(':');
+            seededCount = parseInt(seeded, 10);
+            playoffCount = parseInt(playoff, 10);
+        } else {
+            seededCount = parseInt(document.getElementById('break-seeded')?.value ?? '', 10);
+            playoffCount = parseInt(document.getElementById('break-playoff')?.value ?? '', 10);
+        }
+
+        if (isNaN(seededCount) || isNaN(playoffCount)) {
+            showNotification('Enter valid seeded and playoff team counts', 'error');
+            return;
+        }
+        if (seededCount < 0 || playoffCount < 2) {
+            showNotification('Seeded teams cannot be negative; playoff teams must be at least 2', 'error');
+            return;
+        }
+        if (seededCount + playoffCount !== actualBreakSize) {
+            showNotification(`Seeded (${seededCount}) + Playoff (${playoffCount}) must equal total break size (${actualBreakSize})`, 'error');
+            return;
+        }
+
+        const perRoom = bp ? BP_TEAMS_PER_ROOM : WSDC_TEAMS_PER_ROOM;
+        const minFull = bp ? 4 : 2;
+
+        if (playoffCount < minFull) {
+            showNotification(`Playoff teams must be at least ${minFull}`, 'error');
+            return;
+        }
+        if (!_isPowerOfTwo(playoffCount)) {
+            showNotification(`Playoff teams (${playoffCount}) must be a power of 2 (2, 4, 8, 16…)`, 'error');
+            return;
+        }
+        if (playoffCount % perRoom !== 0) {
+            showNotification(`Playoff teams (${playoffCount}) must be divisible by ${perRoom}`, 'error');
+            return;
+        }
+
+        const advancers = playoffCount / 2;
+        const round2Size = advancers + seededCount;
+        if (round2Size < minFull || !_isPowerOfTwo(round2Size) || round2Size % perRoom !== 0) {
+            showNotification(`Invalid config: ${playoffCount} playoff → ${advancers} advance + ${seededCount} seeded = ${round2Size} in round 2 (must be a valid bracket size)`, 'error');
+            return;
+        }
+
+        reservedCount = seededCount;
     } else {
+        if (needsPartialBreak(actualBreakSize, bp)) {
+            showNotification(`${actualBreakSize} is not a power of 2 — use Partial Break instead`, 'error');
+            return;
+        }
         const validation = validateBreakSize(actualBreakSize, bp);
         if (validation.errors.length > 0) {
             if (validationEl) {
@@ -421,13 +747,14 @@ function calculateBreak(breakSize, criteria, includeEliminated) {
             }
             return;
         }
-        if (validation.warnings.length > 0 && validationEl) {
-            validationEl.innerHTML = validation.warnings.map(w =>
-                `<div style="color:#f59e0b;padding:8px 12px;background:#fffbeb;border-radius:6px;margin-bottom:6px;">⚠️ ${w}</div>`
-            ).join('');
-        } else if (validationEl) {
-            validationEl.innerHTML = '';
-        }
+    }
+
+    localStorage.setItem('orion_break_size_custom', actualBreakSize);
+
+    let eligible = includeEliminated ? state.teams : state.teams.filter(t => !t.eliminated);
+    if (eligible.length < actualBreakSize) {
+        showNotification(`Only ${eligible.length} teams available. Cannot break to ${actualBreakSize}.`, 'error');
+        return;
     }
 
     const teamMetrics = eligible.map(team => {
@@ -446,9 +773,9 @@ function calculateBreak(breakSize, criteria, includeEliminated) {
     });
 
     const sorters = {
-        wins:     (a, b) => b.wins - a.wins || b.total - a.total || b.speakerAvg - a.speakerAvg,
-        points:   (a, b) => b.total - a.total || b.wins - a.wins || b.speakerAvg - a.speakerAvg,
-        speaker:  (a, b) => b.speakerAvg - a.speakerAvg || b.wins - a.wins || b.total - a.total,
+        wins: (a, b) => b.wins - a.wins || b.total - a.total || b.speakerAvg - a.speakerAvg,
+        points: (a, b) => b.total - a.total || b.wins - a.wins || b.speakerAvg - a.speakerAvg,
+        speaker: (a, b) => b.speakerAvg - a.speakerAvg || b.wins - a.wins || b.total - a.total,
         adjusted: (a, b) => b.adjustedTotal - a.adjustedTotal || b.wins - a.wins,
     };
 
@@ -457,6 +784,9 @@ function calculateBreak(breakSize, criteria, includeEliminated) {
     state.teams.forEach(t => { t.broke = false; t.seed = null; t.reserved = false; });
 
     if (isPartial && reservedCount > 0) {
+        // Seeds are globally sequential: 1..R for seeded (reserved byes), R+1..total for playoff teams.
+        // This ensures breaking.sort(seed) places reserved teams first, so breaking.slice(R) reliably
+        // yields only the playoff teams when generateKnockout() builds the preliminary round.
         sorted.slice(0, reservedCount).forEach((m, i) => {
             m.team.broke = true;
             m.team.reserved = true;
@@ -464,12 +794,12 @@ function calculateBreak(breakSize, criteria, includeEliminated) {
         });
         sorted.slice(reservedCount, actualBreakSize).forEach((m, i) => {
             m.team.broke = true;
-            m.team.seed = i + 1;
+            m.team.seed = reservedCount + i + 1;
         });
     } else {
         sorted.slice(0, actualBreakSize).forEach((m, i) => {
             m.team.broke = true;
-            m.team.seed  = i + 1;
+            m.team.seed = i + 1;
         });
     }
 
@@ -485,12 +815,8 @@ function calculateBreak(breakSize, criteria, includeEliminated) {
 
     let msg;
     if (isPartial) {
-        if (partialConfig?.name) {
-            msg = `${partialConfig.name}: Top ${reservedCount} reserved, ${partialConfig.breaking} break!`;
-        } else {
-            const NR = actualBreakSize - reservedCount;
-            msg = `Custom partial break: Top ${reservedCount} get byes, ${NR} in first round → ${actualBreakSize} total break`;
-        }
+        const playoffCount = actualBreakSize - reservedCount;
+        msg = `Partial break: ${reservedCount} seeded (byes) + ${playoffCount} playoff → ${actualBreakSize} total`;
     } else {
         msg = `Top ${actualBreakSize} teams break to ${getRoundName(actualBreakSize, bp)}`;
     }
@@ -599,7 +925,15 @@ function generateKnockout() {
     };
 
     save();
-    renderKnockout();
+    if (typeof window.switchTab === 'function') {
+        window.switchTab('draw');
+        setTimeout(() => {
+            window.renderDraw?.();
+            document.getElementById('round-card-ko-0')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }, 80);
+    } else {
+        renderKnockout();
+    }
     const roomWord = bp ? 'rooms' : 'matches';
     showNotification(`${stages[0].name} bracket generated — ${stages[0].pairings.length} ${roomWord}`, 'success');
 }
@@ -672,295 +1006,45 @@ function _placeReservedTeams(stages, reserved, bp) {
 // ── Render knockout tab ────────────────────────────────────────────────────
 
 function renderKnockout() {
-    const container = document.getElementById('knockout');
+    const container = document.getElementById('knockout-container');
     if (!container) return;
-    _ensureDragStyles();
 
-    const isAdmin = state.auth?.isAuthenticated && state.auth?.currentUser?.role === 'admin';
+    const knockoutRounds = (state.rounds || []).filter(r => r.type === 'knockout');
+    const hasLegacyBracket = !!state.tournament?.active;
 
-    if (!state.tournament?.active) {
+    if (!knockoutRounds.length && !hasLegacyBracket) {
         container.innerHTML = `
-            <div class="section">
-                <h2>Out Rounds</h2>
-                <p style="color:#64748b;text-align:center;padding:40px;">
-                    ${isAdmin ? 'Go to the Break tab to generate the bracket.' : 'The knockout bracket has not started yet.'}
-                </p>
+            <div style="text-align:center;padding:60px 20px;color:#64748b">
+                <div style="font-size:48px;margin-bottom:12px">⚔️</div>
+                <h3 style="margin:0 0 8px;color:#1e293b">No Outround Draw Yet</h3>
+                <p style="margin:0 0 16px">Generate a bracket from the Break tab, then draw outround rooms here.</p>
             </div>`;
         return;
     }
 
-    const { bracket, currentRound, champion } = state.tournament;
-    const isPartial = state.tournament?.isPartial;
-    const hideReservedTeams = isPartial && !bracket[0]?.completed;
+    const previousMeetings = getPreviousMeetings();
+    let html = '';
 
-    container.innerHTML = `
-        ${champion ? `
-        <div style="background:linear-gradient(145deg,#fef9e7,#fff);border:4px solid #f59e0b;padding:24px;border-radius:16px;margin-bottom:24px;text-align:center;">
-            <div style="font-size:48px;">🏆</div>
-            <h2 style="color:#f59e0b;margin:8px 0;">Tournament Champion</h2>
-            <p style="font-size:24px;font-weight:700;">${escapeHTML(state.teams.find(t => t.id === champion)?.name || '—')}</p>
-        </div>` : ''}
-
-        <div style="display:grid;gap:24px;">
-            ${bracket.map((round, roundIdx) => {
-                const isCurrent  = roundIdx === currentRound;
-                const isComplete = round.pairings.length > 0 && round.pairings.every(p => p.entered);
-                const hideReserved = hideReservedTeams && roundIdx > 0;
-
-                return `
-                <div class="section" style="${isCurrent ? 'border:2px solid #f59e0b;' : ''}">
-                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px;">
-                        <h2 style="margin:0;">${escapeHTML(round.name)}</h2>
-                        <span style="background:${isComplete ? '#2e7d32' : isCurrent ? '#f59e0b' : '#64748b'};color:white;padding:4px 14px;border-radius:40px;font-size:13px;">
-                            ${isComplete ? '✅ Complete' : isCurrent ? '⚡ Current' : '⏳ Pending'}
-                        </span>
-                    </div>
-                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;">
-                        ${round.pairings.map((p, pIdx) => _renderPairingCard(p, roundIdx, pIdx, isCurrent, isAdmin, hideReserved)).join('')}
-                    </div>
-                </div>`;
-            }).join('')}
-        </div>
-
-        ${isAdmin ? `
-        <div style="margin-top:20px;text-align:center;">
-            <button onclick="window.resetTournament()" class="danger" style="padding:12px 24px;">🔄 Reset Tournament</button>
-        </div>` : ''}
-    `;
-}
-
-function _renderPairingCard(p, roundIdx, pIdx, isCurrent, isAdmin, hideReserved = false) {
-    return tournamentIsBP()
-        ? _renderBPPairingCard(p, roundIdx, pIdx, isCurrent, isAdmin, hideReserved)
-        : _renderWSDCPairingCard(p, roundIdx, pIdx, isCurrent, isAdmin, hideReserved);
-}
-
-const _BP_POSITIONS = [
-    { key: 'og', label: 'OG', fullLabel: 'Opening Government', govSide: true  },
-    { key: 'oo', label: 'OO', fullLabel: 'Opening Opposition',  govSide: false },
-    { key: 'cg', label: 'CG', fullLabel: 'Closing Government',  govSide: true  },
-    { key: 'co', label: 'CO', fullLabel: 'Closing Opposition',  govSide: false },
-];
-
-function _renderBPPairingCard(p, roundIdx, pIdx, isCurrent, isAdmin, hideReserved = false) {
-    const cells = _BP_POSITIONS.map(pos => {
-        const rawTeam = p[pos.key] ? state.teams.find(t => t.id === p[pos.key]) : null;
-        const team = (hideReserved && rawTeam?.reserved) ? null : rawTeam;
-        const seed = (hideReserved && rawTeam?.reserved) ? null : p[`${pos.key}Seed`];
-        let place = null, bg = 'white';
-        if (p.entered) {
-            if      (p.first  == p[pos.key]) { place = '🥇 1st'; bg = '#fef9e7'; }
-            else if (p.second == p[pos.key]) { place = '🥈 2nd'; bg = '#e6f4ea'; }
-            else if (p.third  == p[pos.key]) { place = '🥉 3rd'; bg = '#fff7ed'; }
-            else if (p.fourth == p[pos.key]) { place = '4th';    bg = '#fef2f2'; }
-        }
-        return { ...pos, team, seed, place, bg };
-    });
-
-    const allSet   = cells.every(c => c.team);
-    const canEnter = isAdmin && !p.entered && isCurrent && allSet;
-    const canSwap  = isAdmin && !p.entered;
-    const canDrag  = isAdmin && !p.entered;
-
-    const advancers = p.entered
-        ? [p.first, p.second].map(id => _teamDisplayName(state.teams.find(t => t.id == id))).filter(Boolean)
-        : [];
-
-    const seedStr = cells.filter(c => c.seed).map(c => `#${c.seed}`).join(' · ');
-
-    return `
-    <div style="background:#f8fafc;padding:16px;border-radius:12px;border-left:4px solid ${p.entered ? '#2e7d32' : '#f59e0b'};">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:8px;flex-wrap:wrap;">
-            <span style="font-weight:700;font-size:15px;">${escapeHTML(p.room)}</span>
-            <div style="display:flex;gap:6px;align-items:center;">
-                ${canSwap ? `
-                <button onclick="window.swapTeamPositions(${roundIdx},${pIdx})"
-                    style="font-size:11px;padding:3px 9px;border-radius:6px;border:1px solid #cbd5e1;background:white;cursor:pointer;color:#475569;font-weight:600;">
-                    ⇄ Swap
-                </button>` : ''}
-                <span style="color:#94a3b8;font-size:12px;">${seedStr}</span>
-            </div>
-        </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;">
-            ${cells.map(c => {
-                const dragProps = (canDrag && c.team) ? `
-                    draggable="true"
-                    ondragstart="window._koOnDragStart(event,${roundIdx},${pIdx},'${c.key}')"
-                    ondragover="window._koOnDragOver(event)"
-                    ondragleave="window._koOnDragLeave(event)"
-                    ondrop="window._koOnDrop(event,${roundIdx},${pIdx},'${c.key}')"
-                ` : (canDrag ? `
-                    ondragover="window._koOnDragOver(event)"
-                    ondragleave="window._koOnDragLeave(event)"
-                    ondrop="window._koOnDrop(event,${roundIdx},${pIdx},'${c.key}')"
-                ` : '');
-                return `
-                <div data-ko-slot
-                    style="padding:10px;background:${c.bg};border-radius:8px;border:1px solid #e2e8f0;${canDrag && c.team ? 'cursor:grab;' : ''}"
-                    ${dragProps}>
-                    <div style="font-size:9px;font-weight:900;letter-spacing:0.8px;color:${c.govSide ? '#1d4ed8' : '#b91c1c'};margin-bottom:3px;">${c.label}</div>
-                    <div style="font-weight:700;font-size:13px;line-height:1.3;">
-                        ${c.team ? _teamDisplayHtml(c.team) : '<span style="color:#94a3b8;font-weight:400;font-size:12px;">TBD</span>'}
-                    </div>
-                    ${c.seed ? `<div style="font-size:10px;color:#94a3b8;margin-top:2px;">Seed #${c.seed}</div>` : ''}
-                    ${c.place ? `<div style="font-size:11px;font-weight:700;margin-top:4px;color:#374151;">${c.place}</div>` : ''}
-                    ${canDrag && c.team ? `<div style="font-size:9px;color:#cbd5e1;margin-top:3px;">drag to reposition</div>` : ''}
-                </div>`;
-            }).join('')}
-        </div>
-        ${_panelHtml(p)}
-        ${canEnter ? `
-        <button onclick="window.enterKnockoutResult(${roundIdx},${pIdx})" class="primary" style="width:100%;padding:10px;">
-            ✏️ Enter Results
-        </button>` : ''}
-        ${advancers.length === 2 ? `
-        <div style="padding:8px;background:#e6f4ea;border-radius:8px;text-align:center;font-size:13px;margin-top:4px;">
-            🥇 <strong>${escapeHTML(advancers[0])}</strong> &amp; 🥈 <strong>${escapeHTML(advancers[1])}</strong> advance
-        </div>` : ''}
-    </div>`;
-}
-
-function _renderWSDCPairingCard(p, roundIdx, pIdx, isCurrent, isAdmin, hideReserved = false) {
-    const rawGov     = p.gov ? state.teams.find(t => t.id === p.gov) : null;
-    const rawOpp     = p.opp ? state.teams.find(t => t.id === p.opp) : null;
-    const gov        = (hideReserved && rawGov?.reserved) ? null : rawGov;
-    const opp        = (hideReserved && rawOpp?.reserved) ? null : rawOpp;
-    const winnerTeam = p.winner ? state.teams.find(t => t.id === p.winner) : null;
-
-    const govName = gov ? _teamDisplayHtml(gov) : '<span style="color:#94a3b8">TBD</span>';
-    const oppName = opp ? _teamDisplayHtml(opp) : '<span style="color:#94a3b8">TBD</span>';
-    const govSeed = (hideReserved && rawGov?.reserved) ? null : p.govSeed;
-    const oppSeed = (hideReserved && rawOpp?.reserved) ? null : p.oppSeed;
-    const canSwap = isAdmin && !p.entered && gov && opp;
-    const canDrag = isAdmin && !p.entered;
-
-    const _wsdcSlot = (side, team, name, seed, isWinner) => {
-        const dragProps = (canDrag && team) ? `
-            draggable="true"
-            ondragstart="window._koOnDragStart(event,${roundIdx},${pIdx},'${side}')"
-            ondragover="window._koOnDragOver(event)"
-            ondragleave="window._koOnDragLeave(event)"
-            ondrop="window._koOnDrop(event,${roundIdx},${pIdx},'${side}')"
-        ` : (canDrag ? `
-            ondragover="window._koOnDragOver(event)"
-            ondragleave="window._koOnDragLeave(event)"
-            ondrop="window._koOnDrop(event,${roundIdx},${pIdx},'${side}')"
-        ` : '');
-        return `
-        <div data-ko-slot
-            style="flex:1;text-align:center;padding:10px;background:${isWinner ? '#e6f4ea' : 'white'};border-radius:8px;border:1px solid #e2e8f0;${canDrag && team ? 'cursor:grab;' : ''}"
-            ${dragProps}>
-            <div style="font-size:9px;font-weight:900;letter-spacing:0.8px;color:${side === 'gov' ? '#1d4ed8' : '#b91c1c'};margin-bottom:2px;">${side.toUpperCase()}</div>
-            <div style="font-weight:700;">${name}</div>
-            ${seed ? `<div style="font-size:11px;color:#64748b;">Seed #${seed}</div>` : ''}
-            ${isWinner ? '<div style="color:#2e7d32;font-size:12px;font-weight:600;margin-top:3px;">✓ Winner</div>' : ''}
-            ${canDrag && team ? `<div style="font-size:9px;color:#cbd5e1;margin-top:3px;">drag to reposition</div>` : ''}
+    if (knockoutRounds.length) {
+        html += `<div style="display:grid;gap:14px">
+            ${knockoutRounds.slice().reverse().map(round =>
+            renderRoundCard(round, state.rounds.findIndex(r => r.id === round.id), previousMeetings)
+        ).join('')}
         </div>`;
-    };
-
-    return `
-    <div style="background:#f8fafc;padding:16px;border-radius:12px;border-left:4px solid ${p.entered ? '#2e7d32' : '#f59e0b'};">
-        <div style="display:flex;justify-content:space-between;margin-bottom:12px;align-items:center;gap:8px;flex-wrap:wrap;">
-            <span style="font-weight:600;">${escapeHTML(p.room)}</span>
-            <div style="display:flex;gap:6px;align-items:center;">
-                ${canSwap ? `
-                <button onclick="window.swapTeamPositions(${roundIdx},${pIdx})"
-                    style="font-size:11px;padding:3px 9px;border-radius:6px;border:1px solid #cbd5e1;background:white;cursor:pointer;color:#475569;font-weight:600;">
-                    ⇄ Swap
-                </button>` : ''}
-                <span style="color:#64748b;font-size:13px;">${govSeed ? `#${govSeed}` : '?'} vs ${oppSeed ? `#${oppSeed}` : '?'}</span>
-            </div>
-        </div>
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
-            ${_wsdcSlot('gov', gov, govName, govSeed, p.winner === p.gov && !!p.gov)}
-            <div style="font-weight:700;color:#64748b;">VS</div>
-            ${_wsdcSlot('opp', opp, oppName, oppSeed, p.winner === p.opp && !!p.opp)}
-        </div>
-        ${_panelHtml(p)}
-        ${isAdmin && !p.entered && isCurrent && gov && opp ? `
-        <button onclick="window.enterKnockoutResult(${roundIdx},${pIdx})" class="primary" style="width:100%;padding:10px;">
-            Select Winner
-        </button>` : ''}
-        ${p.entered && winnerTeam ? `
-        <div style="margin-top:8px;padding:8px;background:#e6f4ea;border-radius:8px;text-align:center;font-size:13px;">
-            <strong>${_teamDisplayHtml(winnerTeam)}</strong> advances
-        </div>` : ''}
-    </div>`;
-}
-
-// ── Drag-and-drop ──────────────────────────────────────────────────────────
-
-let _dragSource = null;
-
-function _onKnockoutDragStart(event, roundIdx, pIdx, posKey) {
-    event.dataTransfer.effectAllowed = 'move';
-    _dragSource = { roundIdx, pIdx, posKey };
-    event.dataTransfer.setData('text/plain', JSON.stringify(_dragSource));
-    setTimeout(() => {
-        const el = event.target.closest('[data-ko-slot]');
-        if (el) el.classList.add('ko-dragging');
-    }, 0);
-}
-
-function _onKnockoutDragOver(event) {
-    event.preventDefault();
-    event.dataTransfer.dropEffect = 'move';
-    const slot = event.target.closest('[data-ko-slot]');
-    if (slot) slot.classList.add('ko-drag-over');
-}
-
-function _onKnockoutDragLeave(event) {
-    const slot = event.target.closest('[data-ko-slot]');
-    if (slot) slot.classList.remove('ko-drag-over');
-}
-
-function _onKnockoutDrop(event, roundIdx, pIdx, posKey) {
-    event.preventDefault();
-    document.querySelectorAll('.ko-drag-over').forEach(el => el.classList.remove('ko-drag-over'));
-    document.querySelectorAll('.ko-dragging').forEach(el => el.classList.remove('ko-dragging'));
-
-    if (!_dragSource) return;
-    const src = _dragSource;
-    _dragSource = null;
-
-    if (src.roundIdx === roundIdx && src.pIdx === pIdx && src.posKey === posKey) return;
-
-    const srcPairing = state.tournament.bracket[src.roundIdx].pairings[src.pIdx];
-    const dstPairing = state.tournament.bracket[roundIdx].pairings[pIdx];
-
-    if (srcPairing.entered || dstPairing.entered) {
-        showNotification('Cannot move teams after a result has been entered', 'error');
-        return;
     }
 
-    const tmpId   = dstPairing[posKey];
-    const tmpSeed = dstPairing[`${posKey}Seed`];
+    if (hasLegacyBracket) {
+        html += renderActiveOutroundDraw(false);
+    }
 
-    dstPairing[posKey]             = srcPairing[src.posKey];
-    dstPairing[`${posKey}Seed`]   = srcPairing[`${src.posKey}Seed`];
-
-    srcPairing[src.posKey]             = tmpId;
-    srcPairing[`${src.posKey}Seed`]   = tmpSeed;
-
-    save();
-    renderKnockout();
-    showNotification('Teams repositioned', 'success');
+    container.innerHTML = html;
 }
-
-function _ensureDragStyles() {
-    if (document.getElementById('ko-drag-styles')) return;
-    const style = document.createElement('style');
-    style.id = 'ko-drag-styles';
-    style.textContent = `
-        [data-ko-slot][draggable="true"] { cursor: grab; transition: opacity 0.15s, box-shadow 0.15s; }
-        [data-ko-slot][draggable="true"]:hover { box-shadow: 0 0 0 2px #f59e0b88; }
-        [data-ko-slot].ko-dragging  { opacity: 0.4; }
-        [data-ko-slot].ko-drag-over { outline: 2px dashed #f59e0b; background: #fef9e7 !important; }
-    `;
-    document.head.appendChild(style);
-}
-
-// ── Swap team positions ────────────────────────────────────────────────────
+const _BP_POSITIONS = [
+    { key: 'og', label: 'OG', fullLabel: 'Opening Government', govSide: true },
+    { key: 'oo', label: 'OO', fullLabel: 'Opening Opposition', govSide: false },
+    { key: 'cg', label: 'CG', fullLabel: 'Closing Government', govSide: true },
+    { key: 'co', label: 'CO', fullLabel: 'Closing Opposition', govSide: false },
+];
 
 function swapTeamPositions(roundIdx, pIdx) {
     const pairing = state.tournament.bracket[roundIdx].pairings[pIdx];
@@ -972,7 +1056,7 @@ function swapTeamPositions(roundIdx, pIdx) {
     if (tournamentIsBP()) {
         _openBPSwapModal(roundIdx, pIdx);
     } else {
-        [pairing.gov,     pairing.opp    ] = [pairing.opp,     pairing.gov    ];
+        [pairing.gov, pairing.opp] = [pairing.opp, pairing.gov];
         [pairing.govSeed, pairing.oppSeed] = [pairing.oppSeed, pairing.govSeed];
         save();
         renderKnockout();
@@ -983,16 +1067,16 @@ function swapTeamPositions(roundIdx, pIdx) {
 function _openBPSwapModal(roundIdx, pIdx) {
     const pairing = state.tournament.bracket[roundIdx].pairings[pIdx];
     const teamOptions = _BP_POSITIONS
-        .map(pos => ({ id: pairing[pos.key], seed: pairing[`${pos.key}Seed`], name: state.teams.find(t => t.id === pairing[pos.key])?.name }))
+        .map(pos => ({ id: pairing[pos.key], seed: pairing[`${pos.key}Seed`], name: _getTeam(pairing[pos.key])?.name }))
         .filter(t => t.id != null);
 
     closeAllModals();
     const overlay = document.createElement('div');
-    overlay.className = 'modal-overlay';
+    overlay.className = 'modal-overlay ko-result-overlay';
     overlay.onclick = e => { if (e.target === overlay) closeAllModals(); };
 
     const modal = document.createElement('div');
-    modal.className = 'modal';
+    modal.className = 'modal ko-result-modal';
     modal.style.maxWidth = '480px';
     modal.innerHTML = `
         <h2 style="margin-top:0;">⇄ Rearrange BP Positions</h2>
@@ -1041,8 +1125,8 @@ function applyBPSwap(roundIdx, pIdx) {
     _BP_POSITIONS.forEach(pos => { if (pairing[pos.key] != null) seedOf[pairing[pos.key]] = pairing[`${pos.key}Seed`]; });
 
     _BP_POSITIONS.forEach(pos => {
-        pairing[pos.key]             = newAssign[pos.key];
-        pairing[`${pos.key}Seed`]   = seedOf[newAssign[pos.key]] ?? null;
+        pairing[pos.key] = newAssign[pos.key];
+        pairing[`${pos.key}Seed`] = seedOf[newAssign[pos.key]] ?? null;
     });
 
     save();
@@ -1054,6 +1138,17 @@ function applyBPSwap(roundIdx, pIdx) {
 // ── Enter / submit knockout result ─────────────────────────────────────────
 
 function enterKnockoutResult(roundIndex, pairingIndex) {
+    _syncTournamentProgress(state.tournament);
+    const pairing = state.tournament?.bracket?.[roundIndex]?.pairings?.[pairingIndex];
+    if (!pairing) return;
+    if (!_canSubmitPairing(pairing)) {
+        showNotification('You are not assigned to this room', 'error');
+        return;
+    }
+    if (roundIndex !== state.tournament.currentRound) {
+        showNotification('This knockout round is not open for ballots yet', 'error');
+        return;
+    }
     if (tournamentIsBP()) {
         _enterBPResult(roundIndex, pairingIndex);
     } else {
@@ -1067,15 +1162,15 @@ window._bpAdvancing = _bpAdvancing;
 window._bpAdvancingMax = _bpAdvancingMax;
 
 function _enterBPResult(roundIndex, pairingIndex) {
-    const round   = state.tournament.bracket[roundIndex];
+    const round = state.tournament.bracket[roundIndex];
     const pairing = round.pairings[pairingIndex];
 
     const slots = _BP_POSITIONS.map(pos => ({
-        key:   pos.key,
+        key: pos.key,
         label: pos.label,
-        gov:   pos.govSide,
-        team:  state.teams.find(t => t.id === pairing[pos.key]),
-        seed:  pairing[`${pos.key}Seed`],
+        gov: pos.govSide,
+        team: _getTeam(pairing[pos.key]),
+        seed: pairing[`${pos.key}Seed`],
     })).filter(s => s.team);
 
     if (slots.length < 4) {
@@ -1084,20 +1179,21 @@ function _enterBPResult(roundIndex, pairingIndex) {
     }
 
     const isLastRound = roundIndex === state.tournament.bracket.length - 1;
-    const maxPicks    = isLastRound ? 1 : 2;
+    const maxPicks = isLastRound ? 1 : 2;
     _bpAdvancing = [];
     _bpAdvancingMax = maxPicks;
     window._bpAdvancing = _bpAdvancing;
     window._bpAdvancingMax = _bpAdvancingMax;
+    window._koActiveResultArgs = { roundIndex, pairingIndex };
 
     closeAllModals();
     const overlay = document.createElement('div');
-    overlay.className = 'modal-overlay';
+    overlay.className = 'modal-overlay ko-result-overlay';
     overlay.onclick = e => { if (e.target === overlay) { _bpAdvancing = []; window._bpAdvancing = []; closeAllModals(); } };
 
     const modal = document.createElement('div');
-    modal.className = 'modal';
-    modal.style.maxWidth = '460px';
+    modal.className = 'modal ko-result-modal';
+    modal.style.maxWidth = '520px';
     modal.innerHTML = `
         <h2 style="margin-top:0;">${isLastRound ? '🏆 Grand Final' : '✏️ Enter Results'}</h2>
         <p style="color:#64748b;font-size:14px;">${escapeHTML(round.name)} — ${escapeHTML(pairing.room)}</p>
@@ -1106,8 +1202,12 @@ function _enterBPResult(roundIndex, pairingIndex) {
             : 'Select the <strong>2 teams that advance</strong>. The rest are eliminated.'}</p>
         <div id="bp-team-cards" style="margin:16px 0;display:grid;gap:10px;">
             ${slots.map(s => `
-            <div id="bp-card-${s.key}"
-                onclick="window._bpToggleAdvancing('${s.key}', '${s.team.id}')"
+            <div id="bp-card-${s.key}" role="button" tabindex="0"
+                data-bp-advancer-card="${escapeHTML(String(s.key))}"
+                data-bp-team-id="${escapeHTML(String(s.team.id))}"
+                onpointerdown="event.preventDefault();event.stopPropagation();window._bpToggleAdvancing('${escapeHTML(String(s.key))}', '${escapeHTML(String(s.team.id))}')"
+                ontouchstart="event.preventDefault();event.stopPropagation();window._bpToggleAdvancing('${escapeHTML(String(s.key))}', '${escapeHTML(String(s.team.id))}')"
+                onclick="event.preventDefault();event.stopPropagation()"
                 style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px;background:#f8fafc;border-radius:10px;border:2px solid #e2e8f0;cursor:pointer;transition:all 0.15s;user-select:none;gap:12px;">
                 <div style="min-width:0;flex:1;">
                     <div style="font-size:9px;font-weight:900;letter-spacing:.6px;color:${s.gov ? '#1d4ed8' : '#b91c1c'};">${s.label}</div>
@@ -1122,26 +1222,46 @@ function _enterBPResult(roundIndex, pairingIndex) {
         </div>
         <div id="bp-error" style="color:#dc2626;margin-bottom:10px;display:none;font-size:13px;"></div>
         <div style="display:flex;gap:10px;">
-            <button onclick="window.submitKnockoutResult(${roundIndex},${pairingIndex})" class="primary" style="flex:2;padding:12px;">Submit</button>
-            <button onclick="window._bpAdvancing=[];window.closeAllModals()" class="secondary" style="flex:1;padding:12px;">Cancel</button>
+            <button type="button" data-ko-submit-bp onclick="event.preventDefault();event.stopPropagation();window.submitKnockoutResult(${roundIndex},${pairingIndex})" class="primary" style="flex:2;padding:12px;">Submit</button>
+            <button type="button" onclick="event.preventDefault();event.stopPropagation();window._bpAdvancing=[];window.closeAllModals()" class="secondary" style="flex:1;padding:12px;">Cancel</button>
         </div>
     `;
     overlay.appendChild(modal);
     document.body.appendChild(overlay);
+    document.body.classList.add('modal-open');
+
+    modal.querySelectorAll('[data-bp-advancer-card]').forEach(card => {
+        const toggle = event => {
+            event?.preventDefault?.();
+            event?.stopPropagation?.();
+            window._bpToggleAdvancing(card.dataset.bpAdvancerCard, card.dataset.bpTeamId);
+        };
+        card.addEventListener('pointerdown', toggle);
+        card.addEventListener('touchstart', toggle, { passive: false });
+        card.addEventListener('click', event => {
+            event.preventDefault();
+            event.stopPropagation();
+        });
+        card.addEventListener('keydown', event => {
+            if (event.key === 'Enter' || event.key === ' ') toggle(event);
+        });
+    });
 }
 
-window._bpToggleAdvancing = function(posKey, teamId) {
+window._bpToggleAdvancing = function (posKey, teamId) {
+    teamId = String(teamId);
     const maxPicks = window._bpAdvancingMax;
-    const isFinal  = maxPicks === 1;
-    const idx   = window._bpAdvancing.indexOf(teamId);
-    const card  = document.getElementById(`bp-card-${posKey}`);
+    const isFinal = maxPicks === 1;
+    const idx = window._bpAdvancing.indexOf(teamId);
+    const card = document.getElementById(`bp-card-${posKey}`);
     const badge = document.getElementById(`bp-badge-${posKey}`);
 
     if (idx !== -1) {
         window._bpAdvancing.splice(idx, 1);
         card.style.borderColor = '#e2e8f0';
-        card.style.background  = '#f8fafc';
-        badge.style.opacity    = '.25';
+        card.style.background = '#f8fafc';
+        badge.style.opacity = '.25';
+        card.setAttribute('aria-pressed', 'false');
     } else {
         if (window._bpAdvancing.length >= maxPicks) {
             const err = document.getElementById('bp-error');
@@ -1155,8 +1275,9 @@ window._bpToggleAdvancing = function(posKey, teamId) {
         }
         window._bpAdvancing.push(teamId);
         card.style.borderColor = isFinal ? '#f59e0b' : '#22c55e';
-        card.style.background  = isFinal ? '#fef9e7' : '#f0fdf4';
-        badge.style.opacity    = '1';
+        card.style.background = isFinal ? '#fef9e7' : '#f0fdf4';
+        badge.style.opacity = '1';
+        card.setAttribute('aria-pressed', 'true');
     }
 
     const err = document.getElementById('bp-error');
@@ -1171,75 +1292,204 @@ window._bpToggleAdvancing = function(posKey, teamId) {
 };
 
 function _enterWSDCResult(roundIndex, pairingIndex) {
-    const round   = state.tournament.bracket[roundIndex];
+    const round = state.tournament.bracket[roundIndex];
     const pairing = round.pairings[pairingIndex];
-    const gov     = state.teams.find(t => t.id === pairing.gov);
-    const opp     = state.teams.find(t => t.id === pairing.opp);
+    const gov = _getTeam(pairing.gov);
+    const opp = _getTeam(pairing.opp);
 
     if (!gov || !opp) { showNotification('Both teams must be set before entering a result', 'error'); return; }
+    window._koWinnerSelection = null;
+    window._koActiveResultArgs = { roundIndex, pairingIndex };
+
+    const entries = [
+        { side: 'gov', label: 'GOV', color: '#1d4ed8', team: gov, seed: pairing.govSeed },
+        { side: 'opp', label: 'OPP', color: '#b91c1c', team: opp, seed: pairing.oppSeed },
+    ];
 
     closeAllModals();
     const overlay = document.createElement('div');
-    overlay.className = 'modal-overlay';
+    overlay.className = 'modal-overlay ko-result-overlay';
     overlay.onclick = e => { if (e.target === overlay) closeAllModals(); };
 
     const modal = document.createElement('div');
-    modal.className = 'modal';
-    modal.style.maxWidth = '400px';
+    modal.className = 'modal ko-result-modal';
+    modal.style.maxWidth = '460px';
     modal.innerHTML = `
         <h2 style="margin-top:0;">Select Winner</h2>
-        <p style="color:#64748b;">${escapeHTML(round.name)} — ${escapeHTML(pairing.room)}</p>
+        <p style="color:#64748b;">${escapeHTML(round.name)} - ${escapeHTML(pairing.room)}</p>
         <div style="margin:20px 0;display:flex;flex-direction:column;gap:10px;">
-            <label style="display:flex;align-items:center;gap:10px;padding:15px;background:#f8fafc;border-radius:8px;cursor:pointer;">
-                <input type="radio" name="ko-winner" value="${gov.id}" style="width:20px;height:20px;">
-                <div>
-                    <div style="font-size:9px;font-weight:900;color:#1d4ed8;letter-spacing:.6px;">GOV</div>
-                    <strong>${_teamDisplayHtml(gov)}</strong> <span style="color:#64748b;">Seed #${pairing.govSeed || '?'}</span>
+            ${entries.map(entry => `
+            <div role="button" tabindex="0"
+                data-wsdc-winner-card="${escapeHTML(String(entry.team.id))}"
+                onpointerdown="event.preventDefault();event.stopPropagation();window._koSelectWSDCWinner('${escapeHTML(String(entry.team.id))}')"
+                ontouchstart="event.preventDefault();event.stopPropagation();window._koSelectWSDCWinner('${escapeHTML(String(entry.team.id))}')"
+                onclick="event.preventDefault();event.stopPropagation();window._koSelectWSDCWinner('${escapeHTML(String(entry.team.id))}')"
+                style="width:100%;text-align:left;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:15px;background:#f8fafc;border-radius:8px;cursor:pointer;border:2px solid #e2e8f0;color:inherit;">
+                <div style="min-width:0;">
+                    <div style="font-size:9px;font-weight:900;color:${entry.color};letter-spacing:.6px;">${entry.label}</div>
+                    <strong>${_teamDisplayHtml(entry.team)}</strong>
+                    <span style="color:#64748b;">Seed #${entry.seed || '?'}</span>
                 </div>
-            </label>
-            <label style="display:flex;align-items:center;gap:10px;padding:15px;background:#f8fafc;border-radius:8px;cursor:pointer;">
-                <input type="radio" name="ko-winner" value="${opp.id}" style="width:20px;height:20px;">
-                <div>
-                    <div style="font-size:9px;font-weight:900;color:#b91c1c;letter-spacing:.6px;">OPP</div>
-                    <strong>${_teamDisplayHtml(opp)}</strong> <span style="color:#64748b;">Seed #${pairing.oppSeed || '?'}</span>
-                </div>
-            </label>
+                <span data-wsdc-winner-badge="${escapeHTML(String(entry.team.id))}" style="font-size:12px;font-weight:800;color:#16a34a;opacity:0;">Winner</span>
+            </div>`).join('')}
         </div>
         <div id="ko-error" style="color:#dc2626;margin-bottom:10px;display:none;"></div>
+        <div id="ko-status" style="color:#64748b;margin-bottom:10px;font-size:12px;min-height:16px;">Select a team to continue.</div>
         <div style="display:flex;gap:10px;">
-            <button onclick="window.submitKnockoutResult(${roundIndex},${pairingIndex})" class="primary" style="flex:2;padding:12px;">Submit</button>
-            <button onclick="window.closeAllModals()" class="secondary" style="flex:1;padding:12px;">Cancel</button>
+            <button type="button" data-ko-submit-wsdc onclick="event.preventDefault();event.stopPropagation();window.submitKnockoutResult(${roundIndex},${pairingIndex})" class="primary" style="flex:2;padding:12px;">Submit</button>
+            <button type="button" onclick="window.closeAllModals()" class="secondary" style="flex:1;padding:12px;">Cancel</button>
         </div>
     `;
     overlay.appendChild(modal);
     document.body.appendChild(overlay);
+    document.body.classList.add('modal-open');
+
+    modal.querySelectorAll('[data-wsdc-winner-card]').forEach(card => {
+        const select = event => {
+            event?.preventDefault?.();
+            event?.stopPropagation?.();
+            window._koSelectWSDCWinner(card.dataset.wsdcWinnerCard);
+        };
+        card.addEventListener('pointerdown', select);
+        card.addEventListener('click', select);
+        card.addEventListener('touchstart', select, { passive: false });
+        card.addEventListener('keydown', event => {
+            if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                select();
+            }
+        });
+    });
+}
+
+document.addEventListener('pointerdown', event => {
+    const bpCard = event.target.closest?.('[data-bp-advancer-card]');
+    if (bpCard) {
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation?.();
+        window._bpToggleAdvancing(bpCard.dataset.bpAdvancerCard, bpCard.dataset.bpTeamId);
+        return;
+    }
+    const card = event.target.closest?.('[data-wsdc-winner-card]');
+    if (!card) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation?.();
+    window._koSelectWSDCWinner(card.dataset.wsdcWinnerCard);
+}, true);
+
+document.addEventListener('click', event => {
+    const submit = event.target.closest?.('[data-ko-submit-wsdc], [data-ko-submit-bp]');
+    if (submit) {
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation?.();
+        const active = window._koActiveResultArgs;
+        if (active) window.submitKnockoutResult(active.roundIndex, active.pairingIndex);
+        return;
+    }
+    const bpCard = event.target.closest?.('[data-bp-advancer-card]');
+    if (bpCard) {
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation?.();
+        return;
+    }
+    const card = event.target.closest?.('[data-wsdc-winner-card]');
+    if (!card) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation?.();
+    window._koSelectWSDCWinner(card.dataset.wsdcWinnerCard);
+}, true);
+
+window._koSelectWSDCWinner = function (teamId) {
+    window._koWinnerSelection = String(teamId);
+    document.querySelectorAll('[data-wsdc-winner-card]').forEach(card => {
+        const selected = card.dataset.wsdcWinnerCard === String(teamId);
+        card.style.borderColor = selected ? '#22c55e' : '#e2e8f0';
+        card.style.background = selected ? '#f0fdf4' : '#f8fafc';
+        card.setAttribute('aria-pressed', selected ? 'true' : 'false');
+    });
+    document.querySelectorAll('[data-wsdc-winner-badge]').forEach(badge => {
+        badge.style.opacity = badge.dataset.wsdcWinnerBadge === String(teamId) ? '1' : '0';
+    });
+    const err = document.getElementById('ko-error');
+    if (err) err.style.display = 'none';
+    const status = document.getElementById('ko-status');
+    const team = _getTeam(teamId);
+    if (status) status.textContent = `${team?.name || 'Team'} selected.`;
+};
+function _refreshKnockoutDisplay() {
+    renderKnockout();
+    if (typeof window.displayRounds === 'function' && document.getElementById('rounds-list')) {
+        window.displayRounds();
+    }
 }
 
 function submitKnockoutResult(roundIndex, pairingIndex) {
-    if (tournamentIsBP()) {
-        _submitBPResult(roundIndex, pairingIndex);
-    } else {
-        _submitWSDCResult(roundIndex, pairingIndex);
+    const showSubmitError = message => {
+        closeAllModals();
+        _forceUnlockPageScroll();
+        showNotification(message, 'error');
+    };
+
+    _refreshTeamCache();
+
+    const pairing = state.tournament?.bracket?.[roundIndex]?.pairings?.[pairingIndex];
+    if (!pairing) {
+        showSubmitError('Could not find this outround room. Refresh the draw and try again.');
+        return;
+    }
+    const submitKey = `${roundIndex}:${pairingIndex}`;
+    if (window._koSubmitting === submitKey) {
+        showSubmitError('Submission is already in progress. Please wait a moment.');
+        return;
+    }
+
+    window._koSubmitting = submitKey;
+    try {
+        _syncTournamentProgress(state.tournament);
+        if (!_canSubmitPairing(pairing)) {
+            showSubmitError('You are not assigned to this room');
+            return;
+        }
+        if (roundIndex !== state.tournament.currentRound) {
+            showSubmitError('This knockout round is not open for ballots yet');
+            return;
+        }
+        if (tournamentIsBP()) {
+            _submitBPResult(roundIndex, pairingIndex);
+        } else {
+            _submitWSDCResult(roundIndex, pairingIndex);
+        }
+    } catch (error) {
+        console.error('[knockout] submit failed:', error);
+        showSubmitError(`Outround ballot failed: ${error?.message || error}`);
+    } finally {
+        if (window._koSubmitting === submitKey) window._koSubmitting = null;
     }
 }
 
 function _submitBPResult(roundIndex, pairingIndex) {
     const tournament = state.tournament;
-    const bracket    = tournament.bracket;
-    const round      = bracket[roundIndex];
-    const pairing    = round.pairings[pairingIndex];
+    const bracket = tournament.bracket;
+    const previousCurrentRound = tournament.currentRound ?? 0;
+    const round = bracket[roundIndex];
+    const pairing = round.pairings[pairingIndex];
 
-    const advancing  = window._bpAdvancing || [];
+    const advancing = (window._bpAdvancing || []).map(id => String(id));
     const isLastRound = roundIndex === bracket.length - 1;
-    const required   = isLastRound ? 1 : 2;
+    const required = isLastRound ? 1 : 2;
 
     if (advancing.length !== required) {
         _showModalError('bp-error', isLastRound ? 'Select the winning team' : 'Select exactly 2 advancing teams');
         return;
     }
 
-    const allIds    = _BP_POSITIONS.map(pos => pairing[pos.key]).filter(id => id != null);
-    const remaining = allIds.filter(id => !advancing.includes(id));
+    const allIds = _BP_POSITIONS.map(pos => pairing[pos.key]).filter(id => id != null).map(id => String(id));
+    const remaining = allIds.filter(id => !advancing.includes(String(id)));
 
     const placeToId = {
         1: advancing[0],
@@ -1250,27 +1500,27 @@ function _submitBPResult(roundIndex, pairingIndex) {
 
     if (pairing.entered) {
         [pairing.first, pairing.second].forEach(tid => {
-            const t = state.teams.find(tm => tm.id == tid);
+            const t = _getTeam(tid);
             if (t) { if (t.tournamentWins > 0) t.tournamentWins -= 1; t.eliminated = false; }
         });
         [pairing.third, pairing.fourth].forEach(tid => {
-            const t = state.teams.find(tm => tm.id == tid);
+            const t = _getTeam(tid);
             if (t) { if (t.tournamentLosses > 0) t.tournamentLosses -= 1; t.eliminated = false; }
         });
     }
 
-    pairing.first  = placeToId[1];
+    pairing.first = placeToId[1];
     pairing.second = placeToId[2];
-    pairing.third  = placeToId[3];
+    pairing.third = placeToId[3];
     pairing.fourth = placeToId[4];
     pairing.entered = true;
 
     [pairing.first, pairing.second].forEach(tid => {
-        const t = state.teams.find(tm => tm.id == tid);
+        const t = _getTeam(tid);
         if (t) { t.tournamentWins = (t.tournamentWins || 0) + 1; t.eliminated = false; }
     });
     [pairing.third, pairing.fourth].forEach(tid => {
-        const t = state.teams.find(tm => tm.id == tid);
+        const t = _getTeam(tid);
         if (t) { t.tournamentLosses = (t.tournamentLosses || 0) + 1; t.eliminated = true; }
     });
 
@@ -1287,8 +1537,8 @@ function _submitBPResult(roundIndex, pairingIndex) {
             nextSlot = Math.floor(pairingIndex / 2);
             isEven = pairingIndex % 2 === 0;
         }
-        const firstTeam = state.teams.find(t => t.id == pairing.first);
-        const secondTeam = state.teams.find(t => t.id == pairing.second);
+        const firstTeam = _getTeam(pairing.first);
+        const secondTeam = _getTeam(pairing.second);
 
         if (!nextRound.pairings[nextSlot]) nextRound.pairings[nextSlot] = _blankBPPairing(nextSlot);
         const target = nextRound.pairings[nextSlot];
@@ -1342,57 +1592,72 @@ function _submitBPResult(roundIndex, pairingIndex) {
         tournament.champion = pairing.first;
     }
 
-    round.completed = round.pairings.every(p => p.entered);
-    if (round.completed && !isLastRound) tournament.currentRound = roundIndex + 1;
+    _repairWSDCProgression(tournament);
+    const nextCurrentRound = _syncTournamentProgress(tournament);
+    const advancedRound = nextCurrentRound > previousCurrentRound;
 
     save();
     window._bpAdvancing = [];
     closeAllModals();
-    renderKnockout();
+    _forceUnlockPageScroll();
+    _refreshKnockoutDisplay();
+    if (advancedRound) _scrollToCurrentRound();
     if (typeof renderStandings === 'function') renderStandings();
 
-    const first  = state.teams.find(t => t.id == pairing.first);
-    const second = state.teams.find(t => t.id == pairing.second);
-    const msg    = isLastRound
+    const first = _getTeam(pairing.first);
+    const second = _getTeam(pairing.second);
+    const msg = isLastRound
         ? `🏆 ${first?.name} is the Champion!`
         : `${first?.name} (1st) & ${second?.name} (2nd) advance!`;
     showNotification(msg, 'success');
 }
 
 function _submitWSDCResult(roundIndex, pairingIndex) {
+    const status = document.getElementById('ko-status');
+    if (status) status.textContent = 'Submitting result...';
     const tournament = state.tournament;
-    const bracket    = tournament.bracket;
-    const round      = bracket[roundIndex];
-    const pairing    = round.pairings[pairingIndex];
+    const bracket = tournament.bracket;
+    const previousCurrentRound = tournament.currentRound ?? 0;
+    const round = bracket[roundIndex];
+    const pairing = round.pairings[pairingIndex];
 
-    const radio = document.querySelector('input[name="ko-winner"]:checked');
-    if (!radio) { _showModalError('ko-error', 'Please select a winner'); return; }
-
-    if (pairing.entered) {
-        const prevWinner = state.teams.find(t => t.id == pairing.winner);
-        const prevLoser  = state.teams.find(t => t.id == pairing.loser);
-        if (prevWinner && prevWinner.tournamentWins  > 0) prevWinner.tournamentWins  -= 1;
-        if (prevLoser  && prevLoser.tournamentLosses > 0) prevLoser.tournamentLosses -= 1;
-        if (prevLoser)  prevLoser.eliminated = false;
+    const winnerId = window._koWinnerSelection;
+    if (!winnerId) { _showModalError('ko-error', 'Please select a winner'); return; }
+    const roomTeamIds = [pairing.gov, pairing.opp].filter(_hasTeamId).map(id => String(id));
+    if (!roomTeamIds.includes(String(winnerId))) {
+        _showModalError('ko-error', 'Selected winner is not in this room. Reopen the ballot and try again.');
+        return;
     }
 
-    const rawId    = radio.value;
-    const winnerId = isNaN(parseInt(rawId)) ? rawId : parseInt(rawId);
-    const loserId  = pairing.gov == winnerId ? pairing.opp : pairing.gov;
+    const previousWinnerId = pairing.entered ? pairing.winner : null;
+    if (pairing.entered) {
+        const prevWinner = _getTeam(previousWinnerId);
+        const prevLoser = _getTeam(pairing.loser);
+        if (prevWinner && prevWinner.tournamentWins > 0) prevWinner.tournamentWins -= 1;
+        if (prevLoser && prevLoser.tournamentLosses > 0) prevLoser.tournamentLosses -= 1;
+        if (prevLoser) prevLoser.eliminated = false;
+    }
 
-    const winner = state.teams.find(t => t.id == winnerId);
-    const loser  = state.teams.find(t => t.id == loserId);
+    const loserId = String(pairing.gov) === String(winnerId) ? pairing.opp : pairing.gov;
 
-    pairing.winner  = winnerId;
-    pairing.loser   = loserId;
+    const winner = _getTeam(winnerId);
+    const loser = _getTeam(loserId);
+    if (!winner) {
+        _showModalError('ko-error', 'Selected winner could not be found. Refresh the draw and try again.');
+        return;
+    }
+
+    pairing.winner = winnerId;
+    pairing.loser = loserId;
     pairing.entered = true;
 
-    if (winner) { winner.tournamentWins   = (winner.tournamentWins   || 0) + 1; winner.eliminated = false; }
-    if (loser)  { loser.tournamentLosses  = (loser.tournamentLosses  || 0) + 1; loser.eliminated  = true;  }
+    if (winner) { winner.tournamentWins = (winner.tournamentWins || 0) + 1; winner.eliminated = false; }
+    if (loser) { loser.tournamentLosses = (loser.tournamentLosses || 0) + 1; loser.eliminated = true; }
 
     const isLastRound = roundIndex === bracket.length - 1;
     if (!isLastRound) {
         const nextRound = bracket[roundIndex + 1];
+        if (!nextRound) throw new Error('Next outround is missing from the bracket');
         let nextSlotIndex, side;
         if (state.tournament.isPartial && roundIndex === 0) {
             nextSlotIndex = pairingIndex;
@@ -1404,30 +1669,36 @@ function _submitWSDCResult(roundIndex, pairingIndex) {
 
         if (!nextRound.pairings[nextSlotIndex]) nextRound.pairings[nextSlotIndex] = _blankWSDCPairing(nextSlotIndex);
         const target = nextRound.pairings[nextSlotIndex];
+        const otherSide = side === 'gov' ? 'opp' : 'gov';
 
-        if (target[side] === null) {
-            target[side] = winnerId;
-            target[`${side}Seed`] = winner?.seed ?? null;
-        } else if (side === 'gov' && target.opp === null) {
-            target.opp = winnerId;
-            target.oppSeed = winner?.seed ?? null;
-        } else if (side === 'opp' && target.gov === null) {
-            target.gov = winnerId;
-            target.govSeed = winner?.seed ?? null;
-        } else {
-            target[side] = winnerId;
-            target[`${side}Seed`] = winner?.seed ?? null;
+        if (previousWinnerId && String(target[side]) === String(previousWinnerId)) {
+            target[side] = null;
+            target[`${side}Seed`] = null;
         }
+        if (String(target[otherSide]) === String(winnerId)) {
+            target[otherSide] = null;
+            target[`${otherSide}Seed`] = null;
+        }
+
+        target[side] = winnerId;
+        target[`${side}Seed`] = winner?.seed ?? null;
+
+        target.entered = false;
+        target.winner = null;
+        target.loser = null;
     } else {
         tournament.champion = winnerId;
     }
 
-    round.completed = round.pairings.every(p => p.entered);
-    if (round.completed && !isLastRound) tournament.currentRound = roundIndex + 1;
+    _repairWSDCProgression(tournament);
+    const nextCurrentRound = _syncTournamentProgress(tournament);
+    const advancedRound = nextCurrentRound > previousCurrentRound;
 
     save();
     closeAllModals();
-    renderKnockout();
+    _forceUnlockPageScroll();
+    _refreshKnockoutDisplay();
+    if (advancedRound) _scrollToCurrentRound();
     if (typeof renderStandings === 'function') renderStandings();
 
     const msg = isLastRound
@@ -1439,6 +1710,20 @@ function _submitWSDCResult(roundIndex, pairingIndex) {
 function _showModalError(id, msg) {
     const el = document.getElementById(id);
     if (el) { el.style.display = 'block'; el.textContent = msg; }
+}
+
+function _forceUnlockPageScroll() {
+    document.body.classList.remove('modal-open');
+    document.body.style.overflow = '';
+    document.body.style.paddingRight = '';
+    document.documentElement.style.overflow = '';
+}
+
+function _scrollToCurrentRound() {
+    const roundIdx = state.tournament?.currentRound ?? 0;
+    requestAnimationFrame(() => {
+        document.getElementById(`ko-round-${roundIdx}`)?.scrollIntoView({ behavior: 'auto', block: 'start' });
+    });
 }
 
 // ── Reset tournament ───────────────────────────────────────────────────────
@@ -1477,16 +1762,18 @@ export {
     swapTeamPositions,
     applyBPSwap,
     resetTournament,
+    suggestPartialConfig,
 };
 
-window._koOnDragStart = _onKnockoutDragStart;
-window._koOnDragOver  = _onKnockoutDragOver;
-window._koOnDragLeave = _onKnockoutDragLeave;
-window._koOnDrop      = _onKnockoutDrop;
-
-window.generateKnockout       = generateKnockout;
-window.enterKnockoutResult    = enterKnockoutResult;
-window.submitKnockoutResult   = submitKnockoutResult;
-window.swapTeamPositions      = swapTeamPositions;
-window.applyBPSwap            = applyBPSwap;
-window.resetTournament        = resetTournament;
+window.calculateBreak = calculateBreak;
+window.generateKnockout = generateKnockout;
+window.enterKnockoutResult = enterKnockoutResult;
+window.submitKnockoutResult = submitKnockoutResult;
+window.repairOutroundProgression = function () {
+    _repairWSDCProgression(state.tournament);
+    _syncTournamentProgress(state.tournament);
+    save();
+};
+window.swapTeamPositions = swapTeamPositions;
+window.applyBPSwap = applyBPSwap;
+window.resetTournament = resetTournament;

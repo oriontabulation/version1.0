@@ -6,7 +6,7 @@
 
 // ============================================================
 
-import { state, activeTournament, removeTeamFromCache, patchTeam } from './state.js';
+import { state, activeTournament, addTeamToCache, removeTeamFromCache, patchTeam } from './state.js';
 import { api } from './api.js';
 import { showNotification, escapeHTML } from './utils.js';
 import { getCategories, teamMatchesCategory } from './categories.js';
@@ -15,6 +15,36 @@ import { el, emptyState } from './ui/components.js';
 // ── Permission helpers ────────────────────────────────────────────────────────
 function _isAdmin() { return !!(state.auth?.isAuthenticated && state.auth?.currentUser?.role === 'admin'); }
 function _myTeamId() { return state.auth?.currentUser?.associatedId ?? null; }
+function _isLocalTournament(tournament) {
+    const id = String(tournament?.id || '');
+    return tournament?.isLocalDefault || tournament?.isLocalSample || id.startsWith('__') || id === 'test_tournament';
+}
+
+function _localTeamId() {
+    return (crypto?.randomUUID?.() || `local_team_${Date.now()}_${Math.random().toString(36).slice(2)}`);
+}
+
+function _persistLocalTournamentTeams(tournament) {
+    if (!_isLocalTournament(tournament)) return;
+    try {
+        localStorage.setItem(`orion_local_teams_${tournament.id}`, JSON.stringify(state.teams || []));
+        if (String(tournament.id) === 'test_tournament') {
+            const raw = localStorage.getItem('orion_test_tournament');
+            const data = raw ? JSON.parse(raw) : {};
+            localStorage.setItem('orion_test_tournament', JSON.stringify({
+                ...data,
+                tournament: data.tournament || tournament,
+                teams: state.teams || [],
+                judges: state.judges || [],
+                rounds: state.rounds || [],
+                bracket: state.tournament || null,
+                publish: state.publish || {}
+            }));
+        }
+    } catch (error) {
+        console.warn('[teams] Could not persist local teams:', error);
+    }
+}
 
 let _teamsListCategory = null;
 const _CARD = 'background:white;border:1px solid #e2e8f0;border-radius:12px;padding:18px;margin-bottom:16px;';
@@ -269,12 +299,37 @@ export async function addTeam() {
     if (!tournId) return;
 
     try {
-        await api.createTeam({
-            tournamentId: tournId,
-            name, code, email, speakers,
-            categories: catId ? [catId] : []
-        });
-        await _reloadTeamsForTournament(tournId);
+        const createdTeam = _isLocalTournament(tournament)
+            ? {
+                id: _localTeamId(),
+                tournament_id: tournId,
+                name,
+                code: code || null,
+                email: email || null,
+                institution: null,
+                speakers,
+                categories: catId ? [catId] : [],
+                team_categories: [],
+                wins: 0,
+                losses: 0,
+                total: 0,
+                total_points: 0,
+                roundScores: {},
+                eliminated: false,
+                broke: false
+            }
+            : await api.createTeam({
+                tournamentId: tournId,
+                name, code, email, speakers,
+                categories: catId ? [catId] : []
+            });
+        addTeamToCache(createdTeam);
+        _persistLocalTournamentTeams(tournament);
+        if (!_isLocalTournament(tournament)) {
+            _reloadTeamsForTournament(tournId).catch(error => {
+                console.warn('[teams] Created team, but reload failed:', error);
+            });
+        }
         displayTeams();
         showNotification(`Team "${name}" added`, 'success');
 
