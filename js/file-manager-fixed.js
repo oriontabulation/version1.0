@@ -211,8 +211,11 @@ export async function importTeams() {
 
     try {
         const result = await api.bulkCreateTeams(tournId, parsed);
+        const teamErrMsg = result.errors.length ? ` — ${result.errors.map(e => e.error).join('; ')}` : '';
         showNotification(
-            `✅ Imported ${result.imported} team(s)${result.skipped ? ` (${result.skipped} skipped — duplicates)` : ''}${result.errors.length ? ` ⚠️ ${result.errors.length} errors` : ''}`,
+            result.imported > 0
+                ? `Imported ${result.imported} team(s)${result.skipped ? ` (${result.skipped} skipped)` : ''}${result.errors.length ? ` ⚠️ ${result.errors.length} error(s)${teamErrMsg}` : ''}`
+                : `Import failed${teamErrMsg}`,
             result.imported > 0 ? 'success' : 'error'
         );
 

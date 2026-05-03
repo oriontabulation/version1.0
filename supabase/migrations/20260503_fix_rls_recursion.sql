@@ -192,9 +192,7 @@ begin
         'ballot_speaker_scores',
         'feedback',
         'judge_tokens',
-        'team_tokens',
-        'categories',
-        'team_categories'
+        'team_tokens'
     ]
     loop
         if to_regclass(format('public.%I', tbl)) is not null then
@@ -531,39 +529,3 @@ create policy team_tokens_write on public.team_tokens
     using (public.can_manage_tournament(tournament_id))
     with check (public.can_manage_tournament(tournament_id));
 
--- Categories.
-create policy categories_select on public.categories
-    for select
-    using (
-        public.can_manage_tournament(tournament_id)
-        or exists (
-            select 1 from public.tournament_publish tp
-            where tp.tournament_id = categories.tournament_id
-              and (coalesce(tp.standings, false) or coalesce(tp.break, false))
-        )
-    );
-
-create policy categories_write on public.categories
-    for all
-    to authenticated
-    using (public.can_manage_tournament(tournament_id))
-    with check (public.can_manage_tournament(tournament_id));
-
-create policy team_categories_select on public.team_categories
-    for select
-    using (
-        public.can_manage_team(team_id)
-        or exists (
-            select 1
-            from public.teams t
-            join public.tournament_publish tp on tp.tournament_id = t.tournament_id
-            where t.id = team_categories.team_id
-              and (coalesce(tp.standings, false) or coalesce(tp.break, false))
-        )
-    );
-
-create policy team_categories_write on public.team_categories
-    for all
-    to authenticated
-    using (public.can_manage_team(team_id))
-    with check (public.can_manage_team(team_id));

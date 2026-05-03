@@ -266,9 +266,8 @@ async function registerUser() {
             return;
         }
 
-        // Allowed self-registration roles — admin role CANNOT be self-assigned
-        const allowedSelfRoles = ['public', 'judge', 'team'];
-        const safeRole = allowedSelfRoles.includes(role) ? role : 'public';
+        // Only observers can self-register; judges/speakers are added by admins
+        const safeRole = 'public';
 
         const { user } = await api.signUp(email, password, { name });
 
@@ -278,6 +277,7 @@ async function registerUser() {
                 id: user.id,
                 username: username.toLowerCase().trim(),
                 name: name,
+                email: email.toLowerCase().trim(),
                 associated_id: assocId || null,
                 status: 'active',
             });
@@ -543,21 +543,11 @@ function _showProfileCompletion(supabaseUser) {
         <div id="pcErr" style="background:#fef2f2;color:#dc2626;border-radius:8px;padding:10px;font-size:13px;margin-bottom:14px;display:none;"></div>
         <div style="margin-bottom:16px;">
             <label style="display:block;font-size:12px;font-weight:600;color:#374151;margin-bottom:8px;">I am joining as…</label>
-            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">
-                <label style="border:2px solid #e5e7eb;border-radius:10px;padding:12px 6px;text-align:center;cursor:pointer;">
-                    <input type="radio" name="pcRole" value="judge" style="display:none;">
-                    <div style="font-size:22px;margin-bottom:4px;">⚖️</div>
-                    <span style="font-size:11px;font-weight:700;color:#374151;display:block;">Judge</span>
-                </label>
+            <div style="display:grid;grid-template-columns:1fr;gap:8px;">
                 <label style="border:2px solid #6366f1;background:#eef2ff;border-radius:10px;padding:12px 6px;text-align:center;cursor:pointer;">
-                    <input type="radio" name="pcRole" value="team" checked style="display:none;">
-                    <div style="font-size:22px;margin-bottom:4px;">🏫</div>
-                    <span style="font-size:11px;font-weight:700;color:#4f46e5;display:block;">Speaker</span>
-                </label>
-                <label style="border:2px solid #e5e7eb;border-radius:10px;padding:12px 6px;text-align:center;cursor:pointer;">
-                    <input type="radio" name="pcRole" value="public" style="display:none;">
+                    <input type="radio" name="pcRole" value="public" checked style="display:none;">
                     <div style="font-size:22px;margin-bottom:4px;">👁️</div>
-                    <span style="font-size:11px;font-weight:700;color:#374151;display:block;">Observer</span>
+                    <span style="font-size:11px;font-weight:700;color:#4f46e5;display:block;">Observer</span>
                 </label>
             </div>
         </div>
@@ -846,19 +836,9 @@ function showLoginModal() {
                 <p style="font-size:11.5px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:.02em;margin:0 0 10px;">I am joining as</p>
                 <div class="role-cards">
                     <label class="role-card">
-                        <input type="radio" name="regRole" value="judge">
-                        <span class="role-card-icon">⚖️</span>
-                        <span class="role-card-label">Judge</span>
-                    </label>
-                    <label class="role-card">
-                        <input type="radio" name="regRole" value="team" checked>
-                        <span class="role-card-icon">🗣️</span>
-                        <span class="role-card-label">Speaker</span>                     
-                    </label>
-                    <label class="role-card">
-                        <input type="radio" name="regRole" value="public">
+                        <input type="radio" name="regRole" value="public" checked>
                         <span class="role-card-icon">👁️</span>
-                        <span class="role-card-label">Observer</span>                      
+                        <span class="role-card-label">Observer</span>
                     </label>
                 </div>
             </div>

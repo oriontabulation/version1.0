@@ -114,6 +114,64 @@ export const api = {
         await supabase.from('tournament_publish').delete().eq('tournament_id', id);
         _ok(await supabase.from('tournaments').delete().eq('id', id), 'deleteTournament');
     },
+    // ── Tournament admins ─────────────────────────────────────────────────
+    async getTournamentAdmins(tournamentId) {
+        const r = await supabase.from('tournament_admins')
+            .select('id, user_id, added_by, created_at, user_profiles(name, email)')
+            .eq('tournament_id', tournamentId)
+            .order('created_at');
+        return _ok(r, 'getTournamentAdmins');
+    },
+    async addTournamentAdminByEmail(tournamentId, userEmail) {
+        const caller = await api.getCurrentUser();
+        const email = userEmail.trim().toLowerCase();
+        const lookup = await supabase.from('user_profiles')
+            .select('id, name, email')
+            .ilike('email', email)
+            .single();
+        if (lookup.error || !lookup.data) {
+            throw new Error(`No registered account found for "${userEmail}". The user must sign up first.`);
+        }
+        const r = await supabase.from('tournament_admins').insert({
+            tournament_id: tournamentId,
+            user_id: lookup.data.id,
+            added_by: caller.id
+        }).select().single();
+        return _ok(r, 'addTournamentAdminByEmail');
+    },
+    async removeTournamentAdmin(entryId) {
+        _ok(await supabase.from('tournament_admins').delete().eq('id', entryId), 'removeTournamentAdmin');
+    },
+    // ── Tournament password lock ──────────────────────────────────────────
+    async setTournamentPassword(tournamentId, password) {
+        // Store null to remove the password lock
+        return _ok(await supabase.from('tournaments')
+            .update({ access_password: password || null })
+            .eq('id', tournamentId).select().single(), 'setTournamentPassword');
+    },
+    async verifyTournamentPassword(tournamentId, password) {
+        const r = await supabase.from('tournaments')
+            .select('access_password').eq('id', tournamentId).single();
+        if (r.error) return false;
+        const stored = r.data?.access_password;
+        if (!stored) return true; // no lock
+        return stored === password;
+    },
+    async revealTournamentPassword(tournamentId, adminLoginPassword) {
+        // Re-authenticate the current user to confirm identity before revealing
+        const { data: { user }, error: userErr } = await supabase.auth.getUser();
+        if (userErr || !user?.email) throw new Error('Not authenticated');
+        const { error: signInErr } = await supabase.auth.signInWithPassword({
+            email: user.email,
+            password: adminLoginPassword
+        });
+        if (signInErr) throw new Error('Incorrect password');
+        const r = await supabase.from('tournaments')
+            .select('access_password').eq('id', tournamentId).single();
+        _ok(r, 'revealTournamentPassword');
+        return r.data?.access_password || null;
+    },
+
     async getPublishState(tournamentId) {
         const r = await supabase.from('tournament_publish').select('*')
             .eq('tournament_id', tournamentId).single();
@@ -257,27 +315,22 @@ export const api = {
             email: t.email?.trim() || null,
         }));
         const { error: teamsErr } = await supabase.from('teams').insert(teamRows);
-        if (teamsErr) return { imported: 0, skipped, errors: [{ name: 'batch', error: teamsErr.message }] };
+        if (teamsErr) {
+            console.error('[api] bulkCreateTeams insert failed:', teamsErr);
+            return { imported: 0, skipped, errors: [{ name: 'batch', error: teamsErr.message }] };
+        }
 
-        const speakerRows = [], categoryRows = [];
+        const speakerRows = [];
         teamRows.forEach((team, i) => {
             (toInsert[i].speakers || []).forEach((s, pos) => {
                 const name = (typeof s === 'string' ? s : s.name || '').trim();
                 if (name) speakerRows.push({ team_id: team.id, tournament_id: tournamentId, name, email: typeof s === 'string' ? null : (s.email || null), position: pos + 1 });
             });
-            (toInsert[i].categories || []).forEach(cid => categoryRows.push({ team_id: team.id, category_id: cid }));
         });
 
         const errors = [];
         const speakerError = await _insertSpeakersResilient(speakerRows, 'speakers');
         if (speakerError) errors.push({ name: 'speakers', error: speakerError });
-
-        if (categoryRows.length) {
-            const categoryInsert = await supabase.from('team_categories').insert(categoryRows);
-            if (categoryInsert.error) {
-                errors.push({ name: 'categories', error: categoryInsert.error.message });
-            }
-        }
 
         return { imported: teamRows.length, skipped, errors };
     },

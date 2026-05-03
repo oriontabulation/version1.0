@@ -516,6 +516,7 @@ function _sectionTournaments() {
                             <button class="adm-btn primary xs" onclick="window.adminSwitchTournament('${t.id}')">🎯 Switch</button>
                         ` : ''}
                         <button class="adm-btn secondary xs" onclick="window.adminRenameTournament('${t.id}', '${escapeHTML(t.name).replace(/'/g,"\\'")}')">✏️ Rename</button>
+                        <button class="adm-btn secondary xs" onclick="window.adminTournamentSettings('${t.id}', '${escapeHTML(t.name).replace(/'/g,"\\'")}')">⚙️ Settings</button>
                         <button class="adm-btn danger xs" onclick="window.adminDeleteTournament('${t.id}')" ${isActive && tournaments.length > 1 ? 'disabled' : ''}>🗑️</button>
                     </div>
                 </div>`;
@@ -598,6 +599,210 @@ async function adminDeleteTournament(id) {
     }
 }
 window.adminDeleteTournament = adminDeleteTournament;
+
+// ── Tournament Settings (admins + password) ──────────────────────────────────
+async function adminTournamentSettings(tournId, tournName) {
+    // Must be authenticated admin
+    const user = state.auth?.currentUser;
+    if (!user || user.role !== 'admin') {
+        showNotification('Admin login required to access tournament settings', 'error');
+        return;
+    }
+
+    closeAllModals();
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.onclick = e => { if (e.target === overlay) closeAllModals(); };
+
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.id = 'tourn-settings-modal';
+    modal.style.cssText = 'max-width:540px;max-height:90vh;overflow-y:auto;';
+    modal.innerHTML = `
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+            <h2 style="margin:0;">⚙️ Tournament Settings</h2>
+            <button onclick="window.closeAllModals()" style="background:none;border:none;font-size:20px;cursor:pointer;color:#94a3b8;line-height:1;">×</button>
+        </div>
+        <p style="color:#64748b;font-size:13px;margin:0 0 24px;">${escapeHTML(tournName)}</p>
+
+        <!-- ── Admins ── -->
+        <div style="border:1.5px solid #e2e8f0;border-radius:12px;padding:18px;margin-bottom:18px;">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+                <span style="font-size:16px;">👤</span>
+                <h3 style="margin:0;font-size:14px;font-weight:700;color:#1e293b;">Tournament Admins</h3>
+            </div>
+            <p style="font-size:12px;color:#64748b;margin:0 0 14px;">
+                These users can fully manage this tournament. Add them by their registered email address.
+            </p>
+            <div id="ts-admins-list" style="margin-bottom:12px;min-height:36px;">
+                <span style="color:#94a3b8;font-size:13px;">Loading…</span>
+            </div>
+            <div style="display:flex;gap:8px;">
+                <input type="email" id="ts-admin-email" placeholder="admin@email.com"
+                       style="flex:1;padding:9px 12px;border:1.5px solid #e2e8f0;border-radius:8px;font-size:13px;"
+                       onkeydown="if(event.key==='Enter') window._tsAddAdmin('${tournId}')">
+                <button onclick="window._tsAddAdmin('${tournId}')"
+                        style="padding:9px 18px;background:#6366f1;color:white;border:none;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;white-space:nowrap;">
+                    ＋ Add Admin
+                </button>
+            </div>
+            <div id="ts-admin-err" style="color:#dc2626;font-size:12px;margin-top:8px;display:none;"></div>
+        </div>
+
+        <!-- ── Access Password ── -->
+        <div style="border:1.5px solid #e2e8f0;border-radius:12px;padding:18px;">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+                <span style="font-size:16px;">🔒</span>
+                <h3 style="margin:0;font-size:14px;font-weight:700;color:#1e293b;">Access Password</h3>
+            </div>
+            <p style="font-size:12px;color:#64748b;margin:0 0 14px;">
+                Visitors must enter this password to view the tournament's public pages. Leave blank to remove the lock.
+            </p>
+
+            <!-- View current password (requires re-auth) -->
+            <div id="ts-pw-reveal-section" style="background:#fafafa;border-radius:8px;padding:12px;margin-bottom:14px;">
+                <p style="font-size:12px;color:#374151;font-weight:600;margin:0 0 8px;">View current password</p>
+                <p style="font-size:11px;color:#64748b;margin:0 0 10px;">Enter your admin login password to reveal the current tournament access password.</p>
+                <div style="display:flex;gap:8px;">
+                    <input type="password" id="ts-reauth-pw" placeholder="Your login password"
+                           style="flex:1;padding:8px 12px;border:1.5px solid #e2e8f0;border-radius:8px;font-size:13px;"
+                           onkeydown="if(event.key==='Enter') window._tsRevealPassword('${tournId}')">
+                    <button onclick="window._tsRevealPassword('${tournId}')"
+                            style="padding:8px 14px;background:#f1f5f9;color:#374151;border:1.5px solid #e2e8f0;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;">
+                        Reveal
+                    </button>
+                </div>
+                <div id="ts-pw-revealed" style="margin-top:10px;display:none;">
+                    <span style="font-size:12px;color:#64748b;">Current password: </span>
+                    <code id="ts-pw-value" style="font-size:14px;font-weight:700;color:#1e293b;background:#e0f2fe;padding:3px 10px;border-radius:6px;"></code>
+                </div>
+                <div id="ts-reauth-err" style="color:#dc2626;font-size:12px;margin-top:8px;display:none;"></div>
+            </div>
+
+            <!-- Set new password -->
+            <p style="font-size:12px;color:#374151;font-weight:600;margin:0 0 8px;">Set new password</p>
+            <div style="display:flex;gap:8px;">
+                <div style="flex:1;position:relative;">
+                    <input type="password" id="ts-password" placeholder="New password (blank = remove lock)"
+                           style="width:100%;padding:9px 38px 9px 12px;border:1.5px solid #e2e8f0;border-radius:8px;font-size:13px;box-sizing:border-box;">
+                    <button type="button" id="ts-pw-toggle"
+                            onclick="window._tsToggleNewPw()"
+                            style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:15px;color:#94a3b8;padding:0;">
+                        👁
+                    </button>
+                </div>
+                <button onclick="window._tsSetPassword('${tournId}')"
+                        style="padding:9px 18px;background:#3b82f6;color:white;border:none;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;white-space:nowrap;">
+                    Save
+                </button>
+            </div>
+            <div id="ts-pw-err" style="color:#dc2626;font-size:12px;margin-top:8px;display:none;"></div>
+        </div>`;
+
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+    document.body.classList.add('modal-open');
+
+    _tsRefreshAdminList(tournId);
+}
+
+async function _tsRefreshAdminList(tournId) {
+    const list = document.getElementById('ts-admins-list');
+    if (!list) return;
+    try {
+        const admins = await api.getTournamentAdmins(tournId);
+        if (!admins.length) {
+            list.innerHTML = `<p style="color:#94a3b8;font-size:13px;margin:0;">No extra admins assigned.</p>`;
+            return;
+        }
+        list.innerHTML = admins.map(a => {
+            const name  = a.user_profiles?.name  || '';
+            const email = a.user_profiles?.email || '—';
+            return `
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 12px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;margin-bottom:6px;">
+                <div>
+                    <div style="font-size:13px;font-weight:600;color:#1e293b;">${escapeHTML(name || email)}</div>
+                    ${name ? `<div style="font-size:11px;color:#64748b;">${escapeHTML(email)}</div>` : ''}
+                </div>
+                <button onclick="window._tsRemoveAdmin('${a.id}','${tournId}')"
+                        style="padding:5px 12px;background:#fee2e2;color:#dc2626;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;">
+                    Remove
+                </button>
+            </div>`;
+        }).join('');
+    } catch (e) {
+        list.innerHTML = `<p style="color:#dc2626;font-size:13px;margin:0;">Failed to load admins: ${escapeHTML(e.message)}</p>`;
+    }
+}
+
+window._tsAddAdmin = async function(tournId) {
+    const input = document.getElementById('ts-admin-email');
+    const errEl = document.getElementById('ts-admin-err');
+    const email = input?.value.trim();
+    if (!email) return;
+    errEl.style.display = 'none';
+    try {
+        await api.addTournamentAdminByEmail(tournId, email);
+        input.value = '';
+        await _tsRefreshAdminList(tournId);
+        showNotification('Admin added', 'success');
+    } catch (e) {
+        errEl.textContent = e.message;
+        errEl.style.display = 'block';
+    }
+};
+
+window._tsRemoveAdmin = async function(entryId, tournId) {
+    if (!confirm('Remove this admin from the tournament?')) return;
+    try {
+        await api.removeTournamentAdmin(entryId);
+        await _tsRefreshAdminList(tournId);
+        showNotification('Admin removed', 'success');
+    } catch (e) {
+        showNotification(`Remove failed: ${e.message}`, 'error');
+    }
+};
+
+window._tsRevealPassword = async function(tournId) {
+    const loginPw  = document.getElementById('ts-reauth-pw')?.value;
+    const errEl    = document.getElementById('ts-reauth-err');
+    const revealEl = document.getElementById('ts-pw-revealed');
+    const valEl    = document.getElementById('ts-pw-value');
+    errEl.style.display = 'none';
+    if (!loginPw) { errEl.textContent = 'Enter your login password first.'; errEl.style.display = 'block'; return; }
+    try {
+        const pw = await api.revealTournamentPassword(tournId, loginPw);
+        valEl.textContent = pw || '(no password set)';
+        document.getElementById('ts-reauth-pw').value = '';
+        revealEl.style.display = 'block';
+    } catch (e) {
+        errEl.textContent = e.message || 'Authentication failed';
+        errEl.style.display = 'block';
+    }
+};
+
+window._tsToggleNewPw = function() {
+    const inp = document.getElementById('ts-password');
+    if (!inp) return;
+    inp.type = inp.type === 'password' ? 'text' : 'password';
+};
+
+window._tsSetPassword = async function(tournId) {
+    const pw    = document.getElementById('ts-password')?.value || '';
+    const errEl = document.getElementById('ts-pw-err');
+    errEl.style.display = 'none';
+    try {
+        await api.setTournamentPassword(tournId, pw.trim() || null);
+        document.getElementById('ts-password').value = '';
+        document.getElementById('ts-pw-revealed').style.display = 'none';
+        showNotification(pw.trim() ? 'Access password saved' : 'Password lock removed', 'success');
+    } catch (e) {
+        errEl.textContent = e.message;
+        errEl.style.display = 'block';
+    }
+};
+
+window.adminTournamentSettings = adminTournamentSettings;
 
 // Helper to get team name by ID
 function _getTeamName(teamId) {
@@ -2545,6 +2750,7 @@ export function initAdminDashboard() {
     window.adminSwitchTournament         = adminSwitchTournament;
     window.adminRenameTournament         = adminRenameTournament;
     window.adminDeleteTournament         = adminDeleteTournament;
+    window.adminTournamentSettings       = adminTournamentSettings;
 
     // Break section tab switcher 
     window._brkTab = function(tab) {
