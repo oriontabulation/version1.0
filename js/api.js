@@ -361,6 +361,11 @@ export const api = {
             }
         }
     },
+    async addSpeaker({ teamId, tournamentId, name, position }) {
+        return _ok(await supabase.from('speakers')
+            .insert({ team_id: teamId, tournament_id: tournamentId, name: name.trim(), position })
+            .select().single(), 'addSpeaker');
+    },
     async bulkCreateTeams(tournamentId, teamsData) {
         const { data: existing } = await supabase.from('teams').select('name').eq('tournament_id', tournamentId);
         const existingNames = new Set((existing || []).map(t => t.name.toLowerCase()));
@@ -664,18 +669,43 @@ export const api = {
             ), 'submitBallot.scores');
         }
 
-        const { error: fnErr } = await supabase.functions.invoke('update-team-stats',
+        // Stats update is best-effort — ballot row is already saved above
+        const { error: statsErr } = await supabase.functions.invoke('update-team-stats',
             { body: { debateId, tournamentId, ballotId: ballot.id } });
-        if (fnErr) console.error('[api:submitBallot] Stats fn error:', fnErr.message);
+        if (statsErr) console.warn('[api:submitBallot] Stats fn error:', statsErr.message);
 
         return ballot;
     },
     async replaceBallotAsAdmin({ debateId, tournamentId, winnerSide, govTotal, oppTotal, speakerScores = [] }) {
-        const { data, error } = await supabase.functions.invoke('admin-replace-ballot', {
-            body: { debateId, tournamentId, winnerSide, govTotal, oppTotal, speakerScores }
-        });
-        if (error || data?.error) throw new Error(error?.message || data.error);
-        return data;
+        const user = await api.getCurrentUser();
+        if (!user) throw new Error('Must be authenticated to submit a ballot');
+
+        // Delete existing scores then ballot rows for this debate before inserting the replacement
+        const { data: existing } = await supabase.from('ballots').select('id').eq('debate_id', debateId);
+        const existingIds = (existing || []).map(b => b.id);
+        if (existingIds.length) {
+            await supabase.from('ballot_speaker_scores').delete().in('ballot_id', existingIds);
+            _ok(await supabase.from('ballots').delete().eq('debate_id', debateId), 'replaceBallot.delete');
+        }
+
+        const ballot = _ok(await supabase.from('ballots').insert({
+            debate_id: debateId, tournament_id: tournamentId, submitted_by: user.id,
+            winner_side: winnerSide, gov_total: govTotal, opp_total: oppTotal
+        }).select().single(), 'replaceBallot.insert');
+
+        if (speakerScores.length > 0) {
+            _ok(await supabase.from('ballot_speaker_scores').insert(
+                speakerScores.map(s => ({ ballot_id: ballot.id, speaker_id: s.speakerId,
+                                          score: s.score, is_reply: s.isReply || false }))
+            ), 'replaceBallot.scores');
+        }
+
+        // Stats update is best-effort — ballot row is already saved above
+        const { error: statsErr } = await supabase.functions.invoke('update-team-stats',
+            { body: { debateId, tournamentId, ballotId: ballot.id } });
+        if (statsErr) console.warn('[api:replaceBallotAsAdmin] Stats fn error:', statsErr.message);
+
+        return ballot;
     },
     async getBallots(debateId) {
         return _ok(await supabase.from('ballots').select('*, ballot_speaker_scores(*)')

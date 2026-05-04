@@ -449,7 +449,26 @@ async function ensureDefaultTournamentForAdmin() {
         return null;
     }
 
-    if (tournaments.length) return tournaments[0];
+    if (tournaments.length) {
+        // State may still hold the pre-login placeholder (RLS returned [] before auth).
+        // Re-hydrate with the real list so the admin dashboard sees actual tournaments.
+        const storedId = localStorage.getItem('orion_active_tournament_id');
+        const activeId = tournaments.find(t => t.id === storedId)?.id ?? tournaments[0].id;
+        const [teams, judges, rounds, publish] = await Promise.all([
+            api.getTeams(activeId).catch(() => []),
+            api.getJudges(activeId).catch(() => []),
+            api.getRounds(activeId).catch(() => []),
+            api.getPublishState(activeId).catch(() => ({}))
+        ]);
+        hydrateState({ activeTournamentId: activeId, tournaments, teams, judges, rounds, publish });
+        localStorage.setItem('orion_active_tournament_id', activeId);
+        updateHeaderTournamentName();
+        _setupRealtimeSync(activeId);
+        updateTabsForRole();
+        updateNavDropdowns();
+        updatePublicCounts();
+        return tournaments.find(t => t.id === activeId) ?? tournaments[0];
+    }
 
     const created = await api.createTournament('My Tournament').catch(() => null);
     if (!created) return null;

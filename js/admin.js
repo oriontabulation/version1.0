@@ -5,7 +5,8 @@
 //   + Tournament management 
 // ============================================
 
-import { state, activeTournament, switchTournamentCache, hydrateState, save, saveNow } from './state.js';
+import { state, activeTournament, switchTournamentCache, hydrateState, save, saveNow, DEFAULT_TOURNAMENT_ID } from './state.js';
+import { isUUID } from './id-system.js';
 import { api } from './api.js';
 import { showNotification, escapeHTML, closeAllModals } from './utils.js';
 import { updateTabsForRole, updateNavDropdowns } from './tab.js';
@@ -16,6 +17,17 @@ import { exportData, fullReset } from './file-manager.js';
 import { getLocalUsers, registerLocalUser, deleteLocalUser, updateLocalUserRole } from './local-auth.js';
 
 let _activeSection = 'overview';
+
+/**
+ * Returns true only when `id` is a real, non-placeholder tournament ID.
+ * The string '__orion_default_tournament__' is used as a local fallback when
+ * no Supabase tournaments exist; passing it to any DB API call causes a
+ * "invalid input syntax for type uuid" error.
+ * Also filters out 'test_tournament' and any non-UUID strings.
+ */
+function _isRealId(id) {
+    return Boolean(id && isUUID(id));
+}
 
 async function _reloadTournamentCatalog(activeTournamentId, activeData = {}) {
     const tournaments = await api.getTournaments().catch(() => []);
@@ -603,6 +615,10 @@ async function adminSwitchTournament(id, opts = {}) {
 window.adminSwitchTournament = adminSwitchTournament;
 
 async function adminRenameTournament(id, currentName) {
+    if (!_isRealId(id)) {
+        showNotification('Cannot rename: no real tournament selected. Create a tournament first.', 'error');
+        return;
+    }
     const newName = prompt('Rename tournament:', currentName);
     if (!newName?.trim()) return;
     try {
@@ -935,6 +951,22 @@ function _sectionOverview() {
     const rounds = state.rounds || [];
     const currentRound = rounds.filter(r => r.debates?.length > 0).pop();
 
+    // Get and sort tournaments for the overview list
+    let tournaments = [];
+    if (state.tournaments) {
+        if (Array.isArray(state.tournaments)) {
+            tournaments = [...state.tournaments];
+        } else {
+            tournaments = Object.entries(state.tournaments).map(([id, t]) => ({ ...t, id }));
+        }
+    }
+    const activeId = state.activeTournamentId;
+    tournaments.sort((a, b) => {
+        if (a.id === activeId) return -1;
+        if (b.id === activeId) return 1;
+        return (b.created_at || 0) - (a.created_at || 0) || b.id.localeCompare(a.id);
+    });
+
     let roomBallotsHtml = '';
     if (!currentRound) {
         roomBallotsHtml = `<div class="adm-empty">No rounds yet — go to Rounds &amp; Draw to create one.</div>`;
@@ -1015,6 +1047,31 @@ function _sectionOverview() {
                     <span class="adm-quick-label">Feedback</span>
                 </button>
             </div>
+        </div>
+        <div class="adm-card">
+            <div class="adm-card-title">🏟️ Your Tournaments <span class="adm-card-count">${tournaments.length}</span></div>
+            ${tournaments.length === 0 ? `<div class="adm-empty">No tournaments yet. <button class="adm-btn primary xs" onclick="window.adminSwitchSection('tournaments')">Create one</button></div>` : `
+            <div class="adm-col">
+                ${tournaments.map(t => {
+                    const isActive = t.id === activeId;
+                    return `
+                        <div class="adm-tour-row ${isActive ? 'is-active' : ''}">
+                            <div class="adm-grow">
+                                <div class="adm-tour-header">
+                                    <strong class="adm-tour-name">${escapeHTML(t.name)}</strong>
+                                    ${isActive ? `<span class="adm-badge indigo adm-active-badge">● ACTIVE</span>` : ''}
+                                </div>
+                                <div class="adm-tour-meta">
+                                    <span class="adm-format-badge std">${t.format || 'std'}</span>
+                                </div>
+                            </div>
+                            <div class="adm-row gap-sm">
+                                ${!isActive ? `<button class="adm-btn primary xs" onclick="window.adminSwitchTournament('${t.id}')">🎯 Switch</button>` : ''}
+                                <button class="adm-btn secondary xs" onclick="window.adminSwitchSection('tournaments')">Manage</button>
+                            </div>
+                        </div>`;
+                }).join('')}
+            </div>`}
         </div>
         <div class="adm-card">
             <div class="adm-card-title">📈 Progress</div>
@@ -1482,8 +1539,8 @@ async function _loadURLsData() {
     if (!el) return;
     const safe = async (fn) => { try { return await fn(); } catch (_) { return []; } };
     const [jTokens, tTokens] = await Promise.all([
-        tournId ? safe(() => api.getJudgeTokenStatus(tournId)) : [],
-        tournId ? safe(() => api.getTeamTokenStatus(tournId)) : [],
+        _isRealId(tournId) ? safe(() => api.getJudgeTokenStatus(tournId)) : [],
+        _isRealId(tournId) ? safe(() => api.getTeamTokenStatus(tournId)) : [],
     ]);
     if (!document.getElementById('adm-urls-body')) return;
     el.innerHTML = _buildURLsBody(jTokens || [], tTokens || []);
@@ -1633,7 +1690,7 @@ function _buildURLsBody(jTokens, tTokens) {
 // ── Admin URL CRUD window functions ───────────────────────────────────────────
 async function _adminGenJudgeURL(judgeId) {
     const tournId = state.activeTournamentId;
-    if (!tournId) { showNotification('No active tournament', 'error'); return; }
+    if (!_isRealId(tournId)) { showNotification('No active tournament', 'error'); return; }
     try {
         const { url } = await api.generateJudgeToken(judgeId, tournId);
         showNotification('URL generated — copy it from the list', 'success');
@@ -1645,7 +1702,7 @@ async function _adminGenJudgeURL(judgeId) {
 
 async function _adminGenTeamURL(teamId) {
     const tournId = state.activeTournamentId;
-    if (!tournId) { showNotification('No active tournament', 'error'); return; }
+    if (!_isRealId(tournId)) { showNotification('No active tournament', 'error'); return; }
     try {
         const { url } = await api.generateTeamToken(teamId, tournId);
         showNotification('URL generated — copy it from the list', 'success');
@@ -1656,7 +1713,7 @@ async function _adminGenTeamURL(teamId) {
 
 async function _adminRevokeJudgeURL(judgeId) {
     const tournId = state.activeTournamentId;
-    if (!tournId) return;
+    if (!_isRealId(tournId)) return;
     if (!confirm('Revoke this judge\'s access link?')) return;
     try {
         await api.revokeJudgeToken(judgeId, tournId);
@@ -1667,7 +1724,7 @@ async function _adminRevokeJudgeURL(judgeId) {
 
 async function _adminRevokeTeamURL(teamId) {
     const tournId = state.activeTournamentId;
-    if (!tournId) return;
+    if (!_isRealId(tournId)) return;
     if (!confirm('Revoke this team\'s access link?')) return;
     try {
         await api.revokeTeamToken(teamId, tournId);
@@ -1695,7 +1752,7 @@ function _adminSendURL(url, email, type, name) {
 
 async function _adminGenAllJudgeURLs() {
     const tournId = state.activeTournamentId;
-    if (!tournId) { showNotification('No active tournament', 'error'); return; }
+    if (!_isRealId(tournId)) { showNotification('No active tournament', 'error'); return; }
     const judges = state.judges || [];
     if (!judges.length) { showNotification('No judges added yet', 'error'); return; }
     let count = 0, failed = 0;
@@ -1710,7 +1767,7 @@ async function _adminGenAllJudgeURLs() {
 
 async function _adminGenAllTeamURLs() {
     const tournId = state.activeTournamentId;
-    if (!tournId) { showNotification('No active tournament', 'error'); return; }
+    if (!_isRealId(tournId)) { showNotification('No active tournament', 'error'); return; }
     const teams = state.teams || [];
     if (!teams.length) { showNotification('No teams added yet', 'error'); return; }
     let count = 0, failed = 0;
@@ -1725,7 +1782,7 @@ async function _adminGenAllTeamURLs() {
 
 async function _adminBulkSendURLs(type) {
     const tournId = state.activeTournamentId;
-    if (!tournId) return;
+    if (!_isRealId(tournId)) return;
     try {
         let tokens, entities;
         if (type === 'judges') {
@@ -1756,7 +1813,7 @@ async function _adminBulkSendURLs(type) {
 
 async function _adminRevokeAllURLs() {
     const tournId = state.activeTournamentId;
-    if (!tournId) return;
+    if (!_isRealId(tournId)) return;
     if (!confirm('Revoke ALL judge and team access links? They will need to be regenerated.')) return;
     try {
         await Promise.all([api.revokeAllTokens(tournId), api.revokeAllTeamTokens(tournId)]);
@@ -1767,7 +1824,7 @@ async function _adminRevokeAllURLs() {
 
 async function _adminRevokeAllJudgeURLs() {
     const tournId = state.activeTournamentId;
-    if (!tournId) return;
+    if (!_isRealId(tournId)) return;
     if (!confirm('Revoke all judge access links?')) return;
     try {
         await api.revokeAllTokens(tournId);
@@ -1778,7 +1835,7 @@ async function _adminRevokeAllJudgeURLs() {
 
 async function _adminRevokeAllTeamURLs() {
     const tournId = state.activeTournamentId;
-    if (!tournId) return;
+    if (!_isRealId(tournId)) return;
     if (!confirm('Revoke all team access links?')) return;
     try {
         await api.revokeAllTeamTokens(tournId);

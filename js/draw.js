@@ -5,6 +5,7 @@
 
 import { save, saveNow} from './supabase-sync.js';
 import { state, watch } from './state.js';
+import { isUUID } from './id-system.js';
 import { api } from './api.js';
 import { showNotification, escapeHTML, closeAllModals, getPreviousMeetings, teamCode } from './utils.js';
 import { hasConflict, buildConflictMap, buildTeamMap } from './maps.js';
@@ -2235,10 +2236,8 @@ function getPreviousJudgeAllocations(isKnockout) {
 async function persistStandardRound(round, roundNumber) {
     const tournamentId = state.activeTournamentId;
     if (!tournamentId) throw new Error('My Tournament is not ready yet');
+    if (!isUUID(tournamentId)) return null; // Skip persistence for local/test tournaments
     _normalizeRoundPanels(round);
-    if (String(tournamentId).startsWith('__') || String(tournamentId) === 'test_tournament') {
-        return null;
-    }
     if ((round.debates || []).some(d => d.format === 'bp' || d.format === 'speech' || d.og || d.oo || d.cg || d.co)) {
         return null;
     }
@@ -2290,7 +2289,7 @@ function roundNumber(round) {
 }
 
 function _isPersistedStandardRound(round) {
-    return !!(state.activeTournamentId && round?.id && !round?.format && !isBP() && !isSpeech());
+    return !!(state.activeTournamentId && isUUID(state.activeTournamentId) && round?.id && !round?.format && !isBP() && !isSpeech());
 }
 
 function _roomNameForDebate(round, debate) {
@@ -3416,27 +3415,32 @@ export async function submitResults(roundIdx, debateIdx) {
         const loser = govWon ? opp : gov;
 
         if (_isPersistedStandardRound(round) && (isJudge || isAdmin)) {
-            const findSpeakerId = (team, speakerName) => {
-                const speaker = (team.speakers || []).find(s => s.name?.toLowerCase() === speakerName.toLowerCase());
-                return speaker?.id || null;
+            // Returns the DB id for a speaker, creating the Supabase row if the
+            // name was typed via "New…" and doesn't yet exist on the roster.
+            const ensurePersistedSpeaker = async (team, speakerName) => {
+                const existing = (team.speakers || []).find(s => s.name?.toLowerCase() === speakerName.toLowerCase());
+                if (existing?.id) return existing.id;
+                const created = await api.addSpeaker({
+                    teamId: team.id,
+                    tournamentId: state.activeTournamentId,
+                    name: speakerName.trim(),
+                    position: (team.speakers || []).length + 1
+                });
+                if (!team.speakers) team.speakers = [];
+                team.speakers.push(created);
+                return created.id;
             };
 
             const speakerScores = [];
             for (let i = 0; i < 3; i++) {
-                const govSpeakerId = findSpeakerId(gov, govSpeakers[i]);
-                const oppSpeakerId = findSpeakerId(opp, oppSpeakers[i]);
-                if (!govSpeakerId || !oppSpeakerId) {
-                    throw new Error('All ballot speakers must already exist on the team roster for persisted submissions.');
-                }
+                const govSpeakerId = await ensurePersistedSpeaker(gov, govSpeakers[i]);
+                const oppSpeakerId = await ensurePersistedSpeaker(opp, oppSpeakers[i]);
                 speakerScores.push({ speakerId: govSpeakerId, score: govScores[i], isReply: false });
                 speakerScores.push({ speakerId: oppSpeakerId, score: oppScores[i], isReply: false });
             }
             if (!disableReply) {
-                const govReplyId = findSpeakerId(gov, govReply);
-                const oppReplyId = findSpeakerId(opp, oppReply);
-                if (!govReplyId || !oppReplyId) {
-                    throw new Error('Reply speakers must already exist on the team roster for persisted submissions.');
-                }
+                const govReplyId = await ensurePersistedSpeaker(gov, govReply);
+                const oppReplyId = await ensurePersistedSpeaker(opp, oppReply);
                 speakerScores.push({ speakerId: govReplyId, score: govReplyScore, isReply: true });
                 speakerScores.push({ speakerId: oppReplyId, score: oppReplyScore, isReply: true });
             }
