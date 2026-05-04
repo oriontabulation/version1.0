@@ -82,7 +82,10 @@ export const api = {
 
     // ── Tournaments ───────────────────────────────────────────────────────
     async getTournaments() {
-        return _ok(await supabase.from('tournaments').select('*').order('created_at'), 'getTournaments');
+        return _ok(await supabase.from('tournaments').select('*').is('deleted_at', null).order('created_at'), 'getTournaments');
+    },
+    async getDeletedTournaments() {
+        return _ok(await supabase.from('tournaments').select('*').not('deleted_at', 'is', null).order('deleted_at', { ascending: false }), 'getDeletedTournaments');
     },
     async createTournament(name, format = 'standard') {
         const user = await api.getCurrentUser();
@@ -104,6 +107,12 @@ export const api = {
             .eq('id', id).select().single(), 'updateTournament');
     },
     async deleteTournament(id) {
+        _ok(await supabase.from('tournaments').update({ deleted_at: new Date().toISOString() }).eq('id', id), 'deleteTournament');
+    },
+    async restoreTournament(id) {
+        return _ok(await supabase.from('tournaments').update({ deleted_at: null }).eq('id', id).select().single(), 'restoreTournament');
+    },
+    async permanentlyDeleteTournament(id) {
         await supabase.from('rounds').delete().eq('tournament_id', id);
         await supabase.from('teams').delete().eq('tournament_id', id);
         await supabase.from('judges').delete().eq('tournament_id', id);
@@ -112,7 +121,7 @@ export const api = {
         await supabase.from('feedback').delete().eq('tournament_id', id);
         await supabase.from('categories').delete().eq('tournament_id', id);
         await supabase.from('tournament_publish').delete().eq('tournament_id', id);
-        _ok(await supabase.from('tournaments').delete().eq('id', id), 'deleteTournament');
+        _ok(await supabase.from('tournaments').delete().eq('id', id), 'permanentlyDeleteTournament');
     },
     // ── Tournament admins ─────────────────────────────────────────────────
     async getTournamentAdmins(tournamentId) {
