@@ -2649,19 +2649,55 @@ async function adminCreateTournamentWithOpt(autoSwitch) {
             ? { speech: true, speakers: true }
             : {};
         localStorage.setItem('orion_active_tournament_id', t.id);
-        await _reloadTournamentCatalog(autoSwitch ? t.id : state.activeTournamentId || t.id, {
+
+        // ── STEP 1: Inject the new tournament directly into state so it is
+        //   immediately visible regardless of whether the catalog refetch below
+        //   succeeds or not.  This is the guaranteed path.
+        const existingTournaments = Object.values(state.tournaments || {}).filter(
+            x => x && x.id && !x.isLocalDefault
+        );
+        // If the new tournament isn't in the list yet, push it in
+        const alreadyPresent = existingTournaments.some(x => String(x.id) === String(t.id));
+        if (!alreadyPresent) existingTournaments.push({ ...t });
+
+        hydrateState({
+            activeTournamentId: autoSwitch ? t.id : (state.activeTournamentId || t.id),
+            tournaments: existingTournaments.length ? existingTournaments : [t],
             teams: autoSwitch ? [] : (state.teams || []),
             judges: autoSwitch ? [] : (state.judges || []),
             rounds: autoSwitch ? [] : (state.rounds || []),
             publish: autoSwitch ? emptyPublish : (state.publish || {})
         });
 
+        // ── STEP 2: Background refetch to pick up any other changes from the
+        //   server (other admins, etc.).  Failures here are non-critical.
+        api.getTournaments().then(freshList => {
+            if (freshList && freshList.length) {
+                const currentActiveId = autoSwitch ? t.id : (state.activeTournamentId || t.id);
+                hydrateState({
+                    activeTournamentId: currentActiveId,
+                    tournaments: freshList,
+                    teams: state.teams || [],
+                    judges: state.judges || [],
+                    rounds: state.rounds || [],
+                    publish: state.publish || {}
+                });
+                // Re-render if still on tournaments section
+                if (_activeSection === 'tournaments') {
+                    const body = document.getElementById('adm-body');
+                    if (body) body.innerHTML = _buildSection('tournaments');
+                }
+            }
+        }).catch(err => {
+            console.warn('[admin] Background tournament catalog refresh failed:', err.message);
+        });
+
         if (autoSwitch) {
-            switchTournamentCache(t.id, { teams: [], judges: [], rounds: [], publish: emptyPublish });
             window._setupRealtimeSyncForTournament?.(t.id);
         }
 
-        document.getElementById('new-tournament-name').value = '';
+        const nameInput = document.getElementById('new-tournament-name');
+        if (nameInput) nameInput.value = '';
         adminSwitchSection('tournaments');
         showNotification(`Tournament "${t.name}" created`, 'success');
     } catch (err) {
