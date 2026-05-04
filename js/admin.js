@@ -526,18 +526,34 @@ function _sectionTournaments() {
     </div>`;
 }
 
-// Async refresh — fetches the latest tournament list from Supabase and re-renders
+// Async refresh — fetches the latest tournament list from Supabase and re-renders.
+// IMPORTANT: only updates state if the API actually returns tournaments.
+// Never wipes state with an empty list (that would replace real data with the default placeholder).
 async function _refreshTournamentSection() {
     try {
         const body = document.getElementById('adm-body');
         if (!body || _activeSection !== 'tournaments') return;
-        // Show a subtle loading indicator inside the list card without blanking the whole section
-        const countEl = body.querySelector('.adm-card-count');
-        if (countEl) countEl.textContent = '…';
-        await _reloadTournamentCatalog(state.activeTournamentId);
-        // Re-render only if the user hasn't navigated away
-        if (_activeSection === 'tournaments' && document.getElementById('adm-body')) {
-            document.getElementById('adm-body').innerHTML = _buildSection('tournaments');
+
+        const freshList = await api.getTournaments().catch(err => {
+            console.warn('[admin] getTournaments failed during section refresh:', err.message);
+            return null; // null = error, don't touch state
+        });
+
+        // Only update state when we actually received data
+        if (freshList && freshList.length > 0) {
+            hydrateState({
+                activeTournamentId: state.activeTournamentId,
+                tournaments: freshList,
+                teams: state.teams || [],
+                judges: state.judges || [],
+                rounds: state.rounds || [],
+                publish: state.publish || {}
+            });
+        }
+        // Re-render only if user hasn't navigated away
+        if (_activeSection === 'tournaments') {
+            const el = document.getElementById('adm-body');
+            if (el) el.innerHTML = _buildSection('tournaments');
         }
     } catch (e) {
         console.warn('[admin] _refreshTournamentSection failed:', e);
