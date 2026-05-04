@@ -341,8 +341,8 @@ const _SECTIONS = [
     { id:'urls',        icon:'🔗', label:'URLs & Access'     },
     { id:'data',        icon:'💾', label:'Data & Export'     },
     { id:'users',       icon:'👥', label:'Local Users'       },
-    { id:'sample',      icon:'🚀', label:'Test Data'         },
-    { id:'danger',      icon:'⚠️', label:'Danger Zone'       },
+    // DISABLED: { id:'sample', icon:'🚀', label:'Test Data' },      // to be implemented later
+    // DISABLED: { id:'danger', icon:'⚠️', label:'Danger Zone' },   // to be implemented later
 ];
 
 function _buildSidebar() {
@@ -415,8 +415,8 @@ function _buildSection(id) {
         case 'urls':        return _sectionURLs();
         case 'data':        return _sectionData();
         case 'users':      return _sectionUsers();
-        case 'sample':      return _sectionSample();
-        case 'danger':      return _sectionDanger();
+        // DISABLED: case 'sample': return _sectionSample();   // to be implemented later
+        // DISABLED: case 'danger': return _sectionDanger();   // to be implemented later
         default:            return _sectionOverview();
     }
 }
@@ -1753,7 +1753,8 @@ async function _adminRevokeAllTeamURLs() {
 }
 
 // ============================================================================
-// SECTION: TEST DATA
+// SECTION: TEST DATA — DISABLED (to be implemented later)
+// Navigation entry and switch case are commented out; this function is dead code.
 // ============================================================================
 function _sectionSample() {
     return `
@@ -1985,7 +1986,8 @@ window.adminUpdateLocalUserRole = async function(username, role) {
 };
 
 // ============================================================================
-// SECTION: DANGER ZONE
+// SECTION: DANGER ZONE — DISABLED (to be implemented later)
+// Navigation entry and switch case are commented out; this function is dead code.
 // ============================================================================
 function _sectionDanger() {
     return `
