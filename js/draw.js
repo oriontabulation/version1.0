@@ -5,7 +5,6 @@
 
 import { save, saveNow } from './supabase-sync.js';
 import { state, watch } from './state.js';
-import { isUUID } from './id-system.js';
 import { api } from './api.js';
 import { showNotification, escapeHTML, closeAllModals, getPreviousMeetings, teamCode } from './utils.js';
 import { hasConflict, buildConflictMap, buildTeamMap } from './maps.js';
@@ -157,12 +156,8 @@ function _normalizePanelRoles(debate) {
     debate.panel.forEach((entry, index) => {
         if (!entry) return;
         if (index === 0) entry.role = 'chair';
-        else entry.role = entry.role === 'trainee' ? 'trainee' : 'panellist';
+        else if (!entry.role || entry.role === 'chair' || entry.role === 'wing') entry.role = 'panellist';
     });
-}
-
-function _normalizeRoundPanels(round) {
-    (round?.debates || []).forEach(debate => _normalizePanelRoles(debate));
 }
 
 function _moveJudgeToPanelFront(debate, judgeId) {
@@ -257,8 +252,8 @@ function _injectDrawCSS() {
   .draw-name-blind:hover { filter:none; }
 
   /* Round Settings Dropdown */
-  .round-settings-wrap { position:relative; display:inline-block; z-index:20; }
-  .round-settings-menu { display:none; position:absolute; right:0; top:calc(100% + 4px); background:white; border:1px solid #e2e8f0; border-radius:10px; box-shadow:0 8px 24px rgba(0,0,0,.12); z-index:5000; min-width:170px; padding:4px; }
+  .round-settings-wrap { position:relative; display:inline-block; }
+  .round-settings-menu { display:none; position:absolute; right:0; top:calc(100% + 4px); background:white; border:1px solid #e2e8f0; border-radius:10px; box-shadow:0 8px 24px rgba(0,0,0,.12); z-index:200; min-width:170px; padding:4px; }
   .round-settings-menu.open { display:block; animation:fadeInDown 0.15s cubic-bezier(0.16,1,0.3,1); }
   .round-settings-menu button { display:flex; align-items:center; gap:8px; width:100%; text-align:left; padding:8px 12px; border:none; background:none; cursor:pointer; font-size:12px; font-weight:500; border-radius:6px; color:#334155; transition:background 0.1s; }
   .round-settings-menu button:hover:not(:disabled) { background:#f8fafc; }
@@ -283,8 +278,8 @@ function _injectDrawCSS() {
   .rmt-status { text-align:center; font-size:13px; }
 
   /* ── Round accordion cards ────────────────────────────────────── */
-  .round-card-wrap { background:#fff; border-radius:14px; border:1px solid #edf0f4; box-shadow:0 2px 8px rgba(0,0,0,.04); margin-bottom:14px; overflow:visible; position:relative; z-index:1; }
-  .round-card-hdr { display:flex; align-items:center; justify-content:space-between; padding:14px 16px; gap:10px; cursor:pointer; user-select:none; background:linear-gradient(to bottom,#fafbfc,#fff); border-bottom:1px solid #f1f5f9; flex-wrap:wrap; transition:background .15s ease; position:relative; z-index:2; }
+  .round-card-wrap { background:#fff; border-radius:14px; border:1px solid #edf0f4; box-shadow:0 2px 8px rgba(0,0,0,.04); margin-bottom:14px; overflow:hidden; }
+  .round-card-hdr { display:flex; align-items:center; justify-content:space-between; padding:14px 16px; gap:10px; cursor:pointer; user-select:none; background:linear-gradient(to bottom,#fafbfc,#fff); border-bottom:1px solid #f1f5f9; flex-wrap:wrap; transition:background .15s ease; }
   .round-card-hdr:hover { background:#f8fafc; }
   .round-card-body { padding:16px; }
   .round-card-body.collapsed { display:none; }
@@ -842,6 +837,7 @@ function renderBPDebateCard(round, debate, roundIdx, debateIdx) {
                 <span style="font-size:12px;font-weight:600;color:${debate.entered ? '#10b981' : '#f59e0b'}">${statusLabel}</span>
             </div>
             <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
+                ${isAdmin && !debate.entered ? `<button onclick="window.showJudgeManagement(${roundIdx},${debateIdx})" class="btn-secondary" style="padding:4px 10px;font-size:12px">⚖️ Panel</button>` : ''}
                 ${!debate.entered && isAdmin ? `
                     <button onclick="window.showEnterResults(${roundIdx},${debateIdx})" class="btn-primary" style="padding:4px 12px;font-size:12px">Enter Results</button>
                 ` : !debate.entered && isMyRoom ? `
@@ -1886,119 +1882,7 @@ export async function dndJudgeDrop(event, toRound, toDebate) {
     showNotification(`${judge?.name} moved → ${toRoomLabel}${conflict ? ' (conflict noted)' : ''}`, conflict ? 'warning' : 'success');
 }
 
-// ── KNOCKOUT judge drag handlers ─────────────────────────────────────────────
-
-function _normalizeKoPanelRoles(pairing) {
-    if (!Array.isArray(pairing?.panel)) return;
-    pairing.panel.forEach((entry, i) => {
-        if (entry) entry.role = i === 0 ? 'chair' : 'wing';
-    });
-}
-
-function _refreshKoPanelZone(roundIdx, pairingIdx) {
-    const zone = document.getElementById(`ko-panel-zone-${roundIdx}-${pairingIdx}`);
-    if (!zone) return;
-    const pairing = state.tournament?.bracket?.[roundIdx]?.pairings?.[pairingIdx];
-    const canEdit = pairing && !pairing.entered;
-    const chipsHtml = renderOutroundPanelChips(pairing?.panel || [], roundIdx, pairingIdx, canEdit);
-    // Preserve the Panel label, replace only the chips
-    const label = zone.querySelector('strong');
-    // Remove all non-label children
-    Array.from(zone.childNodes).forEach(n => { if (n !== label) n.remove(); });
-    const tmp = document.createElement('div');
-    tmp.innerHTML = chipsHtml;
-    Array.from(tmp.childNodes).forEach(n => zone.appendChild(n));
-}
-
-export function dndKoJudgeDragStart(event, judgeId, fromRoundIdx, fromPairingIdx) {
-    window._dnd = { type: 'ko-judge', judgeId, fromRound: fromRoundIdx, fromDebate: fromPairingIdx };
-    event.dataTransfer.effectAllowed = 'move';
-    event.dataTransfer.setData('text/plain', judgeId);
-    event.currentTarget.classList.add('dragging');
-}
-
-export function dndKoJudgeDragOver(event, toRoundIdx, toPairingIdx) {
-    if (window._dnd?.type !== 'ko-judge') return;
-    event.preventDefault();
-    const zone = event.currentTarget;
-    zone.classList.remove('drag-over', 'drag-over-conflict', 'drag-over-promote');
-    const pairing = state.tournament?.bracket?.[toRoundIdx]?.pairings?.[toPairingIdx];
-    if (!pairing) return;
-    const alreadyHere = (pairing.panel || []).some(p => String(p.id) === String(window._dnd.judgeId));
-    zone.classList.add(alreadyHere ? 'drag-over-promote' : 'drag-over');
-    event.dataTransfer.dropEffect = 'move';
-}
-
-export function dndKoJudgeDrop(event, toRoundIdx, toPairingIdx) {
-    event.preventDefault();
-    event.currentTarget.classList.remove('drag-over', 'drag-over-conflict', 'drag-over-promote');
-    if (window._dnd?.type !== 'ko-judge') return;
-
-    const { judgeId, fromRound: fromRoundIdx, fromDebate: fromPairingIdx } = window._dnd;
-    if (!judgeId) return;
-
-    const toPairing = state.tournament?.bracket?.[toRoundIdx]?.pairings?.[toPairingIdx];
-    if (!toPairing) return;
-
-    const judge = (state.judges || []).find(j => String(j.id) === String(judgeId));
-
-    // Same room: promote to chair
-    if (fromRoundIdx === toRoundIdx && fromPairingIdx === toPairingIdx) {
-        const idx = (toPairing.panel || []).findIndex(p => String(p.id) === String(judgeId));
-        if (idx > 0) {
-            const [entry] = toPairing.panel.splice(idx, 1);
-            toPairing.panel.unshift(entry);
-            _normalizeKoPanelRoles(toPairing);
-            save();
-            _refreshKoPanelZone(toRoundIdx, toPairingIdx);
-            showNotification(`${judge?.name || 'Judge'} promoted to chair`, 'success');
-        }
-        return;
-    }
-
-    // Cross-room: move judge
-    const fromPairing = state.tournament?.bracket?.[fromRoundIdx]?.pairings?.[fromPairingIdx];
-    const toRoom = toPairing.room || `Room ${toPairingIdx + 1}`;
-    const fromRoom = fromPairing?.room || `Room ${fromPairingIdx + 1}`;
-    const removeMsg = fromPairing ? `\n\nThis removes them from ${fromRoom}.` : '';
-
-    if (!confirm(`Move ${judge?.name || judgeId} → ${toRoom}?${removeMsg}`)) return;
-
-    if (fromPairing) {
-        fromPairing.panel = (fromPairing.panel || []).filter(p => String(p.id) !== String(judgeId));
-        _normalizeKoPanelRoles(fromPairing);
-    }
-
-    if (!toPairing.panel) toPairing.panel = [];
-    if (!toPairing.panel.some(p => String(p.id) === String(judgeId))) {
-        toPairing.panel.push({ id: judgeId, role: toPairing.panel.length === 0 ? 'chair' : 'wing' });
-    }
-    _normalizeKoPanelRoles(toPairing);
-
-    save();
-    _refreshKoPanelZone(toRoundIdx, toPairingIdx);
-    if (fromPairing) _refreshKoPanelZone(fromRoundIdx, fromPairingIdx);
-    showNotification(`${judge?.name || 'Judge'} moved → ${toRoom}`, 'success');
-}
-
-export function toggleKoJudgeRole(roundIdx, pairingIdx, judgeId) {
-    const pairing = state.tournament?.bracket?.[roundIdx]?.pairings?.[pairingIdx];
-    if (!pairing?.panel?.length) return;
-    const idx = pairing.panel.findIndex(p => String(p.id) === String(judgeId));
-    if (idx === -1) return;
-    if (idx === 0 && pairing.panel.length > 1) {
-        const [entry] = pairing.panel.splice(0, 1);
-        pairing.panel.push(entry);
-    } else if (idx > 0) {
-        const [entry] = pairing.panel.splice(idx, 1);
-        pairing.panel.unshift(entry);
-    }
-    _normalizeKoPanelRoles(pairing);
-    save();
-    _refreshKoPanelZone(roundIdx, pairingIdx);
-}
-
-// ── TEAM drag handlers
+// ── TEAM drag handlers 
 
 export function dndTeamDragStart(event, fromRound, fromDebate, fromSide) {
     window._dnd = { type: 'team', judgeId: null, fromRound, fromDebate, fromSide };
@@ -2236,8 +2120,9 @@ function getPreviousJudgeAllocations(isKnockout) {
 async function persistStandardRound(round, roundNumber) {
     const tournamentId = state.activeTournamentId;
     if (!tournamentId) throw new Error('My Tournament is not ready yet');
-    if (!isUUID(tournamentId)) return null; // Skip persistence for local/test tournaments
-    _normalizeRoundPanels(round);
+    if (String(tournamentId).startsWith('__') || String(tournamentId) === 'test_tournament') {
+        return null;
+    }
     if ((round.debates || []).some(d => d.format === 'bp' || d.format === 'speech' || d.og || d.oo || d.cg || d.co)) {
         return null;
     }
@@ -2289,16 +2174,7 @@ function roundNumber(round) {
 }
 
 function _isPersistedStandardRound(round) {
-    // A round is "persisted" when:
-    //   1. There is a real Supabase tournament ID (not the local placeholder)
-    //   2. The round has a server-assigned UUID
-    //   3. The round's format (if any) is standard/WSDC — not BP or speech
-    //
-    // NOTE: round.format may come back as 'standard' from the DB (if the rounds
-    // table has that column). We must allow that — only block 'bp' and 'speech'.
-    const rf = round?.format;
-    const fmtOk = !rf || rf === 'standard' || rf === 'prelim';
-    return !!(state.activeTournamentId && isUUID(state.activeTournamentId) && isUUID(round?.id) && fmtOk && !isBP() && !isSpeech());
+    return !!(state.activeTournamentId && round?.id && !round?.format && !isBP() && !isSpeech());
 }
 
 function _roomNameForDebate(round, debate) {
@@ -2417,11 +2293,6 @@ function assignSides(teamA, teamB, sideMethod, seedRankA, sidePref = 'random') {
 // ============================================
 
 function showJudgeManagement(roundIdx, debateIdx) {
-    if (!window.__enableJudgeManagementOverlay) {
-        showNotification('Use the inline judge dropdown in the room panel to add judges.', 'info');
-        return;
-    }
-
     const round = state.rounds[roundIdx];
     const debate = round.debates[debateIdx];
     const isSpeechDebate = debate.format === 'speech';
@@ -2642,7 +2513,8 @@ export async function addJudgeToPanel(roundIdx, debateIdx, judgeId) {
         showNotification(`Failed to persist judge assignment: ${error.message}`, 'error');
         return;
     }
-    displayRounds();
+    closeAllModals();
+    setTimeout(() => showJudgeManagement(roundIdx, debateIdx), 100);
 }
 
 export async function removeJudgeFromPanel(roundIdx, debateIdx, judgeId) {
@@ -2659,7 +2531,8 @@ export async function removeJudgeFromPanel(roundIdx, debateIdx, judgeId) {
         showNotification(`Failed to persist judge removal: ${error.message}`, 'error');
         return;
     }
-    displayRounds();
+    closeAllModals();
+    setTimeout(() => showJudgeManagement(roundIdx, debateIdx), 100);
 }
 
 // Toggle a judge's role (chair ↔ wing) within their current panel
@@ -2726,7 +2599,7 @@ export async function moveJudgeToPanel(roundIdx, fromDebateIdx, toDebateIdx, jud
         return;
     }
     closeAllModals();
-    displayRounds();
+    setTimeout(() => showJudgeManagement(roundIdx, toDebateIdx), 100);
 }
 
 // ============================================
@@ -3426,32 +3299,27 @@ export async function submitResults(roundIdx, debateIdx) {
         const loser = govWon ? opp : gov;
 
         if (_isPersistedStandardRound(round) && (isJudge || isAdmin)) {
-            // Returns the DB id for a speaker, creating the Supabase row if the
-            // name was typed via "New…" and doesn't yet exist on the roster.
-            const ensurePersistedSpeaker = async (team, speakerName) => {
-                const existing = (team.speakers || []).find(s => s.name?.toLowerCase() === speakerName.toLowerCase());
-                if (existing?.id) return existing.id;
-                const created = await api.addSpeaker({
-                    teamId: team.id,
-                    tournamentId: state.activeTournamentId,
-                    name: speakerName.trim(),
-                    position: (team.speakers || []).length + 1
-                });
-                if (!team.speakers) team.speakers = [];
-                team.speakers.push(created);
-                return created.id;
+            const findSpeakerId = (team, speakerName) => {
+                const speaker = (team.speakers || []).find(s => s.name?.toLowerCase() === speakerName.toLowerCase());
+                return speaker?.id || null;
             };
 
             const speakerScores = [];
             for (let i = 0; i < 3; i++) {
-                const govSpeakerId = await ensurePersistedSpeaker(gov, govSpeakers[i]);
-                const oppSpeakerId = await ensurePersistedSpeaker(opp, oppSpeakers[i]);
+                const govSpeakerId = findSpeakerId(gov, govSpeakers[i]);
+                const oppSpeakerId = findSpeakerId(opp, oppSpeakers[i]);
+                if (!govSpeakerId || !oppSpeakerId) {
+                    throw new Error('All ballot speakers must already exist on the team roster for persisted submissions.');
+                }
                 speakerScores.push({ speakerId: govSpeakerId, score: govScores[i], isReply: false });
                 speakerScores.push({ speakerId: oppSpeakerId, score: oppScores[i], isReply: false });
             }
             if (!disableReply) {
-                const govReplyId = await ensurePersistedSpeaker(gov, govReply);
-                const oppReplyId = await ensurePersistedSpeaker(opp, oppReply);
+                const govReplyId = findSpeakerId(gov, govReply);
+                const oppReplyId = findSpeakerId(opp, oppReply);
+                if (!govReplyId || !oppReplyId) {
+                    throw new Error('Reply speakers must already exist on the team roster for persisted submissions.');
+                }
                 speakerScores.push({ speakerId: govReplyId, score: govReplyScore, isReply: true });
                 speakerScores.push({ speakerId: oppReplyId, score: oppReplyScore, isReply: true });
             }
@@ -3695,7 +3563,6 @@ export async function submitResults(roundIdx, debateIdx) {
 // ============================================================================
 
 function renderSpeechDebateCard(round, debate, roundIdx, debateIdx) {
-    _normalizePanelRoles(debate);
     const isAdmin = state.auth?.currentUser?.role === 'admin';
     const isJudge = state.auth?.currentUser?.role === 'judge';
     const myJudgeId = isJudge ? String(state.auth?.currentUser?.associatedId ?? '') : null;
@@ -3762,8 +3629,11 @@ function renderSpeechDebateCard(round, debate, roundIdx, debateIdx) {
 
     const canScore = !debate.entered && (isAdmin || isMyRoom);
     const canEdit = debate.entered && !isBlinded;
+    const managePanelBtn = (!debate.entered && isAdmin)
+        ? '<button onclick="window.showJudgeManagement(' + roundIdx + ',' + debateIdx + ')" class="btn-secondary" style="padding:4px 10px;font-size:12px" title="Manage judge panel">⚙️ Panel</button>'
+        : '';
     const btnHtml = canScore
-        ? '<button onclick="window.showEnterResults(' + roundIdx + ',' + debateIdx + ')" class="btn-primary" style="padding:4px 12px;font-size:12px' + (isMyRoom && !isAdmin ? ';background:#7c3aed' : '') + '">📝 ' + (isAdmin ? 'Enter Scores' : 'Submit Scores') + '</button>'
+        ? managePanelBtn + '<button onclick="window.showEnterResults(' + roundIdx + ',' + debateIdx + ')" class="btn-primary" style="padding:4px 12px;font-size:12px' + (isMyRoom && !isAdmin ? ';background:#7c3aed' : '') + '">📝 ' + (isAdmin ? 'Enter Scores' : 'Submit Scores') + '</button>'
         : (canEdit
             ? (isAdmin ? '<button onclick="window.editResults(' + roundIdx + ',' + debateIdx + ')" class="btn-secondary" style="padding:4px 10px;font-size:12px">✏️ Edit Results</button>' : '')
             : '');
@@ -4827,66 +4697,15 @@ window._setNameDisplay = _setNameDisplay;
 window._toggleDrawView = _toggleDrawView;
 window.renderRoundMiniTable = renderRoundMiniTable;
 
-function _restoreRoundSettingsMenu(menu) {
-    if (!menu) return;
-    const roundId = menu.id?.replace('round-settings-', '');
-    const card = roundId ? document.getElementById(`round-card-${roundId}`) : null;
-    const wrap = card?.querySelector('.round-settings-wrap');
-    if (wrap && menu.parentElement !== wrap) wrap.appendChild(menu);
-    menu.classList.remove('round-settings-menu--portal');
-    menu.style.position = '';
-    menu.style.left = '';
-    menu.style.right = '';
-    menu.style.top = '';
-    menu.style.zIndex = '';
-    menu.style.visibility = '';
-}
-
-function _positionRoundSettingsMenu(menu, roundId) {
-    const card = document.getElementById(`round-card-${roundId}`);
-    const trigger = card?.querySelector('.draw-settings-trigger');
-    if (!trigger) return;
-
-    document.body.appendChild(menu);
-    menu.classList.add('round-settings-menu--portal');
-    menu.style.position = 'fixed';
-    menu.style.display = 'block';
-    menu.style.visibility = 'hidden';
-    menu.style.zIndex = '100000';
-
-    const rect = trigger.getBoundingClientRect();
-    const width = menu.offsetWidth || 190;
-    const gap = 6;
-    const left = Math.max(8, Math.min(rect.right - width, window.innerWidth - width - 8));
-    const top = Math.min(rect.bottom + gap, window.innerHeight - menu.offsetHeight - 8);
-    menu.style.left = `${left}px`;
-    menu.style.right = 'auto';
-    menu.style.top = `${Math.max(8, top)}px`;
-    menu.style.visibility = '';
-}
-
 window._toggleRoundSettings = function (roundId) {
     const menu = document.getElementById(`round-settings-${roundId}`);
     if (!menu) return;
     const wasOpen = menu.style.display !== 'none';
-    document.querySelectorAll('.round-card-wrap').forEach(card => { card.style.zIndex = ''; });
-    document.querySelectorAll('.round-settings-menu').forEach(m => {
-        m.style.display = 'none';
-        _restoreRoundSettingsMenu(m);
-    });
-    if (wasOpen) return;
-    _positionRoundSettingsMenu(menu, roundId);
-    if (!wasOpen) {
-        const card = menu.closest('.round-card-wrap');
-        if (card) card.style.zIndex = '3000';
-    }
+    document.querySelectorAll('.round-settings-menu').forEach(m => { m.style.display = 'none'; });
+    menu.style.display = wasOpen ? 'none' : 'block';
 };
 window._closeRoundSettings = function () {
-    document.querySelectorAll('.round-settings-menu').forEach(m => {
-        m.style.display = 'none';
-        _restoreRoundSettingsMenu(m);
-    });
-    document.querySelectorAll('.round-card-wrap').forEach(card => { card.style.zIndex = ''; });
+    document.querySelectorAll('.round-settings-menu').forEach(m => { m.style.display = 'none'; });
 };
 window._editRoundMotion = async function (roundId) {
     const round = (state.rounds || []).find(r => r.id === roundId);
@@ -4906,14 +4725,8 @@ window._editRoundMotion = async function (roundId) {
 };
 if (!window._roundSettingsListenerBound) {
     document.addEventListener('click', () => {
-        document.querySelectorAll('.round-settings-menu').forEach(m => {
-            m.style.display = 'none';
-            _restoreRoundSettingsMenu(m);
-        });
-        document.querySelectorAll('.round-card-wrap').forEach(card => { card.style.zIndex = ''; });
+        document.querySelectorAll('.round-settings-menu').forEach(m => { m.style.display = 'none'; });
     });
-    window.addEventListener('resize', () => window._closeRoundSettings?.());
-    window.addEventListener('scroll', () => window._closeRoundSettings?.(), true);
     window._roundSettingsListenerBound = true;
 }
 window.showEnterResults = showEnterResults;
@@ -4939,10 +4752,6 @@ window.toggleJudgeRole = toggleJudgeRole;
 window.dndJudgeDragStart = dndJudgeDragStart;
 window.dndJudgeDragOver = dndJudgeDragOver;
 window.dndJudgeDrop = dndJudgeDrop;
-window.dndKoJudgeDragStart = dndKoJudgeDragStart;
-window.dndKoJudgeDragOver = dndKoJudgeDragOver;
-window.dndKoJudgeDrop = dndKoJudgeDrop;
-window.toggleKoJudgeRole = toggleKoJudgeRole;
 window.dndTeamDragStart = dndTeamDragStart;
 window.dndTeamDragOver = dndTeamDragOver;
 window.dndTeamDrop = dndTeamDrop;
@@ -5446,31 +5255,23 @@ function renderActiveOutroundRoom(round, pairing, roundIdx, pairingIdx, isCurren
     const statusDot = pairing.entered ? '#10b981' : (pairing.panel?.length ? '#f59e0b' : '#ef4444');
     const statusLabel = pairing.entered ? 'Done' : isCurrent ? 'Current' : 'Pending';
     const canSubmit = canSubmitOutroundPairing(pairing);
-    const isInteractive = isCurrent && !pairing.entered && canSubmit;
-
-    const bracketLen = state.tournament?.bracket?.length ?? 0;
-    const isLastRound = roundIdx === bracketLen - 1;
 
     return `
     <div class="draw-room ${pairing.entered ? 'done' : 'pending-partial'}" style="border-left-color:${statusDot}">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px">
             <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-                <strong>${escapeHTML(pairing.room || `Room ${pairingIdx + 1}`)}</strong>
+            <strong>${escapeHTML(pairing.room || `Room ${pairingIdx + 1}`)}</strong>
                 <span style="color:${statusDot};font-size:12px;font-weight:600">${statusLabel}</span>
                 ${pairing.entered ? renderOutroundResultText(pairing, bp) : ''}
             </div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+                ${isCurrent && !pairing.entered && canSubmit ? `<button type="button" onpointerdown="event.preventDefault();event.stopPropagation();window._openOutroundResultModal(${roundIdx},${pairingIdx})" onclick="event.preventDefault();event.stopPropagation()" class="btn-primary" style="padding:4px 12px;font-size:12px">${bp ? 'Select Advancers' : 'Select Winner'}</button>` : ''}
+            </div>
         </div>
-        ${bp
-            ? renderOutroundBPCells(pairing, isInteractive, roundIdx, pairingIdx, isLastRound)
-            : renderOutroundWSDCCells(pairing, isInteractive, roundIdx, pairingIdx)}
-        <div id="ko-panel-zone-${roundIdx}-${pairingIdx}" class="dnd-judge-zone"
-             ${!pairing.entered && canSubmit ? `
-                ondragover="window.dndKoJudgeDragOver(event,${roundIdx},${pairingIdx})"
-                ondragleave="window.dndDragLeave(event)"
-                ondrop="window.dndKoJudgeDrop(event,${roundIdx},${pairingIdx})"` : ''}
-             style="background:#f8fafc;border-radius:6px;padding:6px 8px;display:flex;flex-wrap:wrap;align-items:center;gap:3px;min-height:34px;">
+        ${bp ? renderOutroundBPCells(pairing) : renderOutroundWSDCCells(pairing)}
+        <div class="dnd-judge-zone" style="background:#f8fafc;border-radius:6px;padding:6px 8px;display:flex;flex-wrap:wrap;align-items:center;gap:3px;min-height:34px;">
             <strong style="font-size:11px;font-weight:700;color:#64748b;margin-right:4px;text-transform:uppercase;letter-spacing:.04em;">Panel</strong>
-            ${renderOutroundPanelChips(pairing.panel || [], roundIdx, pairingIdx, !pairing.entered && canSubmit)}
+            ${renderOutroundPanelChips(pairing.panel || [])}
         </div>
     </div>`;
 }
@@ -5484,77 +5285,27 @@ function canSubmitOutroundPairing(pairing) {
     return (pairing?.panel || []).some(p => String(p.id || p.judge_id) === judgeId);
 }
 
-function renderOutroundBPCells(pairing, isInteractive, roundIdx, pairingIdx, isLastRound) {
+function renderOutroundBPCells(pairing) {
     const positions = [
         ['og', 'OG'], ['oo', 'OO'], ['cg', 'CG'], ['co', 'CO']
     ];
-    const maxPicks = isLastRound ? 1 : 2;
-
     return `
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:${isInteractive ? '6px' : '10px'};">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">
         ${positions.map(([key, label]) => {
         const team = _getTeam(pairing[key]);
         const seed = pairing[`${key}Seed`];
-        if (isInteractive && team) {
-            return `
-                <div id="inline-bp-card-${roundIdx}-${pairingIdx}-${key}"
-                     data-ko-bp-toggle="true"
-                     data-ko-round="${roundIdx}" data-ko-pairing="${pairingIdx}"
-                     data-ko-bp-pos="${key}" data-ko-bp-team="${escapeHTML(String(pairing[key]))}"
-                     style="padding:10px;background:#f8fafc;border-radius:8px;border:2px solid #e2e8f0;text-align:center;cursor:pointer">
-                    <div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">${label}${seed ? ` #${seed}` : ''}</div>
-                    <div style="font-weight:700;color:#1e293b;font-size:13px;word-break:break-word;">${escapeHTML(team.name)}</div>
-                </div>`;
-        }
         return `
             <div style="padding:10px;background:#f8fafc;border-radius:8px;border:1.5px solid #e2e8f0;text-align:center">
                 <div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">${label}${seed ? ` #${seed}` : ''}</div>
                 <div style="font-weight:700;color:#1e293b;font-size:13px;word-break:break-word;">${team ? escapeHTML(team.name) : 'TBD'}</div>
             </div>`;
     }).join('')}
-    </div>
-    ${isInteractive ? `
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
-        <span id="inline-bp-counter-${roundIdx}-${pairingIdx}" style="font-size:12px;color:#64748b;flex:1;">
-            ${maxPicks === 1 ? 'Tap team to select winner' : 'Tap 2 teams to select advancers'}
-        </span>
-        <button id="inline-bp-confirm-${roundIdx}-${pairingIdx}"
-                onclick="window._koInlineBPConfirm(${roundIdx},${pairingIdx})"
-                style="display:none;padding:6px 18px;background:#22c55e;color:white;border:none;border-radius:6px;font-weight:700;cursor:pointer;font-size:12px;">
-            Confirm
-        </button>
-    </div>` : ''}`;
+    </div>`;
 }
 
-function renderOutroundWSDCCells(pairing, isInteractive, roundIdx, pairingIdx) {
+function renderOutroundWSDCCells(pairing) {
     const gov = _getTeam(pairing.gov);
     const opp = _getTeam(pairing.opp);
-
-    if (isInteractive && gov && opp) {
-        return `
-        <div style="display:grid;grid-template-columns:1fr auto 1fr;gap:12px;align-items:center;margin-bottom:10px">
-            <div data-ko-select-winner="${escapeHTML(String(pairing.gov))}"
-                 data-ko-round="${roundIdx}" data-ko-pairing="${pairingIdx}"
-                 style="text-align:center;padding:12px;background:#eff6ff;border-radius:8px;border:2px solid #bfdbfe;cursor:pointer;"
-                 onmouseenter="this.style.background='#dbeafe';this.style.borderColor='#3b82f6'"
-                 onmouseleave="this.style.background='#eff6ff';this.style.borderColor='#bfdbfe'">
-                <div style="font-size:10px;font-weight:700;color:#1d4ed8;margin-bottom:4px">GOV${pairing.govSeed ? ` #${pairing.govSeed}` : ''}</div>
-                <strong>${escapeHTML(gov.name)}</strong>
-                <div style="font-size:10px;color:#3b82f6;margin-top:4px;">Tap to select winner</div>
-            </div>
-            <div style="font-size:12px;font-weight:700;color:#94a3b8">VS</div>
-            <div data-ko-select-winner="${escapeHTML(String(pairing.opp))}"
-                 data-ko-round="${roundIdx}" data-ko-pairing="${pairingIdx}"
-                 style="text-align:center;padding:12px;background:#fdf2f8;border-radius:8px;border:2px solid #fbcfe8;cursor:pointer;"
-                 onmouseenter="this.style.background='#fce7f3';this.style.borderColor='#ec4899'"
-                 onmouseleave="this.style.background='#fdf2f8';this.style.borderColor='#fbcfe8'">
-                <div style="font-size:10px;font-weight:700;color:#be185d;margin-bottom:4px">OPP${pairing.oppSeed ? ` #${pairing.oppSeed}` : ''}</div>
-                <strong>${escapeHTML(opp.name)}</strong>
-                <div style="font-size:10px;color:#be185d;margin-top:4px;">Tap to select winner</div>
-            </div>
-        </div>`;
-    }
-
     return `
     <div style="display:grid;grid-template-columns:1fr auto 1fr;gap:12px;align-items:center;margin-bottom:10px">
         <div style="text-align:center;padding:12px;background:${pairing.winner === pairing.gov ? '#dcfce7' : '#eff6ff'};border-radius:8px;border:1px solid #bfdbfe">
@@ -5569,24 +5320,11 @@ function renderOutroundWSDCCells(pairing, isInteractive, roundIdx, pairingIdx) {
     </div>`;
 }
 
-function renderOutroundPanelChips(panel, roundIdx, pairingIdx, canEdit) {
+function renderOutroundPanelChips(panel) {
     if (!panel.length) return '<span style="font-size:12px;color:#ef4444;font-style:italic;">No judges assigned</span>';
     return panel.map(p => {
         const judge = _getJudge(p.id);
-        const isChair = p.role === 'chair';
-        const roleLabel = isChair ? 'chair' : 'wing';
-        const roleTitle = canEdit ? (isChair ? 'Chair — click to make wing' : 'Wing — click to make chair') : roleLabel;
-        return `<span class="dnd-judge-chip"
-            ${canEdit ? `draggable="true"
-                ondragstart="window.dndKoJudgeDragStart(event,'${escapeHTML(String(p.id))}',${roundIdx},${pairingIdx})"
-                ondragend="window.dndDragEnd(event)"` : ''}>
-            <span class="chip-role ${isChair ? 'chair' : ''}"
-                  title="${roleTitle}"
-                  ${canEdit ? `onclick="window.toggleKoJudgeRole(${roundIdx},${pairingIdx},'${escapeHTML(String(p.id))}')"` : ''}>
-                ${escapeHTML(roleLabel)}
-            </span>
-            ${escapeHTML(judge?.name || String(p.id))}
-        </span>`;
+        return `<span class="dnd-judge-chip"><span class="chip-role ${p.role === 'chair' ? 'chair' : ''}">${escapeHTML(p.role || 'wing')}</span>${escapeHTML(judge?.name || p.id)}</span>`;
     }).join('');
 }
 
@@ -5642,7 +5380,6 @@ window._openOutroundResultModal = function (roundIdx, pairingIdx) {
 
 
 export function renderRoundCard(round, actualRoundIdx, previousMeetings) {
-    _normalizeRoundPanels(round);
     const debates = round.debates || [];
     const entered = debates.filter(d => d.entered).length;
     const total = debates.length;
