@@ -3,7 +3,7 @@
 // ADDED: Round Robin pairing support
 // ============================================
 
-import { save, saveNow} from './supabase-sync.js';
+import { save, saveNow } from './supabase-sync.js';
 import { state, watch } from './state.js';
 import { isUUID } from './id-system.js';
 import { api } from './api.js';
@@ -14,9 +14,9 @@ import { renderStandings } from './tab.js';
 // Module-level O(1) team lookup — invalidated by watch so it's always fresh
 let _teamById = null;
 let _judgeById = null;
-watch('teams',  () => { _teamById  = null; });
+watch('teams', () => { _teamById = null; });
 watch('judges', () => { _judgeById = null; });
-const _getTeam  = id => { if (!_teamById)  _teamById  = buildTeamMap(state.teams  || []); return _teamById.get(String(id))  ?? null; };
+const _getTeam = id => { if (!_teamById) _teamById = buildTeamMap(state.teams || []); return _teamById.get(String(id)) ?? null; };
 const _getJudge = id => { if (!_judgeById) _judgeById = buildTeamMap(state.judges || []); return _judgeById.get(String(id)) ?? null; };
 
 // ─── Format detection ────────────────────────────────────────────────────────
@@ -26,7 +26,7 @@ function getFormat() {
     if (tour?.speechMode) return 'speech';
     return tour?.format || 'standard';
 }
-function isBP()     { return getFormat() === 'bp';     }
+function isBP() { return getFormat() === 'bp'; }
 function isSpeech() { return getFormat() === 'speech'; }
 
 function hasActiveTournament() {
@@ -60,7 +60,7 @@ function showTournamentRequiredPrompt() {
 function teamLabel(team) {
     if (!team) return 'TBD';
     let savedPrefs = {};
-    try { savedPrefs = JSON.parse(localStorage.getItem('orion_draw_prefs') || '{}'); } catch(e) { /* ignore corrupt draw prefs */ }
+    try { savedPrefs = JSON.parse(localStorage.getItem('orion_draw_prefs') || '{}'); } catch (e) { /* ignore corrupt draw prefs */ }
     const displayMode = savedPrefs['display'] || 'names';
     if (displayMode === 'codes') {
         return escapeHTML(teamCode(team));
@@ -72,7 +72,7 @@ function teamLabel(team) {
 function _nameLabel(team) {
     if (!team) return 'TBD';
     let savedPrefs = {};
-    try { savedPrefs = JSON.parse(localStorage.getItem('orion_draw_prefs') || '{}'); } catch(e) { /* ignore corrupt draw prefs */ }
+    try { savedPrefs = JSON.parse(localStorage.getItem('orion_draw_prefs') || '{}'); } catch (e) { /* ignore corrupt draw prefs */ }
     const displayMode = savedPrefs['display'] || 'names';
     if (displayMode === 'codes') {
         return escapeHTML(teamCode(team));
@@ -86,7 +86,7 @@ function _nameLabel(team) {
 // Toggle between names and codes display
 function _toggleTeamNames() {
     let savedPrefs = {};
-    try { savedPrefs = JSON.parse(localStorage.getItem('orion_draw_prefs') || '{}'); } catch(e) { /* ignore corrupt draw prefs */ }
+    try { savedPrefs = JSON.parse(localStorage.getItem('orion_draw_prefs') || '{}'); } catch (e) { /* ignore corrupt draw prefs */ }
     const current = savedPrefs['display'] || 'names';
     const newDisplay = (current === 'names') ? 'codes' : 'names';
     savedPrefs['display'] = newDisplay;
@@ -97,7 +97,7 @@ function _toggleTeamNames() {
 // Set name display mode and refresh draw
 function _setNameDisplay(value) {
     let savedPrefs = {};
-    try { savedPrefs = JSON.parse(localStorage.getItem('orion_draw_prefs') || '{}'); } catch(e) { /* ignore corrupt draw prefs */ }
+    try { savedPrefs = JSON.parse(localStorage.getItem('orion_draw_prefs') || '{}'); } catch (e) { /* ignore corrupt draw prefs */ }
     savedPrefs['display'] = value;
     localStorage.setItem('orion_draw_prefs', JSON.stringify(savedPrefs));
     displayRounds();
@@ -111,37 +111,37 @@ function _judgePillHtml(debate, emoji = '⚖️') {
         return `<span style="font-size:11px;color:#94a3b8;font-style:italic;">No judges</span>`;
     }
     _normalizePanelRoles(debate);
-    
+
     const isJudge = state.auth?.currentUser?.role === 'judge';
     const isAdmin = state.auth?.currentUser?.role === 'admin';
     const myJudgeId = isJudge ? String(state.auth?.currentUser?.associatedId ?? '') : null;
-    
+
     // Build judge chips with roles
     const judgeChips = debate.panel.map(panelObj => {
         const j = (state.judges || []).find(j => String(j.id) === String(panelObj.id));
         if (!j) return '';
-        
+
         // Find role for this judge in this debate (stored on the panel object)
         const judgeInDebate = panelObj.role || 'wing';
         const isChair = judgeInDebate === 'chair';
-        
+
         // Determine if this is the current user's judge assignment
         const isMyJudge = myJudgeId && String(myJudgeId) === String(j.id);
-        
+
         return `
             <span class="dnd-judge-chip" ${isMyJudge ? 'style="border:2px solid #3b82f6"' : ''}>
-                <span class="chip-role ${isChair?'chair':'wing'}">${judgeInDebate}</span>
+                <span class="chip-role ${isChair ? 'chair' : 'wing'}">${judgeInDebate}</span>
                 ${escapeHTML(j.name)}
                 ${isMyJudge ? ' <span style="font-size:10px;opacity:0.8;">(you)</span>' : ''}
             </span>
         `;
     }).filter(chip => chip.trim() !== '').join('');
-    
+
     // If no valid judges found
     if (!judgeChips) {
         return `<span style="font-size:11px;color:#94a3b8;font-style:italic;">No judges</span>`;
     }
-    
+
     return `
         <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
             <span style="font-size:11px;color:#94a3b8;">${emoji}</span>
@@ -322,30 +322,30 @@ export function renderDraw() {
     }
 
     try {
-    const isAdmin = state.auth?.currentUser?.role === 'admin';
-    const rounds  = state.rounds || [];
-    const entered = (rounds || []).flatMap(r => (r.debates||[])).filter(d=>d.entered).length;
-    const total   = (rounds || []).flatMap(r => (r.debates||[])).filter(d=>d.entered || d.panel?.length).length;
+        const isAdmin = state.auth?.currentUser?.role === 'admin';
+        const rounds = state.rounds || [];
+        const entered = (rounds || []).flatMap(r => (r.debates || [])).filter(d => d.entered).length;
+        const total = (rounds || []).flatMap(r => (r.debates || [])).filter(d => d.entered || d.panel?.length).length;
 
-    // Load saved selector preferences
-    let savedPrefs = {};
-    try { savedPrefs = JSON.parse(localStorage.getItem('orion_draw_prefs') || '{}'); } catch(e) { /* ignore corrupt draw prefs */ }
+        // Load saved selector preferences
+        let savedPrefs = {};
+        try { savedPrefs = JSON.parse(localStorage.getItem('orion_draw_prefs') || '{}'); } catch (e) { /* ignore corrupt draw prefs */ }
 
-    const savedPairMethod = savedPrefs['cr-pair'] || 'random';
-    const savedFilter     = savedPrefs['round-filter'] || 'all';
+        const savedPairMethod = savedPrefs['cr-pair'] || 'random';
+        const savedFilter = savedPrefs['round-filter'] || 'all';
 
-    // Pre-compute speech-conditional fragments
-    const _speechMode     = isSpeech();
-    const _motionPlaceholder = _speechMode
-        ? 'e.g. Prepared Speech — Persuasion'
-        : 'e.g. This House Would ban social media for under-16s';
-    const _pairingLabel   = _speechMode ? 'Room Draw' : 'Pairing';
-    const _replyCheckbox  = _speechMode ? '' :
-        '<label style="display:flex;align-items:center;gap:7px;cursor:pointer;font-size:12px">' +
-        '<input type="checkbox" id="cr-disable-reply"> 🚫 No Reply Speeches</label>';
+        // Pre-compute speech-conditional fragments
+        const _speechMode = isSpeech();
+        const _motionPlaceholder = _speechMode
+            ? 'e.g. Prepared Speech — Persuasion'
+            : 'e.g. This House Would ban social media for under-16s';
+        const _pairingLabel = _speechMode ? 'Room Draw' : 'Pairing';
+        const _replyCheckbox = _speechMode ? '' :
+            '<label style="display:flex;align-items:center;gap:7px;cursor:pointer;font-size:12px">' +
+            '<input type="checkbox" id="cr-disable-reply"> 🚫 No Reply Speeches</label>';
 
-    _injectDrawCSS();
-    container.innerHTML = `
+        _injectDrawCSS();
+        container.innerHTML = `
     <div class="section">
     <h2>Draw</h2>
          <!-- Grouped controls bar -->
@@ -358,16 +358,16 @@ export function renderDraw() {
                    <select id="round-filter" class="draw-round-filter"
                            onchange="window.displayRounds()"
                            title="Filter rounds">
-                       <option value="all" ${savedFilter==='all'?'selected':''}>All Rounds</option>
-                       <option value="pending"   ${savedFilter==='pending'  ?'selected':''}>Pending</option>
-                       <option value="completed" ${savedFilter==='completed'?'selected':''}>Completed</option>
-                       <option value="blinded"   ${savedFilter==='blinded'  ?'selected':''}>Blind</option>
+                       <option value="all" ${savedFilter === 'all' ? 'selected' : ''}>All Rounds</option>
+                       <option value="pending"   ${savedFilter === 'pending' ? 'selected' : ''}>Pending</option>
+                       <option value="completed" ${savedFilter === 'completed' ? 'selected' : ''}>Completed</option>
+                       <option value="blinded"   ${savedFilter === 'blinded' ? 'selected' : ''}>Blind</option>
                    </select>
                    ${isAdmin ? `<select id="draw-name-display" class="draw-round-filter"
                            onchange="window._setNameDisplay(this.value)"
                            title="Show names or codes">
-                       <option value="names" ${(savedPrefs['display']||'names')==='names'?'selected':''}>Names</option>
-                       <option value="codes" ${savedPrefs['display']==='codes'?'selected':''}>Codes</option>
+                       <option value="names" ${(savedPrefs['display'] || 'names') === 'names' ? 'selected' : ''}>Names</option>
+                       <option value="codes" ${savedPrefs['display'] === 'codes' ? 'selected' : ''}>Codes</option>
                    </select>` : ''}
 <button id="draw-view-toggle" onclick="window._toggleDrawView()" 
                             class="btn-secondary" style="padding:8px 14px;font-size:13px;font-weight:600"
@@ -390,14 +390,14 @@ export function renderDraw() {
                         style="width:100%;padding:7px 10px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:13px;box-sizing:border-box;font-family:inherit"
                         onkeydown="if(event.key==='Enter') window._submitNewRound()">
                 </div>
-                <div style="display:grid;grid-template-columns:${_speechMode?'1fr 1fr':'1fr'};gap:8px">
+                <div style="display:grid;grid-template-columns:${_speechMode ? '1fr 1fr' : '1fr'};gap:8px">
                     <div>
                         <label style="display:block;font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.04em;margin-bottom:3px">${_pairingLabel}</label>
                         <select id="cr-pair" style="width:100%;padding:7px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:12px;font-family:inherit"
                                 onchange="window._saveDrawPref('cr-pair',this.value)">
-                            <option value="random" ${savedPairMethod==='random'?'selected':''}>🎲 Random</option>
-                            <option value="power"   ${savedPairMethod==='power'  ?'selected':''}>⚡ Power</option>
-                            <option value="fold"    ${savedPairMethod==='fold'   ?'selected':''}>📊 Balanced</option>
+                            <option value="random" ${savedPairMethod === 'random' ? 'selected' : ''}>🎲 Random</option>
+                            <option value="power"   ${savedPairMethod === 'power' ? 'selected' : ''}>⚡ Power</option>
+                            <option value="fold"    ${savedPairMethod === 'fold' ? 'selected' : ''}>📊 Balanced</option>
                         </select>
                     </div>
                     ${_speechMode ? `<div>
@@ -408,9 +408,9 @@ export function renderDraw() {
                 ${!_speechMode ? `<div>
                     <label style="display:block;font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.04em;margin-bottom:3px">Side Preference</label>
                     <select id="cr-side-pref" style="width:100%;padding:7px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:12px;font-family:inherit" onchange="window._saveDrawPref('cr-side-pref',this.value)">
-                        <option value="random" ${(savedPrefs['cr-side-pref']||'random')==='random'?'selected':''}>🎲 Random</option>
-                        <option value="alternate" ${savedPrefs['cr-side-pref']==='alternate'?'selected':''}>🔄 Alternate (no repeat)</option>
-                        <option value="balanced" ${savedPrefs['cr-side-pref']==='balanced'?'selected':''}>⚖️ Balanced (equal over time)</option>
+                        <option value="random" ${(savedPrefs['cr-side-pref'] || 'random') === 'random' ? 'selected' : ''}>🎲 Random</option>
+                        <option value="alternate" ${savedPrefs['cr-side-pref'] === 'alternate' ? 'selected' : ''}>🔄 Alternate (no repeat)</option>
+                        <option value="balanced" ${savedPrefs['cr-side-pref'] === 'balanced' ? 'selected' : ''}>⚖️ Balanced (equal over time)</option>
                     </select>
                 </div>` : ''}
                 <div style="display:flex;flex-wrap:wrap;gap:14px;align-items:center">
@@ -434,7 +434,7 @@ export function renderDraw() {
 
         <div id="rounds-list"></div>
     </div>`;
-    displayRounds();
+        displayRounds();
     } catch (error) {
         console.error('[draw] renderDraw error:', error);
         container.innerHTML = `
@@ -450,7 +450,7 @@ export function renderDraw() {
     }
 }
 
-window._toggleCreateRound = function() {
+window._toggleCreateRound = function () {
     const panel = document.getElementById('draw-create-panel');
     if (!panel) return;
     panel.classList.toggle('open');
@@ -458,14 +458,14 @@ window._toggleCreateRound = function() {
     if (btn) btn.textContent = panel.classList.contains('open') ? '✕ Cancel' : '➕ New Round';
 };
 
-window._submitNewRound = function() {
-    const motion         = document.getElementById('cr-motion')?.value.trim() || 'Debate Round';
-    const method         = document.getElementById('cr-pair')?.value   || 'random';
-    const sideMethod     = document.getElementById('cr-sides')?.value  || 'random';
-    const autoAllocate   = document.getElementById('cr-autojudge')?.checked ?? true;
-    const blind          = document.getElementById('cr-blind')?.checked ?? false;
-    const disableReply   = document.getElementById('cr-disable-reply')?.checked ?? false;
-    const avoidMeetings  = document.getElementById('cr-avoid-meetings')?.checked ?? true;
+window._submitNewRound = function () {
+    const motion = document.getElementById('cr-motion')?.value.trim() || 'Debate Round';
+    const method = document.getElementById('cr-pair')?.value || 'random';
+    const sideMethod = document.getElementById('cr-sides')?.value || 'random';
+    const autoAllocate = document.getElementById('cr-autojudge')?.checked ?? true;
+    const blind = document.getElementById('cr-blind')?.checked ?? false;
+    const disableReply = document.getElementById('cr-disable-reply')?.checked ?? false;
+    const avoidMeetings = document.getElementById('cr-avoid-meetings')?.checked ?? true;
     createRound({ motion, method, sideMethod, autoAllocate, blind, disableReply, avoidMeetings });
     // Collapse form after creation
     const panel = document.getElementById('draw-create-panel');
@@ -477,15 +477,15 @@ window._submitNewRound = function() {
 function renderKnockoutBracket(rounds) {
     // Sort rounds by ID
     const sortedRounds = [...rounds].sort((a, b) => Number(roundNumber(a)) - Number(roundNumber(b)));
-    
+
     // Get the latest round
     const latestRound = sortedRounds[sortedRounds.length - 1];
-    
+
     // If there's only one round, generate the full bracket structure
     if (sortedRounds.length === 1) {
         return renderFullKnockoutBracket(sortedRounds[0]);
     }
-    
+
     // Multiple rounds - group debates by round
     const roundsByStage = sortedRounds.map(round => {
         const debates = round.debates || [];
@@ -498,21 +498,21 @@ function renderKnockoutBracket(rounds) {
             isLatest: String(round.id) === String(latestRound.id)
         };
     });
-    
+
     // Generate the complete bracket structure
     let bracketHtml = `
         <div class="section">
             <h2 style="margin-bottom: 20px;">🏆 Knockout Bracket</h2>
             <div class="knockout-bracket">
     `;
-    
+
     // Generate all possible rounds from current number of debates down to final
     const totalDebates = latestRound.debates.length;
     const allStages = generateAllBracketStages(totalDebates);
-    
+
     allStages.forEach(stage => {
         const existingRound = roundsByStage.find(r => r.name === stage.name);
-        
+
         bracketHtml += `
             <div class="bracket-round">
                 <h3 style="text-align: center; margin-bottom: 15px; ${existingRound?.isLatest ? 'color: #2563eb; font-weight: 700;' : ''}">
@@ -520,13 +520,13 @@ function renderKnockoutBracket(rounds) {
                     ${existingRound?.isLatest ? ' (Current)' : ''}
                 </h3>
         `;
-        
+
         if (existingRound) {
             // Show actual debates from existing round
             existingRound.debates.forEach((debate, debateIdx) => {
                 bracketHtml += renderBracketMatch(debate, existingRound, 0, debateIdx);
             });
-            
+
             // Add "Next Round" button if this round is complete and next doesn't exist
             if (existingRound.isComplete && !roundsByStage.find(r => r.name === stage.nextStage)) {
                 bracketHtml += `
@@ -555,10 +555,10 @@ function renderKnockoutBracket(rounds) {
                 `;
             }
         }
-        
+
         bracketHtml += `</div>`;
     });
-    
+
     bracketHtml += `</div></div>`;
     return bracketHtml;
 }
@@ -579,23 +579,23 @@ function renderFullKnockoutBracket(currentRound) {
 
     // Generate all bracket stages
     const stages = generateAllBracketStages(debates.length);
-    
+
     // Get all knockout rounds
     const allKnockoutRounds = state.rounds.filter(r => r.type === 'knockout');
-    
+
     let html = `
         <div class="section">
             <h2 style="margin-bottom: 20px;">🏆 Knockout Bracket</h2>
             <div class="knockout-bracket">
     `;
-    
+
     stages.forEach((stage, index) => {
         const isCurrentRound = index === 0;
         const existingRound = allKnockoutRounds.find(r => {
             if (isCurrentRound) return r.id === currentRound.id;
             return r.debates?.length === stage.numDebates;
         });
-        
+
         html += `
             <div class="bracket-round">
                 <h3 style="text-align: center; margin-bottom: 15px; ${isCurrentRound ? 'color: #2563eb; font-weight: 700;' : ''}">
@@ -603,7 +603,7 @@ function renderFullKnockoutBracket(currentRound) {
                     ${isCurrentRound ? ' (Current)' : ''}
                 </h3>
         `;
-        
+
         if (existingRound) {
             // Show existing debates
             existingRound.debates.forEach((debate, debateIdx) => {
@@ -615,26 +615,26 @@ function renderFullKnockoutBracket(currentRound) {
             for (let i = 0; i < debatesNeeded; i++) {
                 const team1 = teams[i * 2]?.team;
                 const team2 = teams[i * 2 + 1]?.team;
-                
+
                 html += `
                     <div class="bracket-match" style="opacity: ${team1 && team2 ? '1' : '0.5'};">
                         <div style="padding: 12px; color: ${team1 ? '#1e293b' : '#94a3b8'}; text-align: center; font-weight: ${team1 ? '600' : '400'};">
-                            ${team1 ? teamLabel(team1) : `Seed #${i*2+1}`}
+                            ${team1 ? teamLabel(team1) : `Seed #${i * 2 + 1}`}
                         </div>
                         <div style="border-top: 1px solid #e2e8f0; margin: 4px 0;"></div>
                         <div style="padding: 12px; color: ${team2 ? '#1e293b' : '#94a3b8'}; text-align: center; font-weight: ${team2 ? '600' : '400'};">
-                            ${team2 ? teamLabel(team2) : `Seed #${i*2+2}`}
+                            ${team2 ? teamLabel(team2) : `Seed #${i * 2 + 2}`}
                         </div>
                     </div>
                 `;
             }
         }
-        
+
         html += `</div>`;
     });
-    
+
     html += `</div>`;
-    
+
     // Add "Create Next Round" button if current round is complete and next doesn't exist
     if (currentRound.debates.every(d => d.entered) && !currentRound.nextRoundCreated) {
         html += `
@@ -647,7 +647,7 @@ function renderFullKnockoutBracket(currentRound) {
             </div>
         `;
     }
-    
+
     html += `</div>`;
     return html;
 }
@@ -681,10 +681,10 @@ function renderBracketMatch(debate, round = {}, roundIdx = 0, debateIdx = 0) {
             </div>
         </div>`;
     }
-    
+
     const govWon = debate.entered && debate.govResults?.total > debate.oppResults?.total;
     const oppWon = debate.entered && debate.oppResults?.total > debate.govResults?.total;
-    
+
     return `
         <div class="bracket-match ${debate.entered ? 'bracket-winner' : ''}">
             <div style="font-weight: ${govWon ? '700' : '400'}; color: ${govWon ? '#10b981' : '#1e293b'}; padding: 8px; display: flex; justify-content: space-between; background: ${govWon ? '#f0fdf4' : 'transparent'};">
@@ -698,10 +698,10 @@ function renderBracketMatch(debate, round = {}, roundIdx = 0, debateIdx = 0) {
             </div>
             ${debate.entered ? `
                 <div style="margin-top: 8px; font-size: 12px; color: #64748b; text-align: center; border-top: 1px dashed #e2e8f0; padding-top: 8px;">
-                    ${Math.max(govWon ? debate.govResults?.total : debate.oppResults?.total, 
-                              oppWon ? debate.oppResults?.total : debate.govResults?.total).toFixed(1)} - 
+                    ${Math.max(govWon ? debate.govResults?.total : debate.oppResults?.total,
+        oppWon ? debate.oppResults?.total : debate.govResults?.total).toFixed(1)} - 
                     ${Math.min(govWon ? debate.oppResults?.total : debate.govResults?.total,
-                              oppWon ? debate.govResults?.total : debate.oppResults?.total).toFixed(1)}
+            oppWon ? debate.govResults?.total : debate.oppResults?.total).toFixed(1)}
                 </div>
             ` : `
                 <div style="margin-top: 8px; font-size: 11px; color: #f59e0b; text-align: center;">
@@ -716,7 +716,7 @@ function generateAllBracketStages(startingDebates) {
     const stages = [];
     let numDebates = startingDebates;
     let roundNames = [];
-    
+
     // Build round names from current down to final
     while (numDebates >= 1) {
         roundNames.push({
@@ -727,7 +727,7 @@ function generateAllBracketStages(startingDebates) {
         numDebates = numDebates / 2;
         if (numDebates < 1) break;
     }
-    
+
     return roundNames;
 }
 
@@ -755,27 +755,27 @@ function getNextStageName(currentNumDebates) {
 // ============================================================================
 function renderBPDebateCard(round, debate, roundIdx, debateIdx) {
     const positions = [
-        { key:'og', label:'OG',color:'#1e40af', bg:'#eff6ff', border:'#bfdbfe' },
-        { key:'oo', label:'OO',color:'#be185d', bg:'#fdf2f8', border:'#fbcfe8' },
-        { key:'cg', label:'CG',color:'#065f46', bg:'#f0fdf4', border:'#86efac' },
-        { key:'co', label:'CO',color:'#7c3aed', bg:'#faf5ff', border:'#e9d5ff' },
+        { key: 'og', label: 'OG', color: '#1e40af', bg: '#eff6ff', border: '#bfdbfe' },
+        { key: 'oo', label: 'OO', color: '#be185d', bg: '#fdf2f8', border: '#fbcfe8' },
+        { key: 'cg', label: 'CG', color: '#065f46', bg: '#f0fdf4', border: '#86efac' },
+        { key: 'co', label: 'CO', color: '#7c3aed', bg: '#faf5ff', border: '#e9d5ff' },
     ];
 
-    const isAdmin  = state.auth?.currentUser?.role === 'admin';
-    const isJudge  = state.auth?.currentUser?.role === 'judge';
-    const myJudgeId= null;
+    const isAdmin = state.auth?.currentUser?.role === 'admin';
+    const isJudge = state.auth?.currentUser?.role === 'judge';
+    const myJudgeId = null;
     const isMyRoom = false;
-    const isBlinded= round.blinded || false;
-    const room     = round.rooms?.[debateIdx] || `Room ${debateIdx + 1}`;
+    const isBlinded = round.blinded || false;
+    const room = round.rooms?.[debateIdx] || `Room ${debateIdx + 1}`;
 
     // Build team cells — with DnD for admins on unentered rooms
     const teamCells = positions.map(pos => {
         const team = state.teams.find(t => t.id === debate[pos.key]);
         if (!team) return `<div style="padding:10px;background:#f8fafc;border-radius:8px;border:1px dashed #cbd5e1;text-align:center;color:#94a3b8;font-size:12px;">TBD</div>`;
         const rank = debate.entered && debate.bpRanks ? debate.bpRanks[pos.key] : null;
-        const pts  = rank != null ? [3,2,1,0][rank-1] : null;
-        const rankColors = ['#26a786','#205196','#b45309','#c52713'];
-        const rankLabels = ['🥇 1st','🥈 2nd','🥉 3rd','4th'];
+        const pts = rank != null ? [3, 2, 1, 0][rank - 1] : null;
+        const rankColors = ['#26a786', '#205196', '#b45309', '#c52713'];
+        const rankLabels = ['🥇 1st', '🥈 2nd', '🥉 3rd', '4th'];
         const dndAttrs = (!debate.entered && isAdmin) ? `draggable="true"
             ondragstart="window.dndTeamDragStart(event,${roundIdx},${debateIdx},'${pos.key}')"
             ondragend="window.dndDragEnd(event)"
@@ -783,25 +783,25 @@ function renderBPDebateCard(round, debate, roundIdx, debateIdx) {
             ondragleave="window.dndDragLeave(event)"
             ondrop="window.dndTeamDrop(event,${roundIdx},${debateIdx},'${pos.key}')"` : '';
         return `
-        <div ${dndAttrs} style="padding:10px;background:${pos.bg};border-radius:8px;border:1.5px solid ${pos.border};text-align:center;${!debate.entered&&isAdmin?'cursor:grab;':''}">
+        <div ${dndAttrs} style="padding:10px;background:${pos.bg};border-radius:8px;border:1.5px solid ${pos.border};text-align:center;${!debate.entered && isAdmin ? 'cursor:grab;' : ''}">
             <div style="font-size:10px;font-weight:700;color:${pos.color};text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">${pos.label}</div>
             <div style="font-weight:700;color:#1e293b;font-size:13px;word-break:break-word;">${teamLabel(team)}</div>
             ${rank != null && !isBlinded ? `
-                <div style="margin-top:6px;font-size:12px;font-weight:700;color:${rankColors[rank-1]}">${rankLabels[rank-1]}</div>
-                <div style="font-size:11px;color:#64748b;">${debate[pos.key+'Score']?.toFixed(1)||'—'} spk</div>
+                <div style="margin-top:6px;font-size:12px;font-weight:700;color:${rankColors[rank - 1]}">${rankLabels[rank - 1]}</div>
+                <div style="font-size:11px;color:#64748b;">${debate[pos.key + 'Score']?.toFixed(1) || '—'} spk</div>
             ` : ''}
             ${!debate.entered && isAdmin ? '<div style="font-size:9px;color:#94a3b8;margin-top:3px;">⠿ drag to swap</div>' : ''}
         </div>`;
     }).join('');
 
     // Build judge chips with chair/wing roles — same as WSDC
-    const availableJudges = (state.judges||[]).filter(j => !(debate.panel||[]).some(p=>p.id==j.id) && j.available !== false);
-    const freeJudges  = availableJudges.filter(j => !round.debates.some((d,di)=>di!==debateIdx&&(d.panel||[]).some(p=>p.id==j.id)));
-    const otherJudges = availableJudges.filter(j =>  round.debates.some((d,di)=>di!==debateIdx&&(d.panel||[]).some(p=>p.id==j.id)));
+    const availableJudges = (state.judges || []).filter(j => !(debate.panel || []).some(p => p.id == j.id) && j.available !== false);
+    const freeJudges = availableJudges.filter(j => !round.debates.some((d, di) => di !== debateIdx && (d.panel || []).some(p => p.id == j.id)));
+    const otherJudges = availableJudges.filter(j => round.debates.some((d, di) => di !== debateIdx && (d.panel || []).some(p => p.id == j.id)));
 
     _normalizePanelRoles(debate);
-    const judgeChips = (debate.panel||[]).map(p => {
-        const j = (state.judges||[]).find(j=>j.id==p.id);
+    const judgeChips = (debate.panel || []).map(p => {
+        const j = (state.judges || []).find(j => j.id == p.id);
         if (!j) return '';
         const isChair = p.role === 'chair';
         const roleTitle = isAdmin && !debate.entered ? (isChair ? 'Chair — click to make wing' : 'Wing — click to make chair') : p.role;
@@ -809,7 +809,7 @@ function renderBPDebateCard(round, debate, roundIdx, debateIdx) {
                     ${!debate.entered && isAdmin ? `draggable="true"
                     ondragstart="window.dndJudgeDragStart(event,'${j.id}',${roundIdx},${debateIdx})"
                     ondragend="window.dndDragEnd(event)"` : ''}>
-            <span class="chip-role ${isChair?'chair':''}"
+            <span class="chip-role ${isChair ? 'chair' : ''}"
                   title="${roleTitle}"
                   ${!debate.entered && isAdmin ? `onclick="event.stopPropagation();window.toggleJudgeRole(${roundIdx},${debateIdx},'${j.id}')"` : ''}>
                 ${p.role}
@@ -824,22 +824,22 @@ function renderBPDebateCard(round, debate, roundIdx, debateIdx) {
                 onchange="if(this.value){window.addJudgeToPanel(${roundIdx},${debateIdx},this.value);this.value=''}"
                 title="Add judge to this room">
             <option value="">+ Add Judge</option>
-            ${freeJudges.length?`<optgroup label="Available">${freeJudges.map(j=>`<option value="${j.id}">${escapeHTML(j.name)}${j.rating?` (${j.rating}★)`:''} (${j.role})</option>`).join('')}</optgroup>`:'' }
-            ${otherJudges.length?`<optgroup label="In other rooms">${otherJudges.map(j=>`<option value="${j.id}">${escapeHTML(j.name)} ← other room</option>`).join('')}</optgroup>`:'' }
+            ${freeJudges.length ? `<optgroup label="Available">${freeJudges.map(j => `<option value="${j.id}">${escapeHTML(j.name)}${j.rating ? ` (${j.rating}★)` : ''} (${j.role})</option>`).join('')}</optgroup>` : ''}
+            ${otherJudges.length ? `<optgroup label="In other rooms">${otherJudges.map(j => `<option value="${j.id}">${escapeHTML(j.name)} ← other room</option>`).join('')}</optgroup>` : ''}
         </select>` : '';
 
-    const statusDot   = debate.entered ? '#10b981' : (debate.panel?.length ? '#f59e0b' : '#ef4444');
+    const statusDot = debate.entered ? '#10b981' : (debate.panel?.length ? '#f59e0b' : '#ef4444');
     const statusLabel = debate.entered ? '✅ Done' : '⏳ Pending';
 
     return `
-    <div class="draw-room ${debate.entered?'done':'pending-partial'}" style="background:white;border-radius:10px;border-left:4px solid ${statusDot};padding:14px;margin-bottom:10px;">
+    <div class="draw-room ${debate.entered ? 'done' : 'pending-partial'}" style="background:white;border-radius:10px;border-left:4px solid ${statusDot};padding:14px;margin-bottom:10px;">
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
             <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
                 <strong style="font-size:14px;color:#1e293b;">${escapeHTML(room)}</strong>
                 ${isAdmin ? `<button onclick="window.renameRoom(${roundIdx},${debateIdx})" style="background:none;border:none;cursor:pointer;padding:0 4px;font-size:13px;color:#94a3b8;line-height:1" title="Rename room">✏️</button><button onclick="window.deleteDebate(${roundIdx},${debateIdx})" style="background:none;border:none;cursor:pointer;padding:0 4px;font-size:13px;color:#94a3b8;line-height:1" title="Delete room">🗑️</button>
                 <button onclick="window.addDebate(${roundIdx},${debateIdx})" style="background:none;border:none;cursor:pointer;padding:0 4px;font-size:13px;color:#94a3b8;line-height:1" title="Add room">➕</button>` : ''}
                 <span style="background:#dbeafe;color:#1e40af;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;">BP</span>
-                <span style="font-size:12px;font-weight:600;color:${debate.entered?'#10b981':'#f59e0b'}">${statusLabel}</span>
+                <span style="font-size:12px;font-weight:600;color:${debate.entered ? '#10b981' : '#f59e0b'}">${statusLabel}</span>
             </div>
             <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
                 ${!debate.entered && isAdmin ? `
@@ -847,7 +847,7 @@ function renderBPDebateCard(round, debate, roundIdx, debateIdx) {
                 ` : !debate.entered && isMyRoom ? `
                     <button onclick="window.showEnterResults(${roundIdx},${debateIdx})" class="btn-primary" style="padding:4px 12px;font-size:12px;background:#7c3aed">Submit Ballot</button>
                 ` : debate.entered && !isBlinded ? `
-                    ${isAdmin?`<button onclick="window.editResults(${roundIdx},${debateIdx})" class="btn-secondary" style="padding:4px 10px;font-size:12px">✏️ Edit Ballot</button>`:''}
+                    ${isAdmin ? `<button onclick="window.editResults(${roundIdx},${debateIdx})" class="btn-secondary" style="padding:4px 10px;font-size:12px">✏️ Edit Ballot</button>` : ''}
                 ` : ''}
             </div>
         </div>
@@ -866,7 +866,7 @@ function renderBPDebateCard(round, debate, roundIdx, debateIdx) {
 
 function renderDebateCard(round, debate, roundIdx, debateIdx, previousMeetings) {
     // Dispatch to BP card if this is a BP debate
-    if (debate.format === 'bp')     return renderBPDebateCard(round, debate, roundIdx, debateIdx);
+    if (debate.format === 'bp') return renderBPDebateCard(round, debate, roundIdx, debateIdx);
     if (debate.format === 'speech') return renderSpeechDebateCard(round, debate, roundIdx, debateIdx);
 
     const gov = state.teams.find(t => t.id === debate.gov);
@@ -897,16 +897,16 @@ function renderDebateCard(round, debate, roundIdx, debateIdx, previousMeetings) 
         </div>`;
     }
 
-    const isAdmin   = state.auth?.currentUser?.role === 'admin';
-    const isJudge   = state.auth?.currentUser?.role === 'judge';
+    const isAdmin = state.auth?.currentUser?.role === 'admin';
+    const isJudge = state.auth?.currentUser?.role === 'judge';
     const myJudgeId = isJudge ? String(state.auth?.currentUser?.associatedId ?? '') : null;
-    const isMyRoom  = isJudge && (debate.panel || []).some(p => String(p.id) === myJudgeId);
-    const isBlinded  = round.blinded || false;
+    const isMyRoom = isJudge && (debate.panel || []).some(p => String(p.id) === myJudgeId);
+    const isBlinded = round.blinded || false;
     const govPresent = debate.attendance?.gov !== false;
     const oppPresent = debate.attendance?.opp !== false;
-    const room       = round.rooms?.[debateIdx] || `Room ${debateIdx + 1}`;
+    const room = round.rooms?.[debateIdx] || `Room ${debateIdx + 1}`;
 
-    let _dp = {}; try { _dp = JSON.parse(localStorage.getItem('orion_draw_prefs') || '{}'); } catch(e) { /* ignore corrupt draw prefs */ }
+    let _dp = {}; try { _dp = JSON.parse(localStorage.getItem('orion_draw_prefs') || '{}'); } catch (e) { /* ignore corrupt draw prefs */ }
     const displayMode = _dp['display'] || 'names';
     // Judges always see code; others see it only when not in codes mode (code already primary) and not hiding names
     const showSecondaryCode = (isJudge && !isAdmin) || (displayMode !== 'codes' && !_dp['hide-names']);
@@ -925,7 +925,7 @@ function renderDebateCard(round, debate, roundIdx, debateIdx, previousMeetings) 
         );
         return count + (met ? 1 : 0);
     }, 0);
-    const isRepeat   = priorMeetings > 0;
+    const isRepeat = priorMeetings > 0;
     const meetingNum = priorMeetings + 1; // 2 = "2nd meeting", 3 = "3rd meeting"
     const meetingOrd = meetingNum === 2 ? '2nd' : meetingNum === 3 ? '3rd' : meetingNum + 'th';
 
@@ -941,32 +941,32 @@ function renderDebateCard(round, debate, roundIdx, debateIdx, previousMeetings) 
     });
     const freeJudges = availableJudges.filter(j => {
         // not assigned to any other debate in this round
-        const inOther = round.debates.some((d, di) => di !== debateIdx && (d.panel||[]).some(p => p.id == j.id));
+        const inOther = round.debates.some((d, di) => di !== debateIdx && (d.panel || []).some(p => p.id == j.id));
         return !inOther;
     });
     const otherJudges = availableJudges.filter(j => {
-        const inOther = round.debates.some((d, di) => di !== debateIdx && (d.panel||[]).some(p => p.id == j.id));
+        const inOther = round.debates.some((d, di) => di !== debateIdx && (d.panel || []).some(p => p.id == j.id));
         return inOther;
     });
 
     _normalizePanelRoles(debate);
     const judgeChips = (debate.panel || []).map(p => {
-        const j = (state.judges||[]).find(j => j.id == p.id);
+        const j = (state.judges || []).find(j => j.id == p.id);
         if (!j) return '';
         const conflictMap = buildConflictMap(state.judges);
         const conflict = hasConflict(conflictMap, j.id, debate.gov) || hasConflict(conflictMap, j.id, debate.opp);
         const isChair = p.role === 'chair';
         const roleTitle = isAdmin && !debate.entered ? (isChair ? 'Chair — click to make wing' : 'Wing — click to make chair') : p.role;
-        return `<span class="dnd-judge-chip" ${conflict?'style="border-color:#f59e0b;background:#fffbeb"':''}
+        return `<span class="dnd-judge-chip" ${conflict ? 'style="border-color:#f59e0b;background:#fffbeb"' : ''}
                     ${!debate.entered && isAdmin ? `draggable="true"
                     ondragstart="window.dndJudgeDragStart(event,'${j.id}',${roundIdx},${debateIdx})"
                     ondragend="window.dndDragEnd(event)"` : ''}>
-            <span class="chip-role ${isChair?'chair':''}"
+            <span class="chip-role ${isChair ? 'chair' : ''}"
                   title="${roleTitle}"
                   ${!debate.entered && isAdmin ? `onclick="event.stopPropagation();window.toggleJudgeRole(${roundIdx},${debateIdx},'${j.id}')"` : ''}>
                 ${p.role}
             </span>
-            ${escapeHTML(j.name)}${conflict?' ⚠️':''}
+            ${escapeHTML(j.name)}${conflict ? ' ⚠️' : ''}
             ${!debate.entered && isAdmin ? `<button class="chip-remove" onclick="window.removeJudgeFromPanel(${roundIdx},${debateIdx},'${j.id}')" title="Remove">×</button>` : ''}
         </span>`;
     }).join('');
@@ -979,17 +979,17 @@ function renderDebateCard(round, debate, roundIdx, debateIdx, previousMeetings) 
             <option value="">+ Add Judge</option>
             ${freeJudges.length ? `<optgroup label="Available">
                 ${freeJudges.map(j => {
-                    const conflictMap = buildConflictMap(state.judges);
-                    const c = hasConflict(conflictMap, j.id, debate.gov) || hasConflict(conflictMap, j.id, debate.opp);
-                    return `<option value="${j.id}" ${c?'style="color:#ef4444"':''}>${escapeHTML(j.name)} (${j.role})${c?' ⚠️':''}</option>`;
-                }).join('')}
+        const conflictMap = buildConflictMap(state.judges);
+        const c = hasConflict(conflictMap, j.id, debate.gov) || hasConflict(conflictMap, j.id, debate.opp);
+        return `<option value="${j.id}" ${c ? 'style="color:#ef4444"' : ''}>${escapeHTML(j.name)} (${j.role})${c ? ' ⚠️' : ''}</option>`;
+    }).join('')}
             </optgroup>` : ''}
             ${otherJudges.length ? `<optgroup label="In other rooms">
                 ${otherJudges.map(j => {
-                    const conflictMap = buildConflictMap(state.judges);
-                    const c = hasConflict(conflictMap, j.id, debate.gov) || hasConflict(conflictMap, j.id, debate.opp);
-                    return `<option value="${j.id}" ${c?'style="color:#ef4444"':''}>${escapeHTML(j.name)} (${j.role})${c?' ⚠️':''}</option>`;
-                }).join('')}
+        const conflictMap = buildConflictMap(state.judges);
+        const c = hasConflict(conflictMap, j.id, debate.gov) || hasConflict(conflictMap, j.id, debate.opp);
+        return `<option value="${j.id}" ${c ? 'style="color:#ef4444"' : ''}>${escapeHTML(j.name)} (${j.role})${c ? ' ⚠️' : ''}</option>`;
+    }).join('')}
             </optgroup>` : ''}
         </select>` : '';
 
@@ -1001,10 +1001,10 @@ function renderDebateCard(round, debate, roundIdx, debateIdx, previousMeetings) 
                 <strong style="font-size:14px;color:#1e293b">${escapeHTML(room)}</strong>
                 ${isAdmin ? `<button onclick="window.renameRoom(${roundIdx},${debateIdx})" style="background:none;border:none;cursor:pointer;padding:0 4px;font-size:13px;color:#94a3b8;line-height:1" title="Rename room">✏️</button><button onclick="window.deleteDebate(${roundIdx},${debateIdx})" style="background:none;border:none;cursor:pointer;padding:0 4px;font-size:13px;color:#94a3b8;line-height:1" title="Delete room">🗑️</button>
                 <button onclick="window.addDebate(${roundIdx},${debateIdx})" style="background:none;border:none;cursor:pointer;padding:0 4px;font-size:13px;color:#94a3b8;line-height:1" title="Add room">➕</button>` : ''}
-                ${isRepeat?`<span style="background:#f97316;color:white;padding:3px 10px;border-radius:12px;font-size:12px;font-weight:700;box-shadow:0 1px 4px rgba(249,115,22,0.4)">🔄 ${meetingOrd} meeting</span>`:''}
-                ${!govPresent||!oppPresent?'<span style="background:#fee2e2;color:#991b1b;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600">⚠️ Absent</span>':''}
-                ${debate.sidesPending?'<span style="background:#dbeafe;color:#1e40af;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600">✋ Sides Pending</span>':''}
-                ${debate.entered?'<span style="color:#10b981;font-size:12px;font-weight:600">✅ Done</span>':'<span style="color:#f59e0b;font-size:12px;font-weight:600">⏳ Pending</span>'}
+                ${isRepeat ? `<span style="background:#f97316;color:white;padding:3px 10px;border-radius:12px;font-size:12px;font-weight:700;box-shadow:0 1px 4px rgba(249,115,22,0.4)">🔄 ${meetingOrd} meeting</span>` : ''}
+                ${!govPresent || !oppPresent ? '<span style="background:#fee2e2;color:#991b1b;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600">⚠️ Absent</span>' : ''}
+                ${debate.sidesPending ? '<span style="background:#dbeafe;color:#1e40af;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600">✋ Sides Pending</span>' : ''}
+                ${debate.entered ? '<span style="color:#10b981;font-size:12px;font-weight:600">✅ Done</span>' : '<span style="color:#f59e0b;font-size:12px;font-weight:600">⏳ Pending</span>'}
                 <!-- Judge allocation pill — always visible 
                  ${_judgePillHtml(debate)}-->             
             </div>
@@ -1014,12 +1014,12 @@ function renderDebateCard(round, debate, roundIdx, debateIdx, previousMeetings) 
                 <button onclick="window.swapTeams(${roundIdx},${debateIdx})" class="btn-secondary" style="padding:4px 10px;font-size:12px" title="Swap sides">⇄</button>
                 <button onclick="window.showMoveTeamModal(${roundIdx},${debateIdx})" class="btn-secondary" style="padding:4px 10px;font-size:12px" title="Move team to another room">↔</button>
                 <button onclick="window.showEnterResults(${roundIdx},${debateIdx})" class="btn-primary" style="padding:4px 12px;font-size:12px"
-                        ${!govPresent||!oppPresent?'disabled':''}>Enter Results</button>
+                        ${!govPresent || !oppPresent ? 'disabled' : ''}>Enter Results</button>
                 ` : !debate.entered && isMyRoom ? `
                 <button onclick="window.showEnterResults(${roundIdx},${debateIdx})" class="btn-primary" style="padding:4px 12px;font-size:12px;background:#7c3aed"
-                        ${!govPresent||!oppPresent?'disabled title="Both teams must be present"':''}>Submit Ballot</button>
+                        ${!govPresent || !oppPresent ? 'disabled title="Both teams must be present"' : ''}>Submit Ballot</button>
                 ` : debate.entered && !isBlinded ? `
-                ${isAdmin?`<button onclick="window.editResults(${roundIdx},${debateIdx})" class="btn-secondary" style="padding:4px 10px;font-size:12px">✏️ Edit Result</button>`:''}
+                ${isAdmin ? `<button onclick="window.editResults(${roundIdx},${debateIdx})" class="btn-secondary" style="padding:4px 10px;font-size:12px">✏️ Edit Result</button>` : ''}
                 ` : ''}
             </div>
         </div>
@@ -1036,19 +1036,19 @@ function renderDebateCard(round, debate, roundIdx, debateIdx, previousMeetings) 
                  ondragover="window.dndTeamDragOver(event,${roundIdx},${debateIdx},'gov')"
                  ondragleave="window.dndDragLeave(event)"
                  ondrop="window.dndTeamDrop(event,${roundIdx},${debateIdx},'gov')"` : ''}
-                 style="text-align:center;padding:10px;background:${debate.entered&&debate.govResults?.total>debate.oppResults?.total?'#d1fae5':govPresent?'white':'#fee2e2'};border-radius:8px;border:1px solid ${!govPresent?'#fca5a5':'#e2e8f0'}">
+                 style="text-align:center;padding:10px;background:${debate.entered && debate.govResults?.total > debate.oppResults?.total ? '#d1fae5' : govPresent ? 'white' : '#fee2e2'};border-radius:8px;border:1px solid ${!govPresent ? '#fca5a5' : '#e2e8f0'}">
                 <div style="display:flex;justify-content:center;align-items:center;gap:6px">
                     <span style="font-size:10px;color:#1e40af;font-weight:700;background:#dbeafe;padding:1px 6px;border-radius:8px">GOV</span>
                     <strong style="font-size:14px;color:#1e293b">${govLabel}</strong>
                     ${!debate.entered && !isBlinded && isAdmin ? `
                     <button onclick="window.toggleAttendance(${roundIdx},${debateIdx},'gov')"
                             style="padding:1px 6px;font-size:11px;border-radius:4px;border:1px solid #cbd5e1;background:white;cursor:pointer"
-                            title="${govPresent?'Mark absent':'Mark present'}">${govPresent?'✓':'✗'}</button>` : ''}
+                            title="${govPresent ? 'Mark absent' : 'Mark present'}">${govPresent ? '✓' : '✗'}</button>` : ''}
                 </div>
                 <div style="font-size:11px;color:#64748b;margin-top:2px">${showSecondaryCode ? teamCode(gov) : ''}</div>
-                ${debate.entered && !isBlinded ? `<div style="font-size:17px;font-weight:700;color:#1e293b;margin-top:4px">${debate.govResults?.total?.toFixed(1)||'?'}</div>` : ''}
-                ${debate.entered&&debate.govResults?.total>debate.oppResults?.total?'<div style="font-size:11px;color:#10b981;margin-top:2px">🏆 Winner</div>':''}
-                ${!debate.entered&&isAdmin?'<div style="font-size:10px;color:#94a3b8;margin-top:3px">⠿ drag</div>':''}
+                ${debate.entered && !isBlinded ? `<div style="font-size:17px;font-weight:700;color:#1e293b;margin-top:4px">${debate.govResults?.total?.toFixed(1) || '?'}</div>` : ''}
+                ${debate.entered && debate.govResults?.total > debate.oppResults?.total ? '<div style="font-size:11px;color:#10b981;margin-top:2px">🏆 Winner</div>' : ''}
+                ${!debate.entered && isAdmin ? '<div style="font-size:10px;color:#94a3b8;margin-top:3px">⠿ drag</div>' : ''}
             </div>
 
             <div style="text-align:center;font-weight:700;color:#94a3b8;font-size:13px">VS</div>
@@ -1063,19 +1063,19 @@ function renderDebateCard(round, debate, roundIdx, debateIdx, previousMeetings) 
                  ondragover="window.dndTeamDragOver(event,${roundIdx},${debateIdx},'opp')"
                  ondragleave="window.dndDragLeave(event)"
                  ondrop="window.dndTeamDrop(event,${roundIdx},${debateIdx},'opp')"` : ''}
-                 style="text-align:center;padding:10px;background:${debate.entered&&debate.oppResults?.total>debate.govResults?.total?'#d1fae5':oppPresent?'white':'#fee2e2'};border-radius:8px;border:1px solid ${!oppPresent?'#fca5a5':'#e2e8f0'}">
+                 style="text-align:center;padding:10px;background:${debate.entered && debate.oppResults?.total > debate.govResults?.total ? '#d1fae5' : oppPresent ? 'white' : '#fee2e2'};border-radius:8px;border:1px solid ${!oppPresent ? '#fca5a5' : '#e2e8f0'}">
                 <div style="display:flex;justify-content:center;align-items:center;gap:6px">
                     <span style="font-size:10px;color:#be185d;font-weight:700;background:#fce7f3;padding:1px 6px;border-radius:8px">OPP</span>
                     <strong style="font-size:14px;color:#1e293b">${oppLabel}</strong>
                     ${!debate.entered && !isBlinded && isAdmin ? `
                     <button onclick="window.toggleAttendance(${roundIdx},${debateIdx},'opp')"
                             style="padding:1px 6px;font-size:11px;border-radius:4px;border:1px solid #cbd5e1;background:white;cursor:pointer"
-                            title="${oppPresent?'Mark absent':'Mark present'}">${oppPresent?'✓':'✗'}</button>` : ''}
+                            title="${oppPresent ? 'Mark absent' : 'Mark present'}">${oppPresent ? '✓' : '✗'}</button>` : ''}
                 </div>
                 <div style="font-size:11px;color:#64748b;margin-top:2px">${showSecondaryCode ? teamCode(opp) : ''}</div>
-                ${debate.entered && !isBlinded ? `<div style="font-size:17px;font-weight:700;color:#1e293b;margin-top:4px">${debate.oppResults?.total?.toFixed(1)||'?'}</div>` : ''}
-                ${debate.entered&&debate.oppResults?.total>debate.govResults?.total?'<div style="font-size:11px;color:#10b981;margin-top:2px">🏆 Winner</div>':''}
-                ${!debate.entered&&isAdmin?'<div style="font-size:10px;color:#94a3b8;margin-top:3px">⠿ drag</div>':''}
+                ${debate.entered && !isBlinded ? `<div style="font-size:17px;font-weight:700;color:#1e293b;margin-top:4px">${debate.oppResults?.total?.toFixed(1) || '?'}</div>` : ''}
+                ${debate.entered && debate.oppResults?.total > debate.govResults?.total ? '<div style="font-size:11px;color:#10b981;margin-top:2px">🏆 Winner</div>' : ''}
+                ${!debate.entered && isAdmin ? '<div style="font-size:10px;color:#94a3b8;margin-top:3px">⠿ drag</div>' : ''}
             </div>
         </div>
 
@@ -1098,7 +1098,7 @@ function renderDebateCard(round, debate, roundIdx, debateIdx, previousMeetings) 
 export async function toggleBlindRound(roundIdx) {
     const round = state.rounds[roundIdx];
     if (!round) return;
-    
+
     round.blinded = !round.blinded;
     saveNow();
     if (_isPersistedStandardRound(round)) {
@@ -1114,7 +1114,7 @@ export async function toggleBlindRound(roundIdx) {
     }
     displayRounds();
     renderStandings();
-    
+
     showNotification(
         round.blinded ? 'Round blinded - results hidden from teams' : 'Round unblinded - results visible',
         'success'
@@ -1128,20 +1128,20 @@ export async function toggleBlindRound(roundIdx) {
 export async function redrawRound(roundIdx) {
     const round = state.rounds[roundIdx];
     if (!round) return;
-    
+
     // Check if any results entered
     if (round.debates.some(d => d.entered)) {
         showNotification('Cannot redraw round after results have been entered', 'error');
         return;
     }
-    
+
     if (!confirm('Are you sure you want to redraw this round? This will create new matchups.')) {
         return;
     }
-    
+
     const isKnockout = round.type === 'knockout';
     const activeTeams = state.teams.filter(t => !t.eliminated);
-    
+
     let debates = [];
     let pairs = [];
     let teamsCopy = [...activeTeams];
@@ -1175,10 +1175,10 @@ export async function redrawRound(roundIdx) {
             attendance: { gov: true, opp: true }
         });
     });
-    
+
     // Re-allocate judges
     allocateJudgesToDebates(debates, isKnockout);
-    
+
     round.debates = debates;
     // Reset rooms to default names so stale custom names don't persist
     round.rooms = debates.map((_, i) => `Room ${i + 1}`);
@@ -1207,7 +1207,7 @@ export async function redrawRound(roundIdx) {
         }
     }
     displayRounds();
-    
+
     showNotification(isKnockout ? 'Round redrawn with bracket seeding' : '🎲 Round redrawn with fresh random pairings', 'success');
 }
 
@@ -1218,15 +1218,15 @@ export async function redrawRound(roundIdx) {
 export async function swapTeams(roundIdx, debateIdx) {
     const round = state.rounds[roundIdx];
     const debate = round.debates[debateIdx];
-    
+
     if (debate.entered) {
         showNotification('Cannot swap teams after results entered', 'error');
         return;
     }
-    
+
     // Swap government and opposition
     [debate.gov, debate.opp] = [debate.opp, debate.gov];
-    
+
     // Also swap attendance if tracked
     if (debate.attendance) {
         [debate.attendance.gov, debate.attendance.opp] = [debate.attendance.opp, debate.attendance.gov];
@@ -1234,7 +1234,7 @@ export async function swapTeams(roundIdx, debateIdx) {
 
     // Clear sidesPending flag — user has explicitly set sides now
     debate.sidesPending = false;
-    
+
     saveNow();
     try {
         await _persistDebate(round, debate);
@@ -1330,11 +1330,11 @@ function showMoveTeamModal(roundIdx, debateIdx) {
                         <option value="">— Select target —</option>
                         ${freeTeams.length ? `<optgroup label="Unassigned Teams (no swap needed)">` + freeTeams.map(t => `<option value="free:${t.id}">⚪ ${escapeHTML(t.name)} (unassigned)</option>`).join('') + `</optgroup>` : ''}
                         ${otherRooms.length ? `<optgroup label="Swap with another room">` + otherRooms.map(({ d, idx }) => {
-                            const tGov = state.teams.find(t => t.id === d.gov);
-                            const tOpp = state.teams.find(t => t.id === d.opp);
-                            const rLabel = round.rooms?.[idx] || `Room ${idx + 1}`;
-                            return `<option value="${idx}">${escapeHTML(rLabel)}: ${escapeHTML(tGov?.name || '?')} vs ${escapeHTML(tOpp?.name || '?')}</option>`;
-                        }).join('') + `</optgroup>` : ''}
+        const tGov = state.teams.find(t => t.id === d.gov);
+        const tOpp = state.teams.find(t => t.id === d.opp);
+        const rLabel = round.rooms?.[idx] || `Room ${idx + 1}`;
+        return `<option value="${idx}">${escapeHTML(rLabel)}: ${escapeHTML(tGov?.name || '?')} vs ${escapeHTML(tOpp?.name || '?')}</option>`;
+    }).join('') + `</optgroup>` : ''}
                     </select>
                 </div>
 
@@ -1365,18 +1365,18 @@ function showMoveTeamModal(roundIdx, debateIdx) {
 
     // Show side selector when target room is chosen and update preview
     function updateMovePreview() {
-        const targetVal  = document.getElementById('move-target-room')?.value || '';
-        const targetIdx  = parseInt(targetVal);
-        const teamSide   = document.querySelector('input[name="move-team"]:checked')?.value;
+        const targetVal = document.getElementById('move-target-room')?.value || '';
+        const targetIdx = parseInt(targetVal);
+        const teamSide = document.querySelector('input[name="move-team"]:checked')?.value;
         const targetSide = document.getElementById('move-target-side')?.value;
-        const sideRow    = document.getElementById('move-target-side-row');
-        const preview    = document.getElementById('move-preview');
+        const sideRow = document.getElementById('move-target-side-row');
+        const preview = document.getElementById('move-preview');
 
         // Free-team selection: no side row or swap preview needed
         if (targetVal.startsWith('free:')) {
             sideRow.style.display = 'none';
             preview.style.display = 'block';
-            const freeId   = targetVal.slice(5);
+            const freeId = targetVal.slice(5);
             const freeTeam = state.teams.find(t => t.id === freeId || String(t.id) === freeId);
             const movingSide = teamSide || '?';
             const movingTeam = teamSide ? state.teams.find(t => t.id === debate[teamSide]) : null;
@@ -1437,8 +1437,8 @@ function showAssignTeamsModal(roundIdx, debateIdx) {
 
     const currentGovId = sid(debate.gov);
     const currentOppId = sid(debate.opp);
-    const currentGov   = state.teams.find(t => sid(t.id) === currentGovId);
-    const currentOpp   = state.teams.find(t => sid(t.id) === currentOppId);
+    const currentGov = state.teams.find(t => sid(t.id) === currentGovId);
+    const currentOpp = state.teams.find(t => sid(t.id) === currentOppId);
 
     // ── Collect every team slot occupied in this round (by other rooms) ───────
 
@@ -1457,7 +1457,7 @@ function showAssignTeamsModal(roundIdx, debateIdx) {
 
     // ── Truly unassigned: in state.teams but not in ANY debate slot ───────────
     const allOccupied = new Set(
-        round.debates.flatMap(d => ['gov','opp'].map(s => sid(d[s])).filter(Boolean))
+        round.debates.flatMap(d => ['gov', 'opp'].map(s => sid(d[s])).filter(Boolean))
     );
     const unassigned = state.teams.filter(t => !allOccupied.has(sid(t.id)));
 
@@ -1470,7 +1470,7 @@ function showAssignTeamsModal(roundIdx, debateIdx) {
         // Keep current
         if (currentTeam) {
             opts += `<option value="keep:${sid(currentTeam.id)}" selected>` +
-                    `✔ Keep current: ${escapeHTML(currentTeam.name)}</option>`;
+                `✔ Keep current: ${escapeHTML(currentTeam.name)}</option>`;
         }
 
         // Unassigned pool
@@ -1490,7 +1490,7 @@ function showAssignTeamsModal(roundIdx, debateIdx) {
             opts += `<optgroup label="↔ Move from another room (swaps their slot)">`;
             moveList.forEach(({ team, rLabel, dIdx, side }) => {
                 opts += `<option value="move:${sid(team.id)}:${dIdx}:${side}">` +
-                        `${escapeHTML(team.name)} ← ${escapeHTML(rLabel)} (${side})</option>`;
+                    `${escapeHTML(team.name)} ← ${escapeHTML(rLabel)} (${side})</option>`;
             });
             opts += `</optgroup>`;
         }
@@ -1562,7 +1562,7 @@ function showAssignTeamsModal(roundIdx, debateIdx) {
         if (!warn) return;
         if (gId && oId && gId === oId) {
             warn.style.display = 'block';
-            warn.textContent   = '⚠️ Gov and Opp cannot be the same team.';
+            warn.textContent = '⚠️ Gov and Opp cannot be the same team.';
         } else {
             warn.style.display = 'none';
         }
@@ -1573,9 +1573,9 @@ function showAssignTeamsModal(roundIdx, debateIdx) {
 }
 
 async function executeAssignTeams(roundIdx, debateIdx) {
-    const round  = state.rounds[roundIdx];
+    const round = state.rounds[roundIdx];
     const debate = round.debates[debateIdx];
-    const sid    = v => (v === null || v === undefined) ? null : String(v);
+    const sid = v => (v === null || v === undefined) ? null : String(v);
 
     const govVal = document.getElementById('assign-gov')?.value || '';
     const oppVal = document.getElementById('assign-opp')?.value || '';
@@ -1589,10 +1589,10 @@ async function executeAssignTeams(roundIdx, debateIdx) {
     function parse(val) {
         const p = val.split(':');
         return {
-            type:     p[0],
-            strId:    p[1],                                         // string ID from option value
-            srcDIdx:  p[2] !== undefined ? parseInt(p[2]) : null,
-            srcSide:  p[3] || null
+            type: p[0],
+            strId: p[1],                                         // string ID from option value
+            srcDIdx: p[2] !== undefined ? parseInt(p[2]) : null,
+            srcSide: p[3] || null
         };
     }
 
@@ -1640,7 +1640,7 @@ async function executeAssignTeams(roundIdx, debateIdx) {
     if (!debate.attendance) debate.attendance = { gov: true, opp: true };
     debate.attendance.gov = true;
     debate.attendance.opp = true;
-    debate.sidesPending   = round.sideMethod === 'manual';
+    debate.sidesPending = round.sideMethod === 'manual';
 
     saveNow();
     try {
@@ -1665,20 +1665,20 @@ export async function executeMoveTeam(roundIdx, debateIdx) {
     const srcDebate = round.debates[debateIdx];
 
     const movingSide = document.querySelector('input[name="move-team"]:checked')?.value;
-    const targetVal  = document.getElementById('move-target-room')?.value;
+    const targetVal = document.getElementById('move-target-room')?.value;
     const targetSide = document.getElementById('move-target-side')?.value;
 
     if (!movingSide) { showNotification('Select a team to move', 'error'); return; }
-    if (!targetVal)  { showNotification('Select a target room or unassigned team', 'error'); return; }
+    if (!targetVal) { showNotification('Select a target room or unassigned team', 'error'); return; }
 
-    const movingTeamId  = srcDebate[movingSide];
-    const movingTeam    = state.teams.find(t => t.id === movingTeamId);
-    const srcRoomLabel  = round.rooms?.[debateIdx] || `Room ${debateIdx + 1}`;
+    const movingTeamId = srcDebate[movingSide];
+    const movingTeam = state.teams.find(t => t.id === movingTeamId);
+    const srcRoomLabel = round.rooms?.[debateIdx] || `Room ${debateIdx + 1}`;
 
     // ── Case 1: replacing with an unassigned (free) team 
     if (targetVal.startsWith('free:')) {
-        const freeStrId  = targetVal.slice(5);
-        const freeTeam   = state.teams.find(t => String(t.id) === freeStrId);
+        const freeStrId = targetVal.slice(5);
+        const freeTeam = state.teams.find(t => String(t.id) === freeStrId);
         if (!freeTeam) { showNotification('Team not found', 'error'); return; }
 
         // Moving team leaves source room (slot becomes null); free team takes its place
@@ -1704,8 +1704,8 @@ export async function executeMoveTeam(roundIdx, debateIdx) {
     // ── Case 2: swap with a team in another room
     if (!targetSide) { showNotification('Select which team to replace in the target room', 'error'); return; }
 
-    const targetIdx  = parseInt(targetVal);
-    const tgtDebate  = round.debates[targetIdx];
+    const targetIdx = parseInt(targetVal);
+    const tgtDebate = round.debates[targetIdx];
 
     if (!tgtDebate || tgtDebate.entered) { showNotification('Target room results already entered', 'error'); return; }
 
@@ -1732,7 +1732,7 @@ export async function executeMoveTeam(roundIdx, debateIdx) {
     closeAllModals();
     displayRounds();
 
-    const displacedTeam   = state.teams.find(t => t.id === displacedTeamId);
+    const displacedTeam = state.teams.find(t => t.id === displacedTeamId);
     const targetRoomLabel = round.rooms?.[targetIdx] || `Room ${targetIdx + 1}`;
     showNotification(`✅ ${movingTeam?.name} → ${targetRoomLabel}, ${displacedTeam?.name} → ${srcRoomLabel}`, 'success');
 }
@@ -1802,7 +1802,7 @@ export function dndJudgeDragOver(event, toRound, toDebate) {
 
     const conflictMap = buildConflictMap(state.judges);
     const conflict = hasConflict(conflictMap, window._dnd.judgeId, debate.gov) ||
-                     hasConflict(conflictMap, window._dnd.judgeId, debate.opp);
+        hasConflict(conflictMap, window._dnd.judgeId, debate.opp);
     zone.classList.add(conflict ? 'drag-over-conflict' : 'drag-over');
     event.dataTransfer.dropEffect = 'move';
 }
@@ -1814,7 +1814,7 @@ export async function dndJudgeDrop(event, toRound, toDebate) {
     const { judgeId, fromRound, fromDebate } = window._dnd;
     if (!judgeId || window._dnd.type !== 'judge') return;
 
-    const round      = state.rounds[toRound];
+    const round = state.rounds[toRound];
     const toDebateObj = round?.debates[toDebate];
     if (!toDebateObj || toDebateObj.entered) {
         showNotification('Cannot move judge — target room results already entered', 'error');
@@ -1841,16 +1841,16 @@ export async function dndJudgeDrop(event, toRound, toDebate) {
 
     // ── Cross-room move ───────────────────────────────────────────────────────
     const fromDebateObj = state.rounds[fromRound]?.debates[fromDebate];
-    const toRoomLabel   = round.rooms?.[toDebate]  || `Room ${toDebate + 1}`;
+    const toRoomLabel = round.rooms?.[toDebate] || `Room ${toDebate + 1}`;
     const fromRoomLabel = state.rounds[fromRound]?.rooms?.[fromDebate] || `Room ${fromDebate + 1}`;
 
     const conflictMap = buildConflictMap(state.judges);
     const conflict = hasConflict(conflictMap, judgeId, toDebateObj.gov) ||
-                     hasConflict(conflictMap, judgeId, toDebateObj.opp);
+        hasConflict(conflictMap, judgeId, toDebateObj.opp);
 
-    const fromMsg       = fromDebateObj ? ` from ${fromRoomLabel}` : '';
-    const conflictMsg   = conflict ? `\n\n⚠️ ${judge?.name} has a conflict with a team in ${toRoomLabel}.` : '';
-    const removeMsg     = fromDebateObj ? `\n\nThis removes them from ${fromRoomLabel}.` : '';
+    const fromMsg = fromDebateObj ? ` from ${fromRoomLabel}` : '';
+    const conflictMsg = conflict ? `\n\n⚠️ ${judge?.name} has a conflict with a team in ${toRoomLabel}.` : '';
+    const removeMsg = fromDebateObj ? `\n\nThis removes them from ${fromRoomLabel}.` : '';
 
     if (!confirm(`Move ${judge?.name || judgeId}${fromMsg} → ${toRoomLabel}?${removeMsg}${conflictMsg}\n\nConfirm?`)) return;
 
@@ -2120,16 +2120,16 @@ export async function dndTeamDrop(event, toRound, toDebate, toSide) {
 function toggleAttendance(roundIdx, debateIdx, side) {
     const round = state.rounds[roundIdx];
     const debate = round.debates[debateIdx];
-    
+
     if (!debate.attendance) {
         debate.attendance = { gov: true, opp: true };
     }
-    
+
     debate.attendance[side] = !debate.attendance[side];
-    
+
     saveNow();
     displayRounds();
-    
+
     const team = state.teams.find(t => t.id === debate[side]);
     showNotification(
         `${team.name} marked as ${debate.attendance[side] ? 'present' : 'absent'}`,
@@ -2216,11 +2216,11 @@ function allocateJudgesToDebates(debates, isKnockout = false) {
 // Helper: Get previous judge allocation counts
 function getPreviousJudgeAllocations(isKnockout) {
     const allocations = {};
-    
+
     state.rounds.forEach(round => {
         const matchesType = isKnockout ? round.type === 'knockout' : round.type !== 'knockout';
         if (!matchesType) return;
-        
+
         round.debates.forEach(debate => {
             if (debate.panel) {
                 debate.panel.forEach(p => {
@@ -2229,7 +2229,7 @@ function getPreviousJudgeAllocations(isKnockout) {
             }
         });
     });
-    
+
     return allocations;
 }
 
@@ -2289,7 +2289,16 @@ function roundNumber(round) {
 }
 
 function _isPersistedStandardRound(round) {
-    return !!(state.activeTournamentId && isUUID(state.activeTournamentId) && round?.id && !round?.format && !isBP() && !isSpeech());
+    // A round is "persisted" when:
+    //   1. There is a real Supabase tournament ID (not the local placeholder)
+    //   2. The round has a server-assigned UUID
+    //   3. The round's format (if any) is standard/WSDC — not BP or speech
+    //
+    // NOTE: round.format may come back as 'standard' from the DB (if the rounds
+    // table has that column). We must allow that — only block 'bp' and 'speech'.
+    const rf = round?.format;
+    const fmtOk = !rf || rf === 'standard' || rf === 'prelim';
+    return !!(state.activeTournamentId && isUUID(state.activeTournamentId) && isUUID(round?.id) && fmtOk && !isBP() && !isSpeech());
 }
 
 function _roomNameForDebate(round, debate) {
@@ -2468,7 +2477,7 @@ function showJudgeManagement(roundIdx, debateIdx) {
 
     // Subtitle line: show teams for standard, speaker count for speech
     const modalSubtitle = isSpeechDebate
-        ? `${(debate.roomSpeakers||[]).length} speakers`
+        ? `${(debate.roomSpeakers || []).length} speakers`
         : `${escapeHTML(gov?.name || '?')} vs ${escapeHTML(opp?.name || '?')}`;
 
     modal.innerHTML = `
@@ -2486,11 +2495,11 @@ function showJudgeManagement(roundIdx, debateIdx) {
                     <h3 style="margin: 0 0 12px 0; color: #1e293b; font-size: 16px;">Current Panel (${currentPanel.length})</h3>
                     <div style="display: flex; flex-direction: column; gap: 10px;">
                         ${currentPanel.length === 0
-                            ? '<p style="color: #94a3b8; font-style: italic; padding: 16px; text-align: center; background: #f8fafc; border-radius: 8px;">No judges assigned</p>'
-                            : currentPanel.map(p => {
-                                const judge = state.judges.find(j => j.id === p.id);
-                                if (!judge) return '';
-                                return `
+            ? '<p style="color: #94a3b8; font-style: italic; padding: 16px; text-align: center; background: #f8fafc; border-radius: 8px;">No judges assigned</p>'
+            : currentPanel.map(p => {
+                const judge = state.judges.find(j => j.id === p.id);
+                if (!judge) return '';
+                return `
                                     <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px; background: #f8fafc; border-radius: 8px; border-left: 3px solid ${p.role === 'chair' ? '#3b82f6' : '#94a3b8'};">
                     <div>
                                             <strong style="color: #1e293b;">${escapeHTML(judge.name)}</strong>
@@ -2501,8 +2510,8 @@ function showJudgeManagement(roundIdx, debateIdx) {
                                             Remove
                                         </button>
                                     </div>`;
-                            }).join('')
-                        }
+            }).join('')
+        }
                     </div>
                 </div>
 
@@ -2591,7 +2600,7 @@ function showJudgeManagement(roundIdx, debateIdx) {
         </div>
     `;
 
-    modal.addEventListener('click', function(e) {
+    modal.addEventListener('click', function (e) {
         if (e.target === modal) closeAllModals();
     });
 
@@ -2657,7 +2666,7 @@ export async function removeJudgeFromPanel(roundIdx, debateIdx, judgeId) {
 export async function toggleJudgeRole(roundIdx, debateIdx, judgeId) {
     const isAdmin = state.auth?.currentUser?.role === 'admin';
     if (!isAdmin) return;
-    const round  = state.rounds?.[roundIdx];
+    const round = state.rounds?.[roundIdx];
     const debate = round?.debates?.[debateIdx];
     if (!debate || debate.entered) return;
 
@@ -2732,7 +2741,7 @@ function getOrCreateRoomURL(roundIdx, debateIdx) {
 
 function copyRoomURL(roundIdx, debateIdx) {
     const roomURL = getOrCreateRoomURL(roundIdx, debateIdx);
-    
+
     navigator.clipboard.writeText(roomURL).then(() => {
         showNotification('Room URL copied to clipboard!', 'success');
     }).catch(() => {
@@ -2780,7 +2789,7 @@ function _buildSpeakerCombo(id, speakers, accentClr, badgeId) {
 }
 
 // Handles any speaker <select> changes
-window._spkComboChange = function(id) {
+window._spkComboChange = function (id) {
     // ── Pattern A: hidden-input combo 
     const hidden = document.getElementById(id);
     if (hidden && hidden.type === 'hidden') {
@@ -2808,8 +2817,10 @@ window._spkComboChange = function(id) {
             txt = document.createElement('input');
             txt.type = 'text'; txt.id = txtId;
             txt.placeholder = 'Enter new speaker name...';
-            Object.assign(txt.style, { display:'block', width:'100%', padding:'9px 10px',
-                borderRadius:'8px', border:'1.5px solid #3b82f6', marginTop:'5px', boxSizing:'border-box' });
+            Object.assign(txt.style, {
+                display: 'block', width: '100%', padding: '9px 10px',
+                borderRadius: '8px', border: '1.5px solid #3b82f6', marginTop: '5px', boxSizing: 'border-box'
+            });
             txt.oninput = () => window._spkComboChange(id);
             select.parentElement.appendChild(txt);
         } else {
@@ -2826,8 +2837,8 @@ window._spkComboChange = function(id) {
 };
 
 // Called when the free-text input changes
-window._spkComboNew = function(id) {
-    const txt    = document.getElementById(id + '-txt');
+window._spkComboNew = function (id) {
+    const txt = document.getElementById(id + '-txt');
     const hidden = document.getElementById(id);
     if (!txt || !hidden) return;
     hidden.value = txt.value.trim();
@@ -2836,9 +2847,9 @@ window._spkComboNew = function(id) {
 
 /** Pre-populate a combo (used when editing existing results).
  *  If name is in the known roster → select it; otherwise → show text input. */
-window._spkComboSetValue = function(id, name, knownSpeakers) {
-    const sel    = document.getElementById(id + '-sel');
-    const txt    = document.getElementById(id + '-txt');
+window._spkComboSetValue = function (id, name, knownSpeakers) {
+    const sel = document.getElementById(id + '-sel');
+    const txt = document.getElementById(id + '-txt');
     const hidden = document.getElementById(id);
     if (!hidden) return;
     hidden.value = name || '';
@@ -2859,8 +2870,8 @@ window._spkComboSetValue = function(id, name, knownSpeakers) {
 
 export function showEnterResults(roundIdx, debateIdx) {
     const rounds = state.rounds || [];
-    const round  = rounds[roundIdx];
-    
+    const round = rounds[roundIdx];
+
     if (!round) {
         console.error('showEnterResults: Round not found at index', roundIdx, rounds);
         showNotification('Round data missing. Try refreshing the page.', 'error');
@@ -2868,7 +2879,7 @@ export function showEnterResults(roundIdx, debateIdx) {
     }
 
     const debates = round.debates || [];
-    const debate  = debates[debateIdx];
+    const debate = debates[debateIdx];
 
     if (!debate) {
         console.error('showEnterResults: Debate not found at index', debateIdx, debates);
@@ -2877,7 +2888,7 @@ export function showEnterResults(roundIdx, debateIdx) {
     }
 
     // ── Dispatch to BP ballot if this is a BP debate ─────────────────────────
-    if (debate.format === 'bp')     { showBPEnterResults(roundIdx, debateIdx);     return; }
+    if (debate.format === 'bp') { showBPEnterResults(roundIdx, debateIdx); return; }
     if (debate.format === 'speech') { showSpeechEnterResults(roundIdx, debateIdx); return; }
 
     const gov = state.teams.find(t => t.id === debate.gov);
@@ -2888,10 +2899,10 @@ export function showEnterResults(roundIdx, debateIdx) {
         return;
     }
 
-    const isAdmin  = state.auth?.currentUser?.role === 'admin';
-    const isJudge  = state.auth?.currentUser?.role === 'judge';
+    const isAdmin = state.auth?.currentUser?.role === 'admin';
+    const isJudge = state.auth?.currentUser?.role === 'judge';
     const myJudgeId = isJudge ? String(state.auth?.currentUser?.associatedId ?? '') : null;
-    const isMyRoom  = isJudge && (debate.panel||[]).some(p => String(p.id) === myJudgeId);
+    const isMyRoom = isJudge && (debate.panel || []).some(p => String(p.id) === myJudgeId);
 
     // Only admin or the judge assigned to this room can submit
     if (!isAdmin && !isMyRoom) {
@@ -2902,25 +2913,25 @@ export function showEnterResults(roundIdx, debateIdx) {
     // Check attendance
     const govPresent = debate.attendance?.gov !== false;
     const oppPresent = debate.attendance?.opp !== false;
-    
+
     if (!govPresent || !oppPresent) {
         showNotification('Both teams must be marked present before entering results', 'error');
         return;
     }
 
     const roomLabel = round.rooms?.[debateIdx] || `Room ${debateIdx + 1}`;
-    
+
     const modal = document.createElement('div');
     modal.className = 'modal-overlay ballot-modal-overlay';
     modal.style.cssText = 'position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(15, 23, 42, 0.4); backdrop-filter: blur(8px); display: flex; align-items: center; justify-content: center; z-index: 9999; padding: 20px; animation: fadeIn 0.2s ease;';
-    
+
     // Check if reply speeches are disabled for this round
     const disableReply = round.disableReply || false;
-    
+
     // Ensure speakers arrays exist
     const govSpeakers = gov.speakers || [];
     const oppSpeakers = opp.speakers || [];
-    
+
     modal.innerHTML = `
         <div style="background:white;border-radius:14px;max-width:560px;width:100%;max-height:80vh;display:flex;flex-direction:column;box-shadow:0 20px 40px -8px rgba(0,0,0,0.22),0 0 0 1px rgba(255,255,255,0.15);overflow:hidden;animation:slideUp 0.25s cubic-bezier(0.16,1,0.3,1);">
             <div style="padding:12px 16px;border-bottom:1px solid #f1f5f9;position:sticky;top:0;background:rgba(255,255,255,0.97);backdrop-filter:blur(8px);z-index:10;">
@@ -2950,20 +2961,20 @@ export function showEnterResults(roundIdx, debateIdx) {
                             GOV: ${escapeHTML(gov.name)}
                         </h3>
                         
-                        ${[1,2,3].map(i => `
+                        ${[1, 2, 3].map(i => `
                             <div style="margin-bottom:7px;">
                                 <label style="display:block;margin-bottom:3px;font-weight:600;color:#1e293b;font-size:11px;">Speaker ${i} *</label>
                                 <div style="display:grid;grid-template-columns:2fr 1fr;gap:5px;">
-                                    <select id="gov-sel-${i-1}" onchange="window._spkComboChange('gov-sel-${i-1}')"
+                                    <select id="gov-sel-${i - 1}" onchange="window._spkComboChange('gov-sel-${i - 1}')"
                                             style="width:100%;padding:5px 7px;border-radius:6px;border:1.5px solid #cbd5e1;font-size:12px;box-sizing:border-box;background:white;cursor:pointer;">
                                         <option value="">— Select —</option>
                                         ${govSpeakers.map(s => `<option value="${escapeHTML(s.name)}">${escapeHTML(s.name)}</option>`).join('')}
                                         <option value="__new__">✏️ New…</option>
                                     </select>
-                                    <input type="number" id="gov-score-${i-1}" min="60" max="80" step="0.5" placeholder="60-80"
+                                    <input type="number" id="gov-score-${i - 1}" min="60" max="80" step="0.5" placeholder="60-80"
                                            style="padding:5px 6px;border-radius:6px;border:1px solid #cbd5e1;font-size:12px;align-self:start;">
                                 </div>
-                                <div id="gov-duplicate-${i-1}" style="display:none;color:#dc2626;font-size:10px;margin-top:2px;font-weight:600;">⚠️ Duplicate</div>
+                                <div id="gov-duplicate-${i - 1}" style="display:none;color:#dc2626;font-size:10px;margin-top:2px;font-weight:600;">⚠️ Duplicate</div>
                             </div>`).join('')}
 
                         ${!disableReply ? `
@@ -2990,20 +3001,20 @@ export function showEnterResults(roundIdx, debateIdx) {
                             OPP: ${escapeHTML(opp.name)}
                         </h3>
 
-                        ${[1,2,3].map(i => `
+                        ${[1, 2, 3].map(i => `
                             <div style="margin-bottom:7px;">
                                 <label style="display:block;margin-bottom:3px;font-weight:600;color:#1e293b;font-size:11px;">Speaker ${i} *</label>
                                 <div style="display:grid;grid-template-columns:2fr 1fr;gap:5px;">
-                                    <select id="opp-sel-${i-1}" onchange="window._spkComboChange('opp-sel-${i-1}')"
+                                    <select id="opp-sel-${i - 1}" onchange="window._spkComboChange('opp-sel-${i - 1}')"
                                             style="width:100%;padding:5px 7px;border-radius:6px;border:1.5px solid #cbd5e1;font-size:12px;box-sizing:border-box;background:white;cursor:pointer;">
                                         <option value="">— Select —</option>
                                         ${oppSpeakers.map(s => `<option value="${escapeHTML(s.name)}">${escapeHTML(s.name)}</option>`).join('')}
                                         <option value="__new__">✏️ New…</option>
                                     </select>
-                                    <input type="number" id="opp-score-${i-1}" min="60" max="80" step="0.5" placeholder="60-80"
+                                    <input type="number" id="opp-score-${i - 1}" min="60" max="80" step="0.5" placeholder="60-80"
                                            style="padding:5px 6px;border-radius:6px;border:1px solid #cbd5e1;font-size:12px;align-self:start;">
                                 </div>
-                                <div id="opp-duplicate-${i-1}" style="display:none;color:#dc2626;font-size:10px;margin-top:2px;font-weight:600;">⚠️ Duplicate</div>
+                                <div id="opp-duplicate-${i - 1}" style="display:none;color:#dc2626;font-size:10px;margin-top:2px;font-weight:600;">⚠️ Duplicate</div>
                             </div>`).join('')}
 
                         ${!disableReply ? `
@@ -3051,7 +3062,7 @@ export function showEnterResults(roundIdx, debateIdx) {
             </div>
         </div>
     `;
-    
+
     // Pre-populate if editing existing results
     if (debate.entered && debate.govResults && debate.oppResults) {
         setTimeout(() => {
@@ -3080,7 +3091,7 @@ export function showEnterResults(roundIdx, debateIdx) {
                     if (scoreInput) scoreInput.value = speaker.score;
                 }
             }
-            
+
             // Pre-fill government reply
             if (debate.govResults.reply && !disableReply) {
                 const replySelect = document.getElementById('gov-reply-sel');
@@ -3113,7 +3124,7 @@ export function showEnterResults(roundIdx, debateIdx) {
                     if (scoreInput) scoreInput.value = speaker.score;
                 }
             }
-            
+
             // Pre-fill opposition reply
             if (debate.oppResults.reply && !disableReply) {
                 const replySelect = document.getElementById('opp-reply-sel');
@@ -3130,15 +3141,15 @@ export function showEnterResults(roundIdx, debateIdx) {
             }
         }, 100);
     }
-    
-    modal.addEventListener('click', function(e) {
+
+    modal.addEventListener('click', function (e) {
         if (e.target === modal) {
             if (confirm('Discard unsaved results?')) {
                 closeAllModals();
             }
         }
     });
-    
+
     document.body.appendChild(modal);
 
     // ── Wire live score totals ────────────────────────────────────────────────
@@ -3160,8 +3171,8 @@ export function showEnterResults(roundIdx, debateIdx) {
         }
 
         const maxSlots = disableReply ? 3 : 4;
-        const govEl     = document.getElementById('ballot-gov-total');
-        const oppEl     = document.getElementById('ballot-opp-total');
+        const govEl = document.getElementById('ballot-gov-total');
+        const oppEl = document.getElementById('ballot-opp-total');
         const verdictEl = document.getElementById('ballot-verdict');
         if (!govEl || !oppEl || !verdictEl) return;
 
@@ -3205,9 +3216,9 @@ export function showEnterResults(roundIdx, debateIdx) {
         clearTimeout(_ballotDebounceTimer);
         _ballotDebounceTimer = setTimeout(_updateBallotTotals, 120);
     };
-    ['gov-score-0','gov-score-1','gov-score-2',
-     'opp-score-0','opp-score-1','opp-score-2',
-     ...(disableReply ? [] : ['gov-reply-score','opp-reply-score'])
+    ['gov-score-0', 'gov-score-1', 'gov-score-2',
+        'opp-score-0', 'opp-score-1', 'opp-score-2',
+        ...(disableReply ? [] : ['gov-reply-score', 'opp-reply-score'])
     ].forEach(id => {
         document.getElementById(id)?.addEventListener('input', _debouncedUpdateTotals);
     });
@@ -3259,16 +3270,16 @@ export async function submitResults(roundIdx, debateIdx) {
         return;
     }
 
-    const isAdmin   = state.auth?.currentUser?.role === 'admin';
-    const isJudge   = state.auth?.currentUser?.role === 'judge';
+    const isAdmin = state.auth?.currentUser?.role === 'admin';
+    const isJudge = state.auth?.currentUser?.role === 'judge';
     const myJudgeId = isJudge ? String(state.auth?.currentUser?.associatedId ?? '') : null;
-    const isMyRoom  = isJudge && (debate.panel||[]).some(p => String(p.id) === myJudgeId);
+    const isMyRoom = isJudge && (debate.panel || []).some(p => String(p.id) === myJudgeId);
 
     if (!isAdmin && !isMyRoom) {
         showNotification('You are not authorised to submit this ballot', 'error');
         return;
     }
-    
+
     const errorDiv = document.getElementById('results-error');
     const disableReply = round.disableReply || false;
 
@@ -3288,16 +3299,16 @@ export async function submitResults(roundIdx, debateIdx) {
         if (!proceed) return;
         if (errorDiv) errorDiv.style.display = 'none';
     }
-    
+
     try {
         // Get government scores
         const govSpeakers = [];
         const govScores = [];
-        
+
         for (let i = 0; i < 3; i++) {
             const select = document.getElementById(`gov-sel-${i}`);
             const textInput = document.getElementById(`gov-sel-${i}-txt`);
-            
+
             // Get speaker name from either select or text input
             let speaker = '';
             if (textInput && textInput.style.display !== 'none') {
@@ -3305,110 +3316,110 @@ export async function submitResults(roundIdx, debateIdx) {
             } else if (select) {
                 speaker = select.value;
             }
-            
+
             const score = parseFloat(document.getElementById(`gov-score-${i}`)?.value);
-            
+
             if (!speaker || isNaN(score)) {
-                throw new Error(`Please fill all government speaker ${i+1} fields`);
+                throw new Error(`Please fill all government speaker ${i + 1} fields`);
             }
             if (score < 60 || score > 80) {
-                throw new Error(`Government speaker ${i+1} score must be 60-80`);
+                throw new Error(`Government speaker ${i + 1} score must be 60-80`);
             }
             govSpeakers.push(speaker);
             govScores.push(score);
         }
-        
+
         let govReply = null;
         let govReplyScore = 0;
-        
+
         if (!disableReply) {
             const replySelect = document.getElementById('gov-reply-sel');
             const replyText = document.getElementById('gov-reply-sel-txt');
-            
+
             if (replyText && replyText.style.display !== 'none') {
                 govReply = replyText.value.trim();
             } else if (replySelect) {
                 govReply = replySelect.value;
             }
-            
+
             govReplyScore = parseFloat(document.getElementById('gov-reply-score')?.value);
-            
+
             if (!govReply || isNaN(govReplyScore)) {
                 throw new Error('Please fill government reply fields');
             }
             if (govReplyScore < 30 || govReplyScore > 40) {
                 throw new Error('Government reply score must be 30-40');
             }
-            
+
             // Check speaker 3 not doing reply
             if (govReply === govSpeakers[2]) {
                 throw new Error('Government speaker 3 cannot give reply speech');
             }
         }
-        
+
         // Get opposition scores
         const oppSpeakers = [];
         const oppScores = [];
-        
+
         for (let i = 0; i < 3; i++) {
             const select = document.getElementById(`opp-sel-${i}`);
             const textInput = document.getElementById(`opp-sel-${i}-txt`);
-            
+
             let speaker = '';
             if (textInput && textInput.style.display !== 'none') {
                 speaker = textInput.value.trim();
             } else if (select) {
                 speaker = select.value;
             }
-            
+
             const score = parseFloat(document.getElementById(`opp-score-${i}`)?.value);
-            
+
             if (!speaker || isNaN(score)) {
-                throw new Error(`Please fill all opposition speaker ${i+1} fields`);
+                throw new Error(`Please fill all opposition speaker ${i + 1} fields`);
             }
             if (score < 60 || score > 80) {
-                throw new Error(`Opposition speaker ${i+1} score must be 60-80`);
+                throw new Error(`Opposition speaker ${i + 1} score must be 60-80`);
             }
             oppSpeakers.push(speaker);
             oppScores.push(score);
         }
-        
+
         let oppReply = null;
         let oppReplyScore = 0;
-        
+
         if (!disableReply) {
             const replySelect = document.getElementById('opp-reply-sel');
             const replyText = document.getElementById('opp-reply-sel-txt');
-            
+
             if (replyText && replyText.style.display !== 'none') {
                 oppReply = replyText.value.trim();
             } else if (replySelect) {
                 oppReply = replySelect.value;
             }
-            
+
             oppReplyScore = parseFloat(document.getElementById('opp-reply-score')?.value);
-            
+
             if (!oppReply || isNaN(oppReplyScore)) {
                 throw new Error('Please fill opposition reply fields');
             }
             if (oppReplyScore < 30 || oppReplyScore > 40) {
                 throw new Error('Opposition reply score must be 30-40');
             }
-            
+
             // Check speaker 3 not doing reply
             if (oppReply === oppSpeakers[2]) {
                 throw new Error('Opposition speaker 3 cannot give reply speech');
             }
         }
-        
+
         // Calculate totals
-        const govTotal = govScores.reduce((a,b) => a + b, 0) + (govReplyScore || 0);
-        const oppTotal = oppScores.reduce((a,b) => a + b, 0) + (oppReplyScore || 0);
-        
+        const govTotal = govScores.reduce((a, b) => a + b, 0) + (govReplyScore || 0);
+        const oppTotal = oppScores.reduce((a, b) => a + b, 0) + (oppReplyScore || 0);
+
         if (Math.abs(govTotal - oppTotal) < 0.01) {
             throw new Error('Ties are not allowed - please adjust scores');
         }
-        
+
         // Determine winner
         const govWon = govTotal > oppTotal;
         const winner = govWon ? gov : opp;
@@ -3495,7 +3506,7 @@ export async function submitResults(roundIdx, debateIdx) {
             const trimmed = name.trim();
             if (!trimmed) return;
             if (!team.speakers) team.speakers = [];
-            
+
             // Check if speaker already exists (case-insensitive)
             const exists = team.speakers.some(s => s.name.toLowerCase() === trimmed.toLowerCase());
             if (!exists) {
@@ -3513,12 +3524,12 @@ export async function submitResults(roundIdx, debateIdx) {
                 showNotification(`Added "${trimmed}" to ${team.name} roster`, 'info');
             }
         }
-        
+
         govSpeakers.forEach(n => ensureSpeaker(gov, n));
         if (govReply) ensureSpeaker(gov, govReply);
         oppSpeakers.forEach(n => ensureSpeaker(opp, n));
         if (oppReply) ensureSpeaker(opp, oppReply);
-        
+
         // Reverse previous stats if this debate was already entered (editing a result)
         if (debate.entered) {
             const prevGov = state.teams.find(t => t.id === debate.gov);
@@ -3530,7 +3541,7 @@ export async function submitResults(roundIdx, debateIdx) {
                 prevGov.wins = Math.max(0, (prevGov.wins || 0) - (pg.total > po.total ? 1 : 0));
                 prevGov.total = Math.max(0, (prevGov.total || 0) - pg.total);
                 delete prevGov.roundScores?.[round.id];
-                
+
                 // Subtract speaker stats
                 pg.substantive.forEach(s => {
                     const sp = prevGov.speakers.find(x => x.name === s.speaker);
@@ -3554,7 +3565,7 @@ export async function submitResults(roundIdx, debateIdx) {
                 prevOpp.wins = Math.max(0, (prevOpp.wins || 0) - (po.total > pg.total ? 1 : 0));
                 prevOpp.total = Math.max(0, (prevOpp.total || 0) - po.total);
                 delete prevOpp.roundScores?.[round.id];
-                
+
                 po.substantive.forEach(s => {
                     const sp = prevOpp.speakers.find(x => x.name === s.speaker);
                     if (sp) {
@@ -3583,15 +3594,15 @@ export async function submitResults(roundIdx, debateIdx) {
         // Update team stats
         gov.wins = (gov.wins || 0) + (govWon ? 1 : 0);
         opp.wins = (opp.wins || 0) + (govWon ? 0 : 1);
-        
+
         gov.total = (gov.total || 0) + govTotal;
         opp.total = (opp.total || 0) + oppTotal;
-        
+
         gov.roundScores = gov.roundScores || {};
         opp.roundScores = opp.roundScores || {};
         gov.roundScores[round.id] = govTotal;
         opp.roundScores[round.id] = oppTotal;
-        
+
         // Update speaker stats - find speakers by name (case-insensitive)
         for (let i = 0; i < 3; i++) {
             const govSpeaker = gov.speakers.find(s => s.name.toLowerCase() === govSpeakers[i].toLowerCase());
@@ -3601,7 +3612,7 @@ export async function submitResults(roundIdx, debateIdx) {
                 govSpeaker.substantiveScores[round.id] = govScores[i];
                 govSpeaker.substantiveCount = (govSpeaker.substantiveCount || 0) + 1;
             }
-            
+
             const oppSpeaker = opp.speakers.find(s => s.name.toLowerCase() === oppSpeakers[i].toLowerCase());
             if (oppSpeaker) {
                 oppSpeaker.substantiveTotal = (oppSpeaker.substantiveTotal || 0) + oppScores[i];
@@ -3610,7 +3621,7 @@ export async function submitResults(roundIdx, debateIdx) {
                 oppSpeaker.substantiveCount = (oppSpeaker.substantiveCount || 0) + 1;
             }
         }
-        
+
         if (!disableReply) {
             const govReplySpeaker = gov.speakers.find(s => s.name.toLowerCase() === govReply.toLowerCase());
             if (govReplySpeaker) {
@@ -3619,7 +3630,7 @@ export async function submitResults(roundIdx, debateIdx) {
                 govReplySpeaker.replyScores[round.id] = govReplyScore;
                 govReplySpeaker.replyCount = (govReplySpeaker.replyCount || 0) + 1;
             }
-            
+
             const oppReplySpeaker = opp.speakers.find(s => s.name.toLowerCase() === oppReply.toLowerCase());
             if (oppReplySpeaker) {
                 oppReplySpeaker.replyTotal = (oppReplySpeaker.replyTotal || 0) + oppReplyScore;
@@ -3628,7 +3639,7 @@ export async function submitResults(roundIdx, debateIdx) {
                 oppReplySpeaker.replyCount = (oppReplySpeaker.replyCount || 0) + 1;
             }
         }
-        
+
         // Mark debate as entered
         debate.entered = true;
         debate.govResults = {
@@ -3647,29 +3658,29 @@ export async function submitResults(roundIdx, debateIdx) {
         // For knockout rounds: eliminate the losing team immediately
         if (round.type === 'knockout') {
             loser.eliminated = true;
-            
+
             // Check if this is the final (only one debate)
             if (round.debates.length === 1) {
                 showNotification(`🏆 Champion: ${winner.name}!`, 'success');
             }
         }
-        
+
         saveNow();
-        
+
         closeAllModals();
         renderDraw();
         renderStandings();
-        
+
         // Force refresh of speaker standings
         if (typeof window.renderSpeakerStandings === 'function') {
             setTimeout(() => window.renderSpeakerStandings(), 100);
         }
-        
+
         showNotification(
-            `✅ Results saved! Winner: ${winner.name} (${Math.max(govTotal, oppTotal).toFixed(1)} - ${Math.min(govTotal, oppTotal).toFixed(1)})`, 
+            `✅ Results saved! Winner: ${winner.name} (${Math.max(govTotal, oppTotal).toFixed(1)} - ${Math.min(govTotal, oppTotal).toFixed(1)})`,
             'success'
         );
-        
+
     } catch (error) {
         if (errorDiv) {
             errorDiv.style.display = 'block';
@@ -3685,15 +3696,15 @@ export async function submitResults(roundIdx, debateIdx) {
 
 function renderSpeechDebateCard(round, debate, roundIdx, debateIdx) {
     _normalizePanelRoles(debate);
-    const isAdmin   = state.auth?.currentUser?.role === 'admin';
-    const isJudge   = state.auth?.currentUser?.role === 'judge';
+    const isAdmin = state.auth?.currentUser?.role === 'admin';
+    const isJudge = state.auth?.currentUser?.role === 'judge';
     const myJudgeId = isJudge ? String(state.auth?.currentUser?.associatedId ?? '') : null;
-    const isMyRoom  = isJudge && (debate.panel || []).some(p => String(p.id) === myJudgeId);
+    const isMyRoom = isJudge && (debate.panel || []).some(p => String(p.id) === myJudgeId);
     const isBlinded = round.blinded || false;
-    const room      = round.rooms?.[debateIdx] || (`Room ${debateIdx + 1}`);
-    const speakers  = debate.roomSpeakers || [];
+    const room = round.rooms?.[debateIdx] || (`Room ${debateIdx + 1}`);
+    const speakers = debate.roomSpeakers || [];
 
-    const statusDot   = debate.entered ? '#10b981' : (debate.panel?.length ? '#f59e0b' : '#ef4444');
+    const statusDot = debate.entered ? '#10b981' : (debate.panel?.length ? '#f59e0b' : '#ef4444');
     const statusLabel = debate.entered ? '✅ Scored' : '⏳ Pending';
 
     const judgeNames = (debate.panel || []).map(p => {
@@ -3704,9 +3715,9 @@ function renderSpeechDebateCard(round, debate, roundIdx, debateIdx) {
     const speakerRows = speakers.map((spk, idx) => {
         let scoreHtml = '';
         if (debate.entered && debate.speechResults && !isBlinded) {
-            const res   = debate.speechResults.find(r => r.speakerName === spk.speakerName && r.teamId === spk.teamId);
+            const res = debate.speechResults.find(r => r.speakerName === spk.speakerName && r.teamId === spk.teamId);
             const score = res?.score;
-            const rank  = res?.rank;
+            const rank = res?.rank;
             const medal = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : ('#' + rank);
             scoreHtml = score != null
                 ? '<div style="display:flex;align-items:center;gap:8px"><span style="font-size:18px;font-weight:800;color:#1e293b">' + score.toFixed(1) + '</span><span style="font-size:13px;color:#64748b">' + medal + '</span></div>'
@@ -3721,8 +3732,8 @@ function renderSpeechDebateCard(round, debate, roundIdx, debateIdx) {
     }).join('');
 
     const availableJudges = (state.judges || []).filter(j => !(debate.panel || []).some(p => p.id == j.id));
-    const freeJudges      = availableJudges.filter(j => !round.debates.some((d, di) => di !== debateIdx && (d.panel || []).some(p => p.id == j.id)));
-    const otherJudges     = availableJudges.filter(j =>  round.debates.some((d, di) => di !== debateIdx && (d.panel || []).some(p => p.id == j.id)));
+    const freeJudges = availableJudges.filter(j => !round.debates.some((d, di) => di !== debateIdx && (d.panel || []).some(p => p.id == j.id)));
+    const otherJudges = availableJudges.filter(j => round.debates.some((d, di) => di !== debateIdx && (d.panel || []).some(p => p.id == j.id)));
 
     const judgeChips = (debate.panel || []).map(p => {
         const j = (state.judges || []).find(j => j.id == p.id);
@@ -3739,19 +3750,19 @@ function renderSpeechDebateCard(round, debate, roundIdx, debateIdx) {
             '</span>';
     }).join('');
 
-    const freeOpts  = freeJudges.map(j  => '<option value="' + j.id + '">' + escapeHTML(j.name) + ' (' + j.role + ')</option>').join('');
+    const freeOpts = freeJudges.map(j => '<option value="' + j.id + '">' + escapeHTML(j.name) + ' (' + j.role + ')</option>').join('');
     const otherOpts = otherJudges.map(j => '<option value="' + j.id + '">' + escapeHTML(j.name) + ' (' + j.role + ')</option>').join('');
     const addJudgeDropdown = (!debate.entered && isAdmin && availableJudges.length > 0)
         ? '<select class="judge-add-select" onchange="if(this.value){window.addJudgeToPanel(' + roundIdx + ',' + debateIdx + ',this.value);this.value=\'\'}">' +
-          '<option value="">+ Add Judge</option>' +
-          (freeOpts  ? '<optgroup label="Available">'    + freeOpts  + '</optgroup>' : '') +
-          (otherOpts ? '<optgroup label="In other rooms">' + otherOpts + '</optgroup>' : '') +
-          '</select>'
+        '<option value="">+ Add Judge</option>' +
+        (freeOpts ? '<optgroup label="Available">' + freeOpts + '</optgroup>' : '') +
+        (otherOpts ? '<optgroup label="In other rooms">' + otherOpts + '</optgroup>' : '') +
+        '</select>'
         : '';
 
     const canScore = !debate.entered && (isAdmin || isMyRoom);
-    const canEdit  = debate.entered && !isBlinded;
-    const btnHtml  = canScore
+    const canEdit = debate.entered && !isBlinded;
+    const btnHtml = canScore
         ? '<button onclick="window.showEnterResults(' + roundIdx + ',' + debateIdx + ')" class="btn-primary" style="padding:4px 12px;font-size:12px' + (isMyRoom && !isAdmin ? ';background:#7c3aed' : '') + '">📝 ' + (isAdmin ? 'Enter Scores' : 'Submit Scores') + '</button>'
         : (canEdit
             ? (isAdmin ? '<button onclick="window.editResults(' + roundIdx + ',' + debateIdx + ')" class="btn-secondary" style="padding:4px 10px;font-size:12px">✏️ Edit Results</button>' : '')
@@ -3759,25 +3770,25 @@ function renderSpeechDebateCard(round, debate, roundIdx, debateIdx) {
 
     return '<div class="draw-room ' + (debate.entered ? 'done' : 'pending-partial') + '" style="background:white;border-radius:10px;border-left:4px solid ' + statusDot + ';padding:14px;margin-bottom:10px">' +
         '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px">' +
-            '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">' +
-                '<strong style="font-size:14px;color:#1e293b">' + escapeHTML(room) + '</strong>' +
-                '<span style="background:#f0fdf4;color:#16a34a;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700">🎤 SPEECH</span>' +
-                '<span style="font-size:12px;font-weight:600;color:' + (debate.entered ? '#10b981' : '#f59e0b') + '">' + statusLabel + '</span>' +
-                '<span style="font-size:12px;color:#94a3b8">' + speakers.length + ' speakers</span>' +
-            _judgePillHtml(debate, "🎯") +
-            '</div>' +
-            '<div style="display:flex;gap:6px;flex-wrap:wrap">' + btnHtml + '</div>' +
+        '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">' +
+        '<strong style="font-size:14px;color:#1e293b">' + escapeHTML(room) + '</strong>' +
+        '<span style="background:#f0fdf4;color:#16a34a;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700">🎤 SPEECH</span>' +
+        '<span style="font-size:12px;font-weight:600;color:' + (debate.entered ? '#10b981' : '#f59e0b') + '">' + statusLabel + '</span>' +
+        '<span style="font-size:12px;color:#94a3b8">' + speakers.length + ' speakers</span>' +
+        _judgePillHtml(debate, "🎯") +
+        '</div>' +
+        '<div style="display:flex;gap:6px;flex-wrap:wrap">' + btnHtml + '</div>' +
         '</div>' +
         '<div style="margin-bottom:10px">' + speakerRows + '</div>' +
         '<div style="border-top:1px solid #f1f5f9;padding-top:10px;display:flex;flex-wrap:wrap;align-items:center;gap:6px">' +
-            '<span style="font-size:11px;color:#94a3b8;font-weight:600">JUDGE</span>' +
-            '<div class="dnd-judge-zone" style="flex:1"' +
-            (!debate.entered && isAdmin ? ' ondragover="window.dndJudgeDragOver(event,' + roundIdx + ',' + debateIdx + ')" ondragleave="window.dndDragLeave(event)" ondrop="window.dndJudgeDrop(event,' + roundIdx + ',' + debateIdx + ')"' : '') + '>' +
-            (judgeChips || '<span style="font-size:12px;color:' + (isAdmin ? '#ef4444' : '#94a3b8') + ';font-style:italic">' + (isAdmin ? 'No judge assigned' : '—') + '</span>') +
-            addJudgeDropdown +
-            '</div>' +
+        '<span style="font-size:11px;color:#94a3b8;font-weight:600">JUDGE</span>' +
+        '<div class="dnd-judge-zone" style="flex:1"' +
+        (!debate.entered && isAdmin ? ' ondragover="window.dndJudgeDragOver(event,' + roundIdx + ',' + debateIdx + ')" ondragleave="window.dndDragLeave(event)" ondrop="window.dndJudgeDrop(event,' + roundIdx + ',' + debateIdx + ')"' : '') + '>' +
+        (judgeChips || '<span style="font-size:12px;color:' + (isAdmin ? '#ef4444' : '#94a3b8') + ';font-style:italic">' + (isAdmin ? 'No judge assigned' : '—') + '</span>') +
+        addJudgeDropdown +
         '</div>' +
-    '</div>';
+        '</div>' +
+        '</div>';
 }
 
 
@@ -3786,18 +3797,18 @@ function renderSpeechDebateCard(round, debate, roundIdx, debateIdx) {
 // ============================================================================
 
 function showSpeechEnterResults(roundIdx, debateIdx) {
-    const round   = state.rounds[roundIdx];
-    const debate  = round.debates[debateIdx];
-    const isAdmin   = state.auth?.currentUser?.role === 'admin';
-    const isJudge   = state.auth?.currentUser?.role === 'judge';
+    const round = state.rounds[roundIdx];
+    const debate = round.debates[debateIdx];
+    const isAdmin = state.auth?.currentUser?.role === 'admin';
+    const isJudge = state.auth?.currentUser?.role === 'judge';
     const myJudgeId = isJudge ? String(state.auth?.currentUser?.associatedId ?? '') : null;
-    const isMyRoom  = isJudge && (debate.panel || []).some(p => String(p.id) === myJudgeId);
+    const isMyRoom = isJudge && (debate.panel || []).some(p => String(p.id) === myJudgeId);
 
     if (!isAdmin && !isMyRoom) { showNotification('You are not assigned to this room', 'error'); return; }
     const roomLabel = round.rooms?.[debateIdx] || `Room ${debateIdx + 1}`;
 
     const speakers = debate.roomSpeakers || [];
-    const modal    = document.createElement('div');
+    const modal = document.createElement('div');
     modal.className = 'modal-overlay ballot-modal-overlay';
     modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;z-index:9999;padding:20px';
 
@@ -3844,17 +3855,17 @@ function showSpeechEnterResults(roundIdx, debateIdx) {
 // ============================================================================
 
 function submitSpeechResults(roundIdx, debateIdx) {
-    const round    = state.rounds[roundIdx];
-    const debate   = round.debates[debateIdx];
+    const round = state.rounds[roundIdx];
+    const debate = round.debates[debateIdx];
     const speakers = debate.roomSpeakers || [];
     const errorDiv = document.getElementById('speech-score-error');
 
     try {
         const results = speakers.map((spk, idx) => {
-            const raw   = document.getElementById('speech-score-' + idx)?.value;
+            const raw = document.getElementById('speech-score-' + idx)?.value;
             const score = parseFloat(raw);
             if (raw === '' || raw == null || isNaN(score)) throw new Error('Please enter a score for ' + spk.speakerName);
-            if (score < 0 || score > 100)                  throw new Error('Score for ' + spk.speakerName + ' must be 0–100');
+            if (score < 0 || score > 100) throw new Error('Score for ' + spk.speakerName + ' must be 0–100');
             return { ...spk, score };
         });
 
@@ -3885,30 +3896,30 @@ function submitSpeechResults(roundIdx, debateIdx) {
                 spk = { name: r.speakerName, substantiveTotal: 0, substantiveCount: 0, substantiveScores: {}, replyTotal: 0, replyCount: 0, replyScores: {} };
                 team.speakers.push(spk);
             }
-            spk.substantiveTotal  = (spk.substantiveTotal || 0) + r.score;
-            spk.substantiveCount  = (spk.substantiveCount || 0) + 1;
+            spk.substantiveTotal = (spk.substantiveTotal || 0) + r.score;
+            spk.substantiveCount = (spk.substantiveCount || 0) + 1;
             spk.substantiveScores = spk.substantiveScores || {};
             spk.substantiveScores[round.id] = r.score;
         });
 
-        debate.entered       = true;
+        debate.entered = true;
         debate.speechResults = results;
 
         saveNow();
         closeAllModals();
         renderDraw();
-        if (typeof window.renderSpeechTab        === 'function') window.renderSpeechTab('speech-tab-body');
+        if (typeof window.renderSpeechTab === 'function') window.renderSpeechTab('speech-tab-body');
         if (typeof window.renderSpeakerStandings === 'function') setTimeout(() => window.renderSpeakerStandings(), 100);
 
         const topScore = Math.max(...results.map(r => r.score));
-        const winner   = results.find(r => r.score === topScore);
+        const winner = results.find(r => r.score === topScore);
         showNotification('✅ Scores saved! Top: ' + (winner?.speakerName || '') + ' (' + topScore.toFixed(1) + ')', 'success');
 
     } catch (err) {
         if (errorDiv) { errorDiv.style.display = 'block'; errorDiv.textContent = '❌ ' + err.message; errorDiv.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }
     }
 }
-window.submitSpeechResults    = submitSpeechResults;
+window.submitSpeechResults = submitSpeechResults;
 window.showSpeechEnterResults = showSpeechEnterResults;
 
 // ============================================================================
@@ -3916,22 +3927,22 @@ window.showSpeechEnterResults = showSpeechEnterResults;
 // ============================================================================
 
 function showBPEnterResults(roundIdx, debateIdx) {
-    const round  = state.rounds[roundIdx];
+    const round = state.rounds[roundIdx];
     const debate = round.debates[debateIdx];
 
-    const isAdmin  = state.auth?.currentUser?.role === 'admin';
-    const isJudge  = state.auth?.currentUser?.role === 'judge';
+    const isAdmin = state.auth?.currentUser?.role === 'admin';
+    const isJudge = state.auth?.currentUser?.role === 'judge';
     const myJudgeId = isJudge ? String(state.auth?.currentUser?.associatedId ?? '') : null;
-    const isMyRoom  = isJudge && (debate.panel||[]).some(p => String(p.id) === myJudgeId);
+    const isMyRoom = isJudge && (debate.panel || []).some(p => String(p.id) === myJudgeId);
 
     if (!isAdmin && !isMyRoom) { showNotification('You are not assigned to this room', 'error'); return; }
     const roomLabel = round.rooms?.[debateIdx] || `Room ${debateIdx + 1}`;
 
     const positions = [
-        { key:'og', label:'OG', fullLabel:'Opening Government', color:'#1e40af', bg:'#eff6ff', border:'#bfdbfe' },
-        { key:'oo', label:'OO', fullLabel:'Opening Opposition',  color:'#3118be', bg:'#fdf2f8', border:'#fbcfe8' },
-        { key:'cg', label:'CG', fullLabel:'Closing Government',  color:'#065f46', bg:'#f0fdf4', border:'#86efac' },
-        { key:'co', label:'CO', fullLabel:'Closing Opposition',  color:'#7c3aed', bg:'#faf5ff', border:'#e9d5ff' },
+        { key: 'og', label: 'OG', fullLabel: 'Opening Government', color: '#1e40af', bg: '#eff6ff', border: '#bfdbfe' },
+        { key: 'oo', label: 'OO', fullLabel: 'Opening Opposition', color: '#3118be', bg: '#fdf2f8', border: '#fbcfe8' },
+        { key: 'cg', label: 'CG', fullLabel: 'Closing Government', color: '#065f46', bg: '#f0fdf4', border: '#86efac' },
+        { key: 'co', label: 'CO', fullLabel: 'Closing Opposition', color: '#7c3aed', bg: '#faf5ff', border: '#e9d5ff' },
     ];
 
     // Build speaker combos per position
@@ -3965,7 +3976,7 @@ function showBPEnterResults(roundIdx, debateIdx) {
     <div style="background:white;border-radius:16px;max-width:650px;width:100%;max-height:85vh;display:flex;flex-direction:column;box-shadow:0 25px 50px -12px rgba(0,0,0,0.25), 0 0 0 1px rgba(255,255,255,0.2);overflow:hidden;transform:translateY(0);animation:slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);">
         <div style="padding:14px 18px;border-bottom:1px solid #f1f5f9;position:sticky;top:0;background:rgba(255,255,255,0.95);backdrop-filter:blur(8px);z-index:10;">
             <h2 style="margin:0 0 4px;color:#0f172a;font-size:16px;font-weight:800;letter-spacing:-0.02em;">BP Ballot — Round ${_roundNum(round)} · ${escapeHTML(roomLabel)}</h2>
-            <p style="margin:0;color:#64748b;font-size:11px;font-weight:500;">${escapeHTML(round.motion||'')}</p>
+            <p style="margin:0;color:#64748b;font-size:11px;font-weight:500;">${escapeHTML(round.motion || '')}</p>
         </div>
         <div style="padding:14px 18px;overflow-y:auto;flex:1;">
             <div id="bp-results-error" style="display:none;background:#fee2e2;color:#991b1b;padding:10px;border-radius:6px;margin-bottom:12px;font-weight:600;font-size:12px;"></div>
@@ -4006,7 +4017,7 @@ function showBPEnterResults(roundIdx, debateIdx) {
                     }
                     if (name) window._spkComboSetValue(`bp-sel-${pos.key}-${i}`, name, team?.speakers || []);
                     const inp = document.getElementById(`bp-score-${pos.key}-${i}`);
-                    if (inp && s.score != null) { inp.value = s.score; inp.dispatchEvent(new Event('input',{bubbles:true})); }
+                    if (inp && s.score != null) { inp.value = s.score; inp.dispatchEvent(new Event('input', { bubbles: true })); }
                 });
             });
             window._bpUpdateLive();
@@ -4014,17 +4025,17 @@ function showBPEnterResults(roundIdx, debateIdx) {
     }
 
     // Wire up BP score inputs to also fire _bpUpdateLive (combos dispatch 'input' on hidden inputs — scores use oninput inline)
-    modal.addEventListener('click', e => { if (e.target===modal && confirm('Discard unsaved results?')) closeAllModals(); });
+    modal.addEventListener('click', e => { if (e.target === modal && confirm('Discard unsaved results?')) closeAllModals(); });
     document.body.appendChild(modal);
 
     // Wire NEW badges for BP combos after DOM is ready
     setTimeout(() => {
         positions.forEach(pos => {
             const team = state.teams.find(t => t.id === debate[pos.key]);
-            const knownNames = new Set((team?.speakers||[]).map(s => s.name.toLowerCase()));
+            const knownNames = new Set((team?.speakers || []).map(s => s.name.toLowerCase()));
             for (let i = 0; i < 2; i++) {
                 const hidden = document.getElementById(`bp-sel-${pos.key}-${i}`);
-                const badge  = document.getElementById(`bp-new-${pos.key}-${i}`);
+                const badge = document.getElementById(`bp-new-${pos.key}-${i}`);
                 if (hidden && badge) {
                     hidden.addEventListener('input', () => {
                         const v = hidden.value.trim();
@@ -4035,11 +4046,11 @@ function showBPEnterResults(roundIdx, debateIdx) {
         });
     }, 50);
 
-    window._bpUpdateLive = function() {
+    window._bpUpdateLive = function () {
         const display = document.getElementById('bp-rank-display');
         if (!display) return;
 
-        const rankLabels = { 1:'🥇 1st', 2:'🥈 2nd', 3:'🥉 3rd', 4:'4th' };
+        const rankLabels = { 1: '🥇 1st', 2: '🥈 2nd', 3: '🥉 3rd', 4: '4th' };
 
         // Compute totals for each position from the 2 speaker scores
         const totals = {};
@@ -4070,8 +4081,8 @@ function showBPEnterResults(roundIdx, debateIdx) {
 
         // Sort positions by total descending to assign ranks
         const sorted = [...positions].sort((a, b) => totals[b.key].sum - totals[a.key].sum);
-        const rankColors = ['#f59e0b','#94a3b8','#b45309','#64748b'];
-        const rankBgs    = ['#fef3c7','#f1f5f9','#fef3c7','#f1f5f9'];
+        const rankColors = ['#f59e0b', '#94a3b8', '#b45309', '#64748b'];
+        const rankBgs = ['#fef3c7', '#f1f5f9', '#fef3c7', '#f1f5f9'];
 
         sorted.forEach((pos, rankIdx) => {
             const rank = rankIdx + 1;
@@ -4086,18 +4097,18 @@ function showBPEnterResults(roundIdx, debateIdx) {
         // Update summary bar
         display.innerHTML = sorted.map((pos, i) => {
             const team = state.teams.find(t => t.id === debate[pos.key]);
-            return `<span style="padding:6px 12px;border-radius:16px;background:${pos.bg};border:1px solid ${pos.border};color:${pos.color};font-size:12px;font-weight:700;">${rankLabels[i+1]} · ${escapeHTML(team?.name||pos.label)} (${totals[pos.key].sum.toFixed(1)})</span>`;
+            return `<span style="padding:6px 12px;border-radius:16px;background:${pos.bg};border:1px solid ${pos.border};color:${pos.color};font-size:12px;font-weight:700;">${rankLabels[i + 1]} · ${escapeHTML(team?.name || pos.label)} (${totals[pos.key].sum.toFixed(1)})</span>`;
         }).join('');
     };
 }
 
 function submitBPResults(roundIdx, debateIdx) {
-    const round  = state.rounds[roundIdx];
+    const round = state.rounds[roundIdx];
     const debate = round.debates[debateIdx];
     const errorDiv = document.getElementById('bp-results-error');
 
-    const positions = ['og','oo','cg','co'];
-    const PTS_FOR_RANK = {1:3, 2:2, 3:1, 4:0};
+    const positions = ['og', 'oo', 'cg', 'co'];
+    const PTS_FOR_RANK = { 1: 3, 2: 2, 3: 1, 4: 0 };
 
     try {
         // Collect and validate speaker scores — always exactly 2 per team
@@ -4111,16 +4122,16 @@ function submitBPResults(roundIdx, debateIdx) {
             for (let i = 0; i < 2; i++) {
                 const spk = document.getElementById(`bp-sel-${pos}-${i}`)?.value?.trim();
                 const scr = parseFloat(document.getElementById(`bp-score-${pos}-${i}`)?.value);
-                if (!spk) throw new Error(`Enter speaker ${i+1} name for ${pos.toUpperCase()}`);
-                if (isNaN(scr) || scr < 50 || scr > 100) throw new Error(`${pos.toUpperCase()} speaker ${i+1} score must be 50–100`);
+                if (!spk) throw new Error(`Enter speaker ${i + 1} name for ${pos.toUpperCase()}`);
+                if (isNaN(scr) || scr < 50 || scr > 100) throw new Error(`${pos.toUpperCase()} speaker ${i + 1} score must be 50–100`);
                 const speakerObj = team.speakers.find(s => s.name === spk);
 
                 speakers[pos].push({
-                    speaker:   spk,              // ← required for standings + pre-fill
+                    speaker: spk,              // ← required for standings + pre-fill
                     speakerId: speakerObj?.id,
-                    score:     scr
+                    score: scr
                 });
-                                posTotal += scr;
+                posTotal += scr;
             }
             teamScoreTotals[pos] = posTotal;
         });
@@ -4143,14 +4154,14 @@ function submitBPResults(roundIdx, debateIdx) {
                 const team = state.teams.find(t => t.id === debate[pos]);
                 if (!team) return;
                 const oldRank = debate.bpRanks[pos];
-                team.wins  = Math.max(0, (team.wins  || 0) - (oldRank <= 2 ? 1 : 0));
+                team.wins = Math.max(0, (team.wins || 0) - (oldRank <= 2 ? 1 : 0));
                 team.total = Math.max(0, (team.total || 0) - (debate[`${pos}Score`] || 0));
                 delete team.roundScores?.[round.id];
                 (debate.bpSpeakers?.[pos] || []).forEach(s => {
                     const sp = team.speakers.find(x => x.name === s.speaker);
                     if (sp) {
-                        sp.substantiveTotal = Math.max(0, (sp.substantiveTotal||0) - s.score);
-                        sp.substantiveCount = Math.max(0, (sp.substantiveCount||0) - 1);
+                        sp.substantiveTotal = Math.max(0, (sp.substantiveTotal || 0) - s.score);
+                        sp.substantiveCount = Math.max(0, (sp.substantiveCount || 0) - 1);
                         delete sp.substantiveScores?.[round.id];
                     }
                 });
@@ -4177,7 +4188,7 @@ function submitBPResults(roundIdx, debateIdx) {
             if (!team) return;
             const spkTotal = teamScoreTotals[pos];
             // In BP, "wins" = count of 1st or 2nd place finishes (not raw points)
-            team.wins  = (team.wins  || 0) + (ranks[pos] <= 2 ? 1 : 0);
+            team.wins = (team.wins || 0) + (ranks[pos] <= 2 ? 1 : 0);
             team.total = (team.total || 0) + spkTotal;
             team.roundScores = team.roundScores || {};
             team.roundScores[round.id] = spkTotal;
@@ -4193,8 +4204,8 @@ function submitBPResults(roundIdx, debateIdx) {
         });
 
         // Save results onto debate object
-        debate.entered    = true;
-        debate.bpRanks    = ranks;
+        debate.entered = true;
+        debate.bpRanks = ranks;
         debate.bpSpeakers = speakers;
         positions.forEach(pos => { debate[`${pos}Score`] = teamScoreTotals[pos]; });
 
@@ -4204,11 +4215,11 @@ function submitBPResults(roundIdx, debateIdx) {
         renderStandings();
         if (typeof window.renderSpeakerStandings === 'function') window.renderSpeakerStandings();
 
-        const winner = state.teams.find(t => t.id === debate[Object.keys(ranks).find(p => ranks[p]===1)]);
-        showNotification(`✅ Ballot saved! 1st: ${winner?.name||'?'}`, 'success');
+        const winner = state.teams.find(t => t.id === debate[Object.keys(ranks).find(p => ranks[p] === 1)]);
+        showNotification(`✅ Ballot saved! 1st: ${winner?.name || '?'}`, 'success');
 
-    } catch(err) {
-        if (errorDiv) { errorDiv.style.display='block'; errorDiv.textContent='❌ '+err.message; errorDiv.scrollIntoView({behavior:'smooth',block:'nearest'}); }
+    } catch (err) {
+        if (errorDiv) { errorDiv.style.display = 'block'; errorDiv.textContent = '❌ ' + err.message; errorDiv.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }
     }
 }
 window.submitBPResults = submitBPResults;
@@ -4222,16 +4233,16 @@ function viewDebateDetails(roundIdx, debateIdx) {
     const debate = round.debates[debateIdx];
     const gov = state.teams.find(t => t.id === debate.gov);
     const opp = state.teams.find(t => t.id === debate.opp);
-    
+
     if (!debate.entered) {
         showNotification('No results entered yet', 'info');
         return;
     }
-    
+
     const modal = document.createElement('div');
     modal.className = 'modal-overlay';
     modal.style.cssText = 'position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 9999; padding: 20px;';
-    
+
     modal.innerHTML = `
         <div style="background: white; border-radius: 16px; max-width: 700px; width: 100%; max-height: 90vh; display: flex; flex-direction: column; box-shadow: 0 20px 60px rgba(0,0,0,0.3);">
             <div style="padding: 24px; border-bottom: 1px solid #e2e8f0; flex-shrink: 0;">
@@ -4267,7 +4278,7 @@ function viewDebateDetails(roundIdx, debateIdx) {
                         <tbody>
                             ${debate.govResults.substantive.map((s, i) => `
                                 <tr style="border-bottom: 1px solid #e2e8f0;">
-                                    <td style="padding: 10px; color: #1e293b;">${escapeHTML(s.speaker)} (G${i+1})</td>
+                                    <td style="padding: 10px; color: #1e293b;">${escapeHTML(s.speaker)} (G${i + 1})</td>
                                     <td style="padding: 10px; text-align: center; font-weight: 600;">${s.score.toFixed(1)}</td>
                                  </tr>
                             `).join('')}
@@ -4279,7 +4290,7 @@ function viewDebateDetails(roundIdx, debateIdx) {
                             ` : ''}
                             ${debate.oppResults.substantive.map((s, i) => `
                                 <tr style="border-bottom: 1px solid #e2e8f0;">
-                                    <td style="padding: 10px; color: #1e293b;">${escapeHTML(s.speaker)} (O${i+1})</td>
+                                    <td style="padding: 10px; color: #1e293b;">${escapeHTML(s.speaker)} (O${i + 1})</td>
                                     <td style="padding: 10px; text-align: center; font-weight: 600;">${s.score.toFixed(1)}</td>
                                  </tr>
                             `).join('')}
@@ -4296,9 +4307,9 @@ function viewDebateDetails(roundIdx, debateIdx) {
                 ${debate.panel?.length > 0 ? `
                     <div style="margin-top: 16px; padding: 12px; background: #f8fafc; border-radius: 8px; font-size: 13px; color: #64748b;">
                         <strong style="color: #1e293b;">Panel:</strong> ${debate.panel.map(p => {
-                            const judge = state.judges.find(j => j.id === p.id);
-                            return judge ? judge.name : '';
-                        }).filter(Boolean).join(', ')}
+        const judge = state.judges.find(j => j.id === p.id);
+        return judge ? judge.name : '';
+    }).filter(Boolean).join(', ')}
                     </div>
                 ` : ''}
             </div>
@@ -4310,11 +4321,11 @@ function viewDebateDetails(roundIdx, debateIdx) {
             </div>
         </div>
     `;
-    
-    modal.addEventListener('click', function(e) {
+
+    modal.addEventListener('click', function (e) {
         if (e.target === modal) closeAllModals();
     });
-    
+
     document.body.appendChild(modal);
 }
 
@@ -4326,7 +4337,7 @@ function editResults(roundIdx, debateIdx) {
     if (!confirm('Editing results will recalculate team and speaker stats. Continue?')) {
         return;
     }
-    
+
     // Re-open the results modal
     showEnterResults(roundIdx, debateIdx);
 }
@@ -4352,11 +4363,11 @@ function showEditMotionModal(roundIdx) {
             <div style="padding:24px;overflow-y:auto;flex:1;">
                 <div style="margin-bottom:16px;">
                     <label style="display:block;font-weight:600;color:#1e293b;margin-bottom:6px;font-size:14px;">Motion *</label>
-                    <textarea id="edit-motion-text" rows="3" style="width:100%;padding:12px;border:1px solid #cbd5e1;border-radius:8px;font-size:14px;resize:vertical;box-sizing:border-box;">${escapeHTML(round.motion||'')}</textarea>
+                    <textarea id="edit-motion-text" rows="3" style="width:100%;padding:12px;border:1px solid #cbd5e1;border-radius:8px;font-size:14px;resize:vertical;box-sizing:border-box;">${escapeHTML(round.motion || '')}</textarea>
                 </div>
                 <div>
                     <label style="display:block;font-weight:600;color:#1e293b;margin-bottom:6px;font-size:14px;">Info Slide <span style="font-weight:400;color:#64748b;">(optional)</span></label>
-                    <textarea id="edit-motion-infoslide" rows="3" style="width:100%;padding:12px;border:1px solid #cbd5e1;border-radius:8px;font-size:14px;resize:vertical;box-sizing:border-box;">${escapeHTML(round.infoslide||'')}</textarea>
+                    <textarea id="edit-motion-infoslide" rows="3" style="width:100%;padding:12px;border:1px solid #cbd5e1;border-radius:8px;font-size:14px;resize:vertical;box-sizing:border-box;">${escapeHTML(round.infoslide || '')}</textarea>
                 </div>
             </div>
             <div style="padding:16px 24px;border-top:1px solid #e2e8f0;display:flex;justify-content:space-between;flex-shrink:0;background:white;border-radius:0 0 16px 16px;">
@@ -4368,7 +4379,7 @@ function showEditMotionModal(roundIdx) {
     document.body.appendChild(modal);
 }
 
-window._saveMotion = function(roundIdx) {
+window._saveMotion = function (roundIdx) {
     const round = state.rounds[roundIdx];
     if (!round) return;
     const motion = document.getElementById('edit-motion-text')?.value.trim();
@@ -4397,9 +4408,9 @@ function displayAdminRounds() {
     const rounds = state.rounds || [];
 
     let filtered = rounds.slice().reverse();
-    if (filter === 'pending')   filtered = filtered.filter(r => r.debates.some(d => !d.entered));
+    if (filter === 'pending') filtered = filtered.filter(r => r.debates.some(d => !d.entered));
     if (filter === 'completed') filtered = filtered.filter(r => r.debates.every(d => d.entered));
-    if (filter === 'blinded')   filtered = filtered.filter(r => r.blinded);
+    if (filter === 'blinded') filtered = filtered.filter(r => r.blinded);
 
     if (filtered.length === 0) {
         list.innerHTML = rounds.length === 0
@@ -4413,16 +4424,16 @@ function displayAdminRounds() {
 
     const html = filtered.map(round => {
         const actualIdx = rounds.findIndex(r => r.id === round.id);
-        const done  = round.debates.filter(d => d.entered).length;
+        const done = round.debates.filter(d => d.entered).length;
         const total = round.debates.length;
-        const pct   = total > 0 ? Math.round(done / total * 100) : 0;
+        const pct = total > 0 ? Math.round(done / total * 100) : 0;
         const allDone = done === total && total > 0;
 
         const rows = round.debates.map((debate, di) => {
-            const room    = round.rooms?.[di] || `Room ${di + 1}`;
+            const room = round.rooms?.[di] || `Room ${di + 1}`;
             const entered = debate.entered;
             const panelNames = (debate.panel || []).map(p => {
-                const j = (state.judges||[]).find(j => j.id == p.id);
+                const j = (state.judges || []).find(j => j.id == p.id);
                 return j ? escapeHTML(j.name) : '';
             }).filter(Boolean).join(', ');
 
@@ -4435,9 +4446,9 @@ function displayAdminRounds() {
                     ? debate.speechResults.reduce((best, r) => (!best || r.score > best.score) ? r : best, null)
                     : null;
 
-                return `<div style="display:grid;grid-template-columns:90px 1fr auto auto;align-items:center;gap:10px;padding:8px 14px;border-bottom:1px solid #f1f5f9;font-size:13px;${entered?'background:#f0fdf4':''}">
+                return `<div style="display:grid;grid-template-columns:90px 1fr auto auto;align-items:center;gap:10px;padding:8px 14px;border-bottom:1px solid #f1f5f9;font-size:13px;${entered ? 'background:#f0fdf4' : ''}">
                     <div style="display:flex;align-items:center;gap:5px">
-                        <span style="width:7px;height:7px;border-radius:50%;background:${entered?'#10b981':'#f59e0b'};flex-shrink:0;display:inline-block"></span>
+                        <span style="width:7px;height:7px;border-radius:50%;background:${entered ? '#10b981' : '#f59e0b'};flex-shrink:0;display:inline-block"></span>
                         <span style="font-size:11px;font-weight:700;color:#64748b;white-space:nowrap">${escapeHTML(room)}</span>
                     </div>
                     <div style="min-width:0">
@@ -4452,25 +4463,25 @@ function displayAdminRounds() {
                     </div>
                     <div>
                         ${entered
-                            ? `<button onclick="window.editResults(${actualIdx},${di})" class="btn-secondary" style="padding:3px 8px;font-size:11px">✏️ Edit</button>`
-                            : `<button onclick="window.showEnterResults(${actualIdx},${di})" class="btn-primary" style="padding:3px 8px;font-size:11px">📝 Scores</button>`}
+                        ? `<button onclick="window.editResults(${actualIdx},${di})" class="btn-secondary" style="padding:3px 8px;font-size:11px">✏️ Edit</button>`
+                        : `<button onclick="window.showEnterResults(${actualIdx},${di})" class="btn-primary" style="padding:3px 8px;font-size:11px">📝 Scores</button>`}
                     </div>
                 </div>`;
             }
 
             // ── BP format ──────────────────────────────────────────────────
             if (debate.format === 'bp') {
-                const positions = ['og','oo','cg','co'];
+                const positions = ['og', 'oo', 'cg', 'co'];
                 const teamNames = positions.map(pos => {
                     const t = teamMap[debate[pos]];
                     return t ? escapeHTML(t.name) : '—';
                 }).join(' · ');
                 const winner = debate.entered && debate.bpRanks
-                    ? teamMap[debate[Object.keys(debate.bpRanks).find(p => debate.bpRanks[p]===1)]]
+                    ? teamMap[debate[Object.keys(debate.bpRanks).find(p => debate.bpRanks[p] === 1)]]
                     : null;
-                return `<div style="display:grid;grid-template-columns:90px 1fr auto auto;align-items:center;gap:10px;padding:8px 14px;border-bottom:1px solid #f1f5f9;font-size:13px;${entered?'background:#f0fdf4':''}">
+                return `<div style="display:grid;grid-template-columns:90px 1fr auto auto;align-items:center;gap:10px;padding:8px 14px;border-bottom:1px solid #f1f5f9;font-size:13px;${entered ? 'background:#f0fdf4' : ''}">
                     <div style="display:flex;align-items:center;gap:5px">
-                        <span style="width:7px;height:7px;border-radius:50%;background:${entered?'#10b981':'#f59e0b'};flex-shrink:0;display:inline-block"></span>
+                        <span style="width:7px;height:7px;border-radius:50%;background:${entered ? '#10b981' : '#f59e0b'};flex-shrink:0;display:inline-block"></span>
                         <span style="font-size:11px;font-weight:700;color:#64748b;white-space:nowrap">${escapeHTML(room)}</span>
                     </div>
                     <div style="display:flex;align-items:center;gap:6px;min-width:0">
@@ -4483,8 +4494,8 @@ function displayAdminRounds() {
                     </div>
                     <div>
                         ${entered
-                            ? `<button onclick="window.editResults(${actualIdx},${di})" class="btn-secondary" style="padding:3px 8px;font-size:11px">Override Ballot</button>`
-                            : `<button onclick="window.showEnterResults(${actualIdx},${di})" class="btn-primary" style="padding:3px 8px;font-size:11px">Enter Results</button>`}
+                        ? `<button onclick="window.editResults(${actualIdx},${di})" class="btn-secondary" style="padding:3px 8px;font-size:11px">Override Ballot</button>`
+                        : `<button onclick="window.showEnterResults(${actualIdx},${di})" class="btn-primary" style="padding:3px 8px;font-size:11px">Enter Results</button>`}
                     </div>
                 </div>`;
             }
@@ -4495,27 +4506,27 @@ function displayAdminRounds() {
             if (!gov || !opp) return '';
             const govScore = entered ? (debate.govResults?.total?.toFixed(1) ?? '?') : null;
             const oppScore = entered ? (debate.oppResults?.total?.toFixed(1) ?? '?') : null;
-            const govWon  = entered && (debate.govResults?.total ?? 0) > (debate.oppResults?.total ?? 0);
+            const govWon = entered && (debate.govResults?.total ?? 0) > (debate.oppResults?.total ?? 0);
 
-            return `<div style="display:grid;grid-template-columns:90px 1fr auto auto;align-items:center;gap:10px;padding:8px 14px;border-bottom:1px solid #f1f5f9;font-size:13px;${entered?'background:#f0fdf4':''}">
+            return `<div style="display:grid;grid-template-columns:90px 1fr auto auto;align-items:center;gap:10px;padding:8px 14px;border-bottom:1px solid #f1f5f9;font-size:13px;${entered ? 'background:#f0fdf4' : ''}">
                 <div style="display:flex;align-items:center;gap:5px">
-                    <span style="width:7px;height:7px;border-radius:50%;background:${entered?'#10b981':'#f59e0b'};flex-shrink:0;display:inline-block"></span>
+                    <span style="width:7px;height:7px;border-radius:50%;background:${entered ? '#10b981' : '#f59e0b'};flex-shrink:0;display:inline-block"></span>
                     <span style="font-size:11px;font-weight:700;color:#64748b;white-space:nowrap">${escapeHTML(room)}</span>
                 </div>
                 <div style="display:flex;align-items:center;gap:8px;min-width:0">
-                    <span style="font-weight:${govWon?700:500};color:${govWon?'#10b981':'#1e293b'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:150px">${escapeHTML(gov.name)}</span>
+                    <span style="font-weight:${govWon ? 700 : 500};color:${govWon ? '#10b981' : '#1e293b'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:150px">${escapeHTML(gov.name)}</span>
                     ${entered && !round.blinded
-                        ? `<span style="font-size:12px;font-weight:700;white-space:nowrap">${govScore} — ${oppScore}</span>`
-                        : (()=>{ try{ const pm=getPreviousMeetings(); const k=[debate.gov,debate.opp].sort().join('-'); const m=pm[k]||0; return m>0?'<span style="background:#f97316;color:white;padding:1px 7px;border-radius:10px;font-size:11px;font-weight:700">🔄×'+m+'</span>':'<span style="font-size:11px;color:#94a3b8">vs</span>'; }catch(e){return '<span style="font-size:11px;color:#94a3b8">vs</span>';} })()}
-                    <span style="font-weight:${!govWon&&entered?700:500};color:${!govWon&&entered?'#10b981':'#1e293b'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:150px">${escapeHTML(opp.name)}</span>
+                    ? `<span style="font-size:12px;font-weight:700;white-space:nowrap">${govScore} — ${oppScore}</span>`
+                    : (() => { try { const pm = getPreviousMeetings(); const k = [debate.gov, debate.opp].sort().join('-'); const m = pm[k] || 0; return m > 0 ? '<span style="background:#f97316;color:white;padding:1px 7px;border-radius:10px;font-size:11px;font-weight:700">🔄×' + m + '</span>' : '<span style="font-size:11px;color:#94a3b8">vs</span>'; } catch (e) { return '<span style="font-size:11px;color:#94a3b8">vs</span>'; } })()}
+                    <span style="font-weight:${!govWon && entered ? 700 : 500};color:${!govWon && entered ? '#10b981' : '#1e293b'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:150px">${escapeHTML(opp.name)}</span>
                 </div>
                 <div style="font-size:11px;color:#64748b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:160px">
                     ${panelNames ? `${panelNames}` : '<span style="color:#ef4444;font-style:italic">No judges</span>'}
                 </div>
                 <div>
                     ${entered
-                        ? `<button onclick="window.editResults(${actualIdx},${di})" class="btn-secondary" style="padding:3px 8px;font-size:11px">Override Ballot</button>`
-                        : `<button onclick="window.showEnterResults(${actualIdx},${di})" class="btn-primary" style="padding:3px 8px;font-size:11px">Enter Results</button>`}
+                    ? `<button onclick="window.editResults(${actualIdx},${di})" class="btn-secondary" style="padding:3px 8px;font-size:11px">Override Ballot</button>`
+                    : `<button onclick="window.showEnterResults(${actualIdx},${di})" class="btn-primary" style="padding:3px 8px;font-size:11px">Enter Results</button>`}
                 </div>
             </div>`;
         }).join('');
@@ -4524,12 +4535,12 @@ function displayAdminRounds() {
             <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:#f8fafc;border-bottom:1px solid #e2e8f0;gap:10px;flex-wrap:wrap">
                 <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
                     <strong>Round ${_roundNum(round)}</strong>
-                    ${round.type==='knockout'?'<span style="background:#fee2e2;color:#991b1b;padding:1px 8px;border-radius:20px;font-size:11px;font-weight:700">KO</span>':''}
-                    ${round.blinded?'<span style="background:#f1f5f9;color:#475569;padding:1px 8px;border-radius:20px;font-size:11px;font-weight:700">Blind</span>':''}
-                    ${round.motion?`<span style="font-size:12px;color:#64748b;font-style:italic">${escapeHTML(round.motion.substring(0,60))}${round.motion.length>60?'…':''}</span>`:''}
+                    ${round.type === 'knockout' ? '<span style="background:#fee2e2;color:#991b1b;padding:1px 8px;border-radius:20px;font-size:11px;font-weight:700">KO</span>' : ''}
+                    ${round.blinded ? '<span style="background:#f1f5f9;color:#475569;padding:1px 8px;border-radius:20px;font-size:11px;font-weight:700">Blind</span>' : ''}
+                    ${round.motion ? `<span style="font-size:12px;color:#64748b;font-style:italic">${escapeHTML(round.motion.substring(0, 60))}${round.motion.length > 60 ? '…' : ''}</span>` : ''}
                 </div>
                 <div style="display:flex;align-items:center;gap:8px">
-                    <span style="font-size:12px;font-weight:700;color:${allDone?'#10b981':'#f59e0b'}">${done}/${total}</span>
+                    <span style="font-size:12px;font-weight:700;color:${allDone ? '#10b981' : '#f59e0b'}">${done}/${total}</span>
                     <button onclick="window.switchTab('draw')" class="btn-secondary" style="padding:3px 8px;font-size:11px">Full Edit →</button>
                 </div>
             </div>
@@ -4547,7 +4558,7 @@ window.displayAdminRounds = displayAdminRounds;
 // ============================================================================
 function renameSpeakerInBallots(teamId, oldName, newName) {
     if (!oldName || !newName || oldName === newName) return;
-    
+
     const tid = String(teamId); // normalise to string for safe comparison
     let changed = 0;
 
@@ -4556,7 +4567,7 @@ function renameSpeakerInBallots(teamId, oldName, newName) {
 
     (state.rounds || []).forEach(round => {
         let roundModified = false;
-        
+
         (round.debates || []).forEach(debate => {
             if (!debate.entered) return;
             let debateModified = false;
@@ -4566,16 +4577,16 @@ function renameSpeakerInBallots(teamId, oldName, newName) {
             if (debate.govResults && String(debate.gov) === tid) {
                 // Update substantive speakers
                 (debate.govResults.substantive || []).forEach(s => {
-                    if (s.speaker === oldName) { 
-                        s.speaker = newName; 
-                        changed++; 
+                    if (s.speaker === oldName) {
+                        s.speaker = newName;
+                        changed++;
                         debateModified = true;
                     }
                 });
-                
+
                 // Update reply speaker
                 if (debate.govResults.reply && debate.govResults.reply.speaker === oldName) {
-                    debate.govResults.reply.speaker = newName; 
+                    debate.govResults.reply.speaker = newName;
                     changed++;
                     debateModified = true;
                 }
@@ -4585,16 +4596,16 @@ function renameSpeakerInBallots(teamId, oldName, newName) {
             if (debate.oppResults && String(debate.opp) === tid) {
                 // Update substantive speakers
                 (debate.oppResults.substantive || []).forEach(s => {
-                    if (s.speaker === oldName) { 
-                        s.speaker = newName; 
-                        changed++; 
+                    if (s.speaker === oldName) {
+                        s.speaker = newName;
+                        changed++;
                         debateModified = true;
                     }
                 });
-                
+
                 // Update reply speaker
                 if (debate.oppResults.reply && debate.oppResults.reply.speaker === oldName) {
-                    debate.oppResults.reply.speaker = newName; 
+                    debate.oppResults.reply.speaker = newName;
                     changed++;
                     debateModified = true;
                 }
@@ -4602,11 +4613,11 @@ function renameSpeakerInBallots(teamId, oldName, newName) {
 
             // ── BP format ─────────────────────────────────────────────────
             if (debate.bpSpeakers) {
-                ['og','oo','cg','co'].forEach(pos => {
+                ['og', 'oo', 'cg', 'co'].forEach(pos => {
                     if (String(debate[pos]) === tid) {
                         (debate.bpSpeakers[pos] || []).forEach(s => {
-                            if (s.speaker === oldName) { 
-                                s.speaker = newName; 
+                            if (s.speaker === oldName) {
+                                s.speaker = newName;
                                 changed++;
                                 debateModified = true;
                             }
@@ -4614,23 +4625,23 @@ function renameSpeakerInBallots(teamId, oldName, newName) {
                     }
                 });
             }
-            
+
             if (debateModified) roundModified = true;
         });
-        
+
         if (roundModified) modifiedRoundIds.add(round.id);
     });
 
     if (changed > 0) {
         console.log(`✅ Renamed speaker "${oldName}" → "${newName}" in ${changed} ballot entries`);
-        
+
         // Force UI refresh - call ALL render functions to ensure everything updates
         setTimeout(() => {
             // Refresh speaker standings
             if (typeof window.renderSpeakerStandings === 'function') {
                 window.renderSpeakerStandings();
             }
-            
+
             // Refresh draw view
             if (typeof window.displayRounds === 'function') {
                 window.displayRounds();
@@ -4638,12 +4649,12 @@ function renameSpeakerInBallots(teamId, oldName, newName) {
             if (typeof window.renderDraw === 'function') {
                 window.renderDraw();
             }
-            
+
             // Refresh admin view if visible
             if (typeof window.displayAdminRounds === 'function') {
                 window.displayAdminRounds();
             }
-            
+
             // Refresh any other views that might show speaker names
             if (typeof window.renderResults === 'function') {
                 window.renderResults();
@@ -4653,7 +4664,7 @@ function renameSpeakerInBallots(teamId, oldName, newName) {
             }
         }, 10); // Small delay to ensure all updates are processed
     }
-    
+
     return changed;
 }
 window.renameSpeakerInBallots = renameSpeakerInBallots;
@@ -4668,9 +4679,9 @@ function _debouncedRenderDraw() {
     }, 30);
 }
 watch('rounds', renderStandings);
-watch('teams',  renderStandings);
+watch('teams', renderStandings);
 watch('rounds', _debouncedRenderDraw);
-watch('teams',  _debouncedRenderDraw);
+watch('teams', _debouncedRenderDraw);
 
 // ============================================================================
 // BACKFILL — patch rounds created before rooms array was initialized
@@ -4799,11 +4810,11 @@ async function addDebate(roundIdx, debateIdx) {
 
 function _toggleDrawView() {
     let prefs = {};
-    try { prefs = JSON.parse(localStorage.getItem('orion_draw_prefs') || '{}'); } catch(e) { /* ignore corrupt draw prefs */ }
+    try { prefs = JSON.parse(localStorage.getItem('orion_draw_prefs') || '{}'); } catch (e) { /* ignore corrupt draw prefs */ }
     const current = prefs['miniView'] || false;
     prefs['miniView'] = !current;
     localStorage.setItem('orion_draw_prefs', JSON.stringify(prefs));
-    
+
     const btn = document.getElementById('draw-view-toggle');
     if (btn) {
         btn.textContent = current ? '📋 List Mode' : '📝 Edit Mode';
@@ -4811,9 +4822,9 @@ function _toggleDrawView() {
     displayRounds();
 }
 
-window.displayRounds        = displayRounds;
-window._setNameDisplay      = _setNameDisplay;
-window._toggleDrawView      = _toggleDrawView;
+window.displayRounds = displayRounds;
+window._setNameDisplay = _setNameDisplay;
+window._toggleDrawView = _toggleDrawView;
 window.renderRoundMiniTable = renderRoundMiniTable;
 
 function _restoreRoundSettingsMenu(menu) {
@@ -4854,7 +4865,7 @@ function _positionRoundSettingsMenu(menu, roundId) {
     menu.style.visibility = '';
 }
 
-window._toggleRoundSettings = function(roundId) {
+window._toggleRoundSettings = function (roundId) {
     const menu = document.getElementById(`round-settings-${roundId}`);
     if (!menu) return;
     const wasOpen = menu.style.display !== 'none';
@@ -4870,14 +4881,14 @@ window._toggleRoundSettings = function(roundId) {
         if (card) card.style.zIndex = '3000';
     }
 };
-window._closeRoundSettings = function() {
+window._closeRoundSettings = function () {
     document.querySelectorAll('.round-settings-menu').forEach(m => {
         m.style.display = 'none';
         _restoreRoundSettingsMenu(m);
     });
     document.querySelectorAll('.round-card-wrap').forEach(card => { card.style.zIndex = ''; });
 };
-window._editRoundMotion = async function(roundId) {
+window._editRoundMotion = async function (roundId) {
     const round = (state.rounds || []).find(r => r.id === roundId);
     const current = round?.motion || '';
     const motion = window.prompt('Set motion for this round:', current);
@@ -4905,39 +4916,39 @@ if (!window._roundSettingsListenerBound) {
     window.addEventListener('scroll', () => window._closeRoundSettings?.(), true);
     window._roundSettingsListenerBound = true;
 }
-window.showEnterResults     = showEnterResults;
-window.submitResults        = submitResults;
-window.editResults          = editResults;
-window.viewDebateDetails    = viewDebateDetails;
-window.redrawRound          = redrawRound;
-window.swapTeams            = swapTeams;
-window.toggleBlindRound     = toggleBlindRound;
-window.toggleAttendance     = toggleAttendance;
-window.copyRoomURL          = copyRoomURL;
-window.renameRoom           = renameRoom;
-window.deleteDebate         = deleteDebate;
-window.addDebate            = addDebate ;
-window.showMoveTeamModal    = showMoveTeamModal;
+window.showEnterResults = showEnterResults;
+window.submitResults = submitResults;
+window.editResults = editResults;
+window.viewDebateDetails = viewDebateDetails;
+window.redrawRound = redrawRound;
+window.swapTeams = swapTeams;
+window.toggleBlindRound = toggleBlindRound;
+window.toggleAttendance = toggleAttendance;
+window.copyRoomURL = copyRoomURL;
+window.renameRoom = renameRoom;
+window.deleteDebate = deleteDebate;
+window.addDebate = addDebate;
+window.showMoveTeamModal = showMoveTeamModal;
 window.showAssignTeamsModal = showAssignTeamsModal;
-window.executeAssignTeams   = executeAssignTeams;
-window.executeMoveTeam      = executeMoveTeam;
-window.addJudgeToPanel      = addJudgeToPanel;
+window.executeAssignTeams = executeAssignTeams;
+window.executeMoveTeam = executeMoveTeam;
+window.addJudgeToPanel = addJudgeToPanel;
 window.removeJudgeFromPanel = removeJudgeFromPanel;
-window.moveJudgeToPanel     = moveJudgeToPanel;
-window.toggleJudgeRole      = toggleJudgeRole;
-window.dndJudgeDragStart    = dndJudgeDragStart;
-window.dndJudgeDragOver     = dndJudgeDragOver;
-window.dndJudgeDrop         = dndJudgeDrop;
-window.dndKoJudgeDragStart  = dndKoJudgeDragStart;
-window.dndKoJudgeDragOver   = dndKoJudgeDragOver;
-window.dndKoJudgeDrop       = dndKoJudgeDrop;
-window.toggleKoJudgeRole    = toggleKoJudgeRole;
-window.dndTeamDragStart     = dndTeamDragStart;
-window.dndTeamDragOver      = dndTeamDragOver;
-window.dndTeamDrop          = dndTeamDrop;
-window.dndDragEnd           = dndDragEnd;
-window.dndDragLeave         = dndDragLeave;
-window.showJudgeManagement  = showJudgeManagement;
+window.moveJudgeToPanel = moveJudgeToPanel;
+window.toggleJudgeRole = toggleJudgeRole;
+window.dndJudgeDragStart = dndJudgeDragStart;
+window.dndJudgeDragOver = dndJudgeDragOver;
+window.dndJudgeDrop = dndJudgeDrop;
+window.dndKoJudgeDragStart = dndKoJudgeDragStart;
+window.dndKoJudgeDragOver = dndKoJudgeDragOver;
+window.dndKoJudgeDrop = dndKoJudgeDrop;
+window.toggleKoJudgeRole = toggleKoJudgeRole;
+window.dndTeamDragStart = dndTeamDragStart;
+window.dndTeamDragOver = dndTeamDragOver;
+window.dndTeamDrop = dndTeamDrop;
+window.dndDragEnd = dndDragEnd;
+window.dndDragLeave = dndDragLeave;
+window.showJudgeManagement = showJudgeManagement;
 window.showTournamentRequiredPrompt = showTournamentRequiredPrompt;
 
 function _avoidPreviousMeetingPairs(pairs) {
@@ -4953,11 +4964,11 @@ function _avoidPreviousMeetingPairs(pairs) {
             for (let j = i + 1; j < pairs.length && !improved; j++) {
                 const [a, b] = pairs[i];
                 const [c, d] = pairs[j];
-                const before = (hasMet(a,b)?1:0) + (hasMet(c,d)?1:0);
-                const s1 = (hasMet(a,c)?1:0) + (hasMet(b,d)?1:0);
-                const s2 = (hasMet(a,d)?1:0) + (hasMet(b,c)?1:0);
-                if (s1 < before) { pairs[i]=[a,c]; pairs[j]=[b,d]; improved=true; }
-                else if (s2 < before) { pairs[i]=[a,d]; pairs[j]=[b,c]; improved=true; }
+                const before = (hasMet(a, b) ? 1 : 0) + (hasMet(c, d) ? 1 : 0);
+                const s1 = (hasMet(a, c) ? 1 : 0) + (hasMet(b, d) ? 1 : 0);
+                const s2 = (hasMet(a, d) ? 1 : 0) + (hasMet(b, c) ? 1 : 0);
+                if (s1 < before) { pairs[i] = [a, c]; pairs[j] = [b, d]; improved = true; }
+                else if (s2 < before) { pairs[i] = [a, d]; pairs[j] = [b, c]; improved = true; }
             }
         }
     }
@@ -4997,25 +5008,25 @@ function generateRoundRobinPairs(teams, rounds = []) {
 }
 
 export function createRound(params) {
-    const motion         = params?.motion         ?? document.getElementById('cr-motion')?.value.trim()        ?? 'Debate Round';
-    const method         = params?.method         ?? document.getElementById('cr-pair')?.value                  ?? 'random';
-    const sideMethod     = params?.sideMethod     ?? document.getElementById('cr-sides')?.value                ?? 'random';
-    const sidePref       = params?.sidePref       ?? document.getElementById('cr-side-pref')?.value             ?? 'random';
-    const autoAllocate   = params?.autoAllocate   ?? document.getElementById('cr-autojudge')?.checked          ?? true;
-    const blind          = params?.blind          ?? document.getElementById('cr-blind')?.checked               ?? false;
-    const disableReply   = params?.disableReply   ?? document.getElementById('cr-disable-reply')?.checked       ?? false;
-    const avoidMeetings  = params?.avoidMeetings  ?? document.getElementById('cr-avoid-meetings')?.checked     ?? true;
-    const roomSize       = params?.roomSize       ?? parseInt(document.getElementById('cr-room-size')?.value || '4', 10);
-    const isKnockout   = method === 'knockout';
+    const motion = params?.motion ?? document.getElementById('cr-motion')?.value.trim() ?? 'Debate Round';
+    const method = params?.method ?? document.getElementById('cr-pair')?.value ?? 'random';
+    const sideMethod = params?.sideMethod ?? document.getElementById('cr-sides')?.value ?? 'random';
+    const sidePref = params?.sidePref ?? document.getElementById('cr-side-pref')?.value ?? 'random';
+    const autoAllocate = params?.autoAllocate ?? document.getElementById('cr-autojudge')?.checked ?? true;
+    const blind = params?.blind ?? document.getElementById('cr-blind')?.checked ?? false;
+    const disableReply = params?.disableReply ?? document.getElementById('cr-disable-reply')?.checked ?? false;
+    const avoidMeetings = params?.avoidMeetings ?? document.getElementById('cr-avoid-meetings')?.checked ?? true;
+    const roomSize = params?.roomSize ?? parseInt(document.getElementById('cr-room-size')?.value || '4', 10);
+    const isKnockout = method === 'knockout';
     const isRoundRobin = method === 'roundrobin';
-    const bpMode       = isBP();
+    const bpMode = isBP();
 
     if (!hasActiveTournament()) {
         showTournamentRequiredPrompt();
         return;
     }
 
-    const activeTeams = (state.teams||[]).filter(t => !t.eliminated);
+    const activeTeams = (state.teams || []).filter(t => !t.eliminated);
     const minTeams = bpMode ? 4 : 2;
     if (activeTeams.length < minTeams) {
         showNotification(`Need at least ${minTeams} active teams${bpMode ? ' for BP' : ''}`, 'error');
@@ -5028,57 +5039,57 @@ export function createRound(params) {
     if (bpMode && !isKnockout) {
         let tc = [...activeTeams];
         if (method === 'power' || method === 'fold') {
-            tc.sort((a,b) => (b.wins||0)-(a.wins||0) || (b.total||0)-(a.total||0));
+            tc.sort((a, b) => (b.wins || 0) - (a.wins || 0) || (b.total || 0) - (a.total || 0));
         } else if (method === 'roundrobin') {
             // try to avoid repeat matchups across all 4 positions
-            tc.sort((a,b) => (b.wins||0)-(a.wins||0) || (b.total||0)-(a.total||0));
+            tc.sort((a, b) => (b.wins || 0) - (a.wins || 0) || (b.total || 0) - (a.total || 0));
         } else {
             tc.sort(() => Math.random() - 0.5);
         }
         const rem = tc.length % 4;
         if (rem !== 0) {
-            showNotification(`${rem} team${rem>1?'s':''} given a bye (BP needs multiples of 4)`, 'warning');
+            showNotification(`${rem} team${rem > 1 ? 's' : ''} given a bye (BP needs multiples of 4)`, 'warning');
             tc = tc.slice(0, tc.length - rem);
         }
         for (let i = 0; i < tc.length; i += 4) {
-            let [og, oo, cg, co] = tc.slice(i, i+4);
+            let [og, oo, cg, co] = tc.slice(i, i + 4);
             // For power/fold: interleave — 1st/3rd as Gov bench, 2nd/4th as Opp bench
             if (method === 'fold') {
                 // fold: 1st vs mid-high in same room
-                const positions = [tc[i], tc[tc.length-1-i/4*2], tc[i+1], tc[tc.length-1-(i/4*2+1)]];
+                const positions = [tc[i], tc[tc.length - 1 - i / 4 * 2], tc[i + 1], tc[tc.length - 1 - (i / 4 * 2 + 1)]];
                 [og, oo, cg, co] = positions;
             }
-            debates.push({ format:'bp', og:og.id, oo:oo.id, cg:cg.id, co:co.id, entered:false, panel:[] });
+            debates.push({ format: 'bp', og: og.id, oo: oo.id, cg: cg.id, co: co.id, entered: false, panel: [] });
         }
         if (autoAllocate) allocateJudgesToDebates(debates, false);
         const roundId = nextRoundNumber();
         const rooms = debates.map((_, i) => `Room ${i + 1}`);
-        state.rounds.push({ id:roundId, motion, debates, rooms, format:'bp', type:'prelim', blinded:blind, sideMethod:'bp', nextRoundCreated:false });
+        state.rounds.push({ id: roundId, motion, debates, rooms, format: 'bp', type: 'prelim', blinded: blind, sideMethod: 'bp', nextRoundCreated: false });
         saveNow();
         const label = method.charAt(0).toUpperCase() + method.slice(1);
-        showNotification(`Round ${roundId} BP (${label}) — ${debates.length} rooms created${blind?' [BLINDED]':''}`, 'success');
+        showNotification(`Round ${roundId} BP (${label}) — ${debates.length} rooms created${blind ? ' [BLINDED]' : ''}`, 'success');
         renderDraw();
         return;
     }
 
     // ── BP: knockout round (4-team rooms) ────────────────────────────────────
     if (bpMode && isKnockout) {
-        let tc = [...activeTeams].sort((a,b) => (b.wins||0)-(a.wins||0)||(b.total||0)-(a.total||0));
+        let tc = [...activeTeams].sort((a, b) => (b.wins || 0) - (a.wins || 0) || (b.total || 0) - (a.total || 0));
         const rem = tc.length % 4;
         if (rem !== 0) {
-            showNotification(`${rem} team${rem>1?'s':''} given a bye (BP knockout needs multiples of 4)`, 'warning');
+            showNotification(`${rem} team${rem > 1 ? 's' : ''} given a bye (BP knockout needs multiples of 4)`, 'warning');
             tc = tc.slice(0, tc.length - rem);
         }
         for (let i = 0; i < tc.length; i += 4) {
-            const [og, oo, cg, co] = tc.slice(i, i+4);
-            debates.push({ format:'bp', og:og.id, oo:oo.id, cg:cg.id, co:co.id, entered:false, panel:[] });
+            const [og, oo, cg, co] = tc.slice(i, i + 4);
+            debates.push({ format: 'bp', og: og.id, oo: oo.id, cg: cg.id, co: co.id, entered: false, panel: [] });
         }
         if (autoAllocate) allocateJudgesToDebates(debates, true);
         const roundId = nextRoundNumber();
         const rooms = debates.map((_, i) => `Room ${i + 1}`);
-        state.rounds.push({ id:roundId, motion, debates, rooms, format:'bp', type:'knockout', blinded:blind, sideMethod:'bp', nextRoundCreated:false });
+        state.rounds.push({ id: roundId, motion, debates, rooms, format: 'bp', type: 'knockout', blinded: blind, sideMethod: 'bp', nextRoundCreated: false });
         saveNow();
-        showNotification(`Round ${roundId} BP Knockout — ${debates.length} rooms created${blind?' [BLINDED]':''}`, 'success');
+        showNotification(`Round ${roundId} BP Knockout — ${debates.length} rooms created${blind ? ' [BLINDED]' : ''}`, 'success');
         renderDraw();
         return;
     }
@@ -5089,11 +5100,11 @@ export function createRound(params) {
         (state.teams || []).forEach(team => {
             (team.speakers || []).forEach(spk => {
                 if (spk.name) allSpks.push({
-                    speakerId:   spk.id || null,
+                    speakerId: spk.id || null,
                     speakerName: spk.name,
-                    teamId:      team.id,
-                    teamName:    team.name,
-                    total:       spk.substantiveTotal || 0
+                    teamId: team.id,
+                    teamName: team.name,
+                    total: spk.substantiveTotal || 0
                 });
             });
         });
@@ -5128,10 +5139,10 @@ export function createRound(params) {
         const speechDebates = [];
         for (let i = 0; i < ordered.length; i += roomSize) {
             speechDebates.push({
-                format:       'speech',
+                format: 'speech',
                 roomSpeakers: ordered.slice(i, i + roomSize),
-                entered:      false,
-                panel:        [],
+                entered: false,
+                panel: [],
                 speechResults: null
             });
         }
@@ -5142,13 +5153,13 @@ export function createRound(params) {
         const rooms = speechDebates.map((_, i) => `Room ${i + 1}`);
 
         state.rounds.push({
-            id:               roundId,
+            id: roundId,
             motion,
-            debates:          speechDebates,
+            debates: speechDebates,
             rooms,
-            format:           'speech',
-            type:             'prelim',
-            blinded:          blind,
+            format: 'speech',
+            type: 'prelim',
+            blinded: blind,
             nextRoundCreated: false,
             roomSize
         });
@@ -5168,49 +5179,49 @@ export function createRound(params) {
     let pairs = [];
 
     if (isKnockout) {
-        let tc = [...activeTeams].sort((a,b)=>(b.wins||0)-(a.wins||0)||(b.total||0)-(a.total||0));
+        let tc = [...activeTeams].sort((a, b) => (b.wins || 0) - (a.wins || 0) || (b.total || 0) - (a.total || 0));
         if (tc.length % 2 !== 0) tc.pop();
-        const half   = Math.floor(tc.length/2);
-        const top    = tc.slice(0, half);
+        const half = Math.floor(tc.length / 2);
+        const top = tc.slice(0, half);
         const bottom = tc.slice(half).reverse();
-        for (let i=0;i<top.length;i++) pairs.push([top[i], bottom[i]]);
+        for (let i = 0; i < top.length; i++) pairs.push([top[i], bottom[i]]);
     } else if (isRoundRobin) {
         pairs = generateRoundRobinPairs(activeTeams, state.rounds);
         if (pairs.length === 0) {
             showNotification('Could not generate fresh round robin pairs, using power pairing', 'warning');
-            let tc = [...activeTeams].sort((a,b)=>(b.wins||0)-(a.wins||0)||(b.total||0)-(a.total||0));
+            let tc = [...activeTeams].sort((a, b) => (b.wins || 0) - (a.wins || 0) || (b.total || 0) - (a.total || 0));
             if (tc.length % 2 !== 0) tc.pop();
-            for (let i=0;i<tc.length;i+=2) pairs.push([tc[i],tc[i+1]]);
+            for (let i = 0; i < tc.length; i += 2) pairs.push([tc[i], tc[i + 1]]);
         }
     } else if (method === 'fold') {
-        let tc = [...activeTeams].sort((a,b)=>(b.wins||0)-(a.wins||0)||(b.total||0)-(a.total||0));
-        if (tc.length%2!==0){ showNotification(`Odd teams — bye given`,'warning'); tc.pop(); }
-        const mid=Math.floor(tc.length/2);
-        for (let i=0;i<mid;i++) pairs.push([tc[i], tc[tc.length-1-i]]);
+        let tc = [...activeTeams].sort((a, b) => (b.wins || 0) - (a.wins || 0) || (b.total || 0) - (a.total || 0));
+        if (tc.length % 2 !== 0) { showNotification(`Odd teams — bye given`, 'warning'); tc.pop(); }
+        const mid = Math.floor(tc.length / 2);
+        for (let i = 0; i < mid; i++) pairs.push([tc[i], tc[tc.length - 1 - i]]);
     } else if (method === 'power') {
-        let tc = [...activeTeams].sort((a,b)=>(b.wins||0)-(a.wins||0)||(b.total||0)-(a.total||0));
-        if (tc.length%2!==0){ showNotification(`Odd teams — bye given`,'warning'); tc.pop(); }
-        for (let i=0;i<tc.length;i+=2) pairs.push([tc[i],tc[i+1]]);
+        let tc = [...activeTeams].sort((a, b) => (b.wins || 0) - (a.wins || 0) || (b.total || 0) - (a.total || 0));
+        if (tc.length % 2 !== 0) { showNotification(`Odd teams — bye given`, 'warning'); tc.pop(); }
+        for (let i = 0; i < tc.length; i += 2) pairs.push([tc[i], tc[i + 1]]);
     } else {
-        let tc = [...activeTeams].sort(()=>Math.random()-.5);
-        if (tc.length%2!==0){ showNotification(`Odd teams — bye given`,'warning'); tc.pop(); }
-        for (let i=0;i<tc.length;i+=2) pairs.push([tc[i],tc[i+1]]);
+        let tc = [...activeTeams].sort(() => Math.random() - .5);
+        if (tc.length % 2 !== 0) { showNotification(`Odd teams — bye given`, 'warning'); tc.pop(); }
+        for (let i = 0; i < tc.length; i += 2) pairs.push([tc[i], tc[i + 1]]);
     }
 
     if (avoidMeetings && !isKnockout && !isRoundRobin) {
         pairs = _avoidPreviousMeetingPairs(pairs);
     }
 
-    debates = pairs.map(([tA,tB],idx) => {
-        const {gov,opp} = assignSides(tA,tB,sideMethod,idx,sidePref);
-        return { gov, opp, entered:false, panel:[], attendance:{gov:true,opp:true}, sidesPending:sideMethod==='manual' };
+    debates = pairs.map(([tA, tB], idx) => {
+        const { gov, opp } = assignSides(tA, tB, sideMethod, idx, sidePref);
+        return { gov, opp, entered: false, panel: [], attendance: { gov: true, opp: true }, sidesPending: sideMethod === 'manual' };
     });
 
     if (autoAllocate) allocateJudgesToDebates(debates, isKnockout);
 
     const roundId = nextRoundNumber();
     const rooms = debates.map((_, i) => `Room ${i + 1}`);
-    const newRound = { id:roundId, motion, debates, rooms, type:isKnockout?'knockout':'prelim', blinded:blind, disableReply, sideMethod, nextRoundCreated:false };
+    const newRound = { id: roundId, motion, debates, rooms, type: isKnockout ? 'knockout' : 'prelim', blinded: blind, disableReply, sideMethod, nextRoundCreated: false };
     state.rounds.push(newRound);
     saveNow();
 
@@ -5227,8 +5238,8 @@ export function createRound(params) {
             showNotification(`Round kept locally; online save failed: ${error.message}`, 'error');
         });
 
-    const label = isKnockout ? 'Knockout' : isRoundRobin ? 'Round Robin' : (method||'random').charAt(0).toUpperCase()+(method||'random').slice(1);
-    showNotification(`Round ${roundId} (${label}) created with ${debates.length} debates${blind?' [BLINDED]':''}`, 'success');
+    const label = isKnockout ? 'Knockout' : isRoundRobin ? 'Round Robin' : (method || 'random').charAt(0).toUpperCase() + (method || 'random').slice(1);
+    showNotification(`Round ${roundId} (${label}) created with ${debates.length} debates${blind ? ' [BLINDED]' : ''}`, 'success');
 
     renderDraw();   // refresh the draw tab
 }
@@ -5241,80 +5252,80 @@ export function displayRounds() {
 
     try {
 
-    const filter   = document.getElementById('round-filter')?.value || 'all';
-    window._saveDrawPref?.('round-filter', filter);
-    const isJudge  = state.auth?.currentUser?.role === 'judge';
-    const myJudgeId = isJudge ? String(state.auth?.currentUser?.associatedId ?? '') : null;
+        const filter = document.getElementById('round-filter')?.value || 'all';
+        window._saveDrawPref?.('round-filter', filter);
+        const isJudge = state.auth?.currentUser?.role === 'judge';
+        const myJudgeId = isJudge ? String(state.auth?.currentUser?.associatedId ?? '') : null;
 
-    // Shallow copy rounds and ensure each has a debates array
-    const allRounds = (state.rounds || []).map(r => {
-        const copy = { ...r };
-        if (!Array.isArray(copy.debates)) copy.debates = [];
-        return copy;
-    });
+        // Shallow copy rounds and ensure each has a debates array
+        const allRounds = (state.rounds || []).map(r => {
+            const copy = { ...r };
+            if (!Array.isArray(copy.debates)) copy.debates = [];
+            return copy;
+        });
 
-    // Knockout rounds are never subject to prelim filters (pending/completed/blinded).
-    // Split BEFORE filtering so a "Blind" filter doesn't erase the outround draw.
-    const knockoutRounds = allRounds.filter(r => r.type === 'knockout');
-    let filteredRounds   = allRounds.filter(r => r.type !== 'knockout');
+        // Knockout rounds are never subject to prelim filters (pending/completed/blinded).
+        // Split BEFORE filtering so a "Blind" filter doesn't erase the outround draw.
+        const knockoutRounds = allRounds.filter(r => r.type === 'knockout');
+        let filteredRounds = allRounds.filter(r => r.type !== 'knockout');
 
-    if (filter === 'pending') {
-        filteredRounds = filteredRounds.filter(r => (r.debates || []).some(d => !d.entered));
-    } else if (filter === 'completed') {
-        filteredRounds = filteredRounds.filter(r => (r.debates || []).every(d => d.entered));
-    } else if (filter === 'blinded') {
-        filteredRounds = filteredRounds.filter(r => r.blinded);
-    }
+        if (filter === 'pending') {
+            filteredRounds = filteredRounds.filter(r => (r.debates || []).some(d => !d.entered));
+        } else if (filter === 'completed') {
+            filteredRounds = filteredRounds.filter(r => (r.debates || []).every(d => d.entered));
+        } else if (filter === 'blinded') {
+            filteredRounds = filteredRounds.filter(r => r.blinded);
+        }
 
-    const hasOutroundDraw = !!state.tournament?.active || knockoutRounds.length > 0;
+        const hasOutroundDraw = !!state.tournament?.active || knockoutRounds.length > 0;
 
-    // ── Judge portal: show only the debates this judge is allocated to ────────
-    if (isJudge && myJudgeId) {
-        filteredRounds = filteredRounds
-            .map(r => ({
-                ...r,
-                debates: (r.debates || []).filter(d =>
-                    (d.panel || []).some(p => String(p.id) === myJudgeId)
-                )
-            }))
-            .filter(r => r.debates.length > 0);
+        // ── Judge portal: show only the debates this judge is allocated to ────────
+        if (isJudge && myJudgeId) {
+            filteredRounds = filteredRounds
+                .map(r => ({
+                    ...r,
+                    debates: (r.debates || []).filter(d =>
+                        (d.panel || []).some(p => String(p.id) === myJudgeId)
+                    )
+                }))
+                .filter(r => r.debates.length > 0);
 
-        if (filteredRounds.length === 0 && !hasOutroundDraw) {
-            list.innerHTML = `
+            if (filteredRounds.length === 0 && !hasOutroundDraw) {
+                list.innerHTML = `
             <div style="text-align:center;padding:60px 20px;color:#64748b">
                 <div style="font-size:48px;margin-bottom:12px">📋</div>
                 <h3 style="margin:0 0 8px;color:#1e293b">No Assignments Yet</h3>
                 <p style="margin:0">You have not been allocated to any rounds yet. Check back after the draw is published.</p>
             </div>`;
+                return;
+            }
+        }
+
+        // Only bail early when there is truly nothing to show (prelim filtered + no outrounds)
+        if (filteredRounds.length === 0 && !hasOutroundDraw) {
+            list.innerHTML = '<p style="color: #64748b; text-align: center; padding: 40px;">No rounds match the current filter</p>';
             return;
         }
-    }
 
-    // Only bail early when there is truly nothing to show (prelim filtered + no outrounds)
-    if (filteredRounds.length === 0 && !hasOutroundDraw) {
-        list.innerHTML = '<p style="color: #64748b; text-align: center; padding: 40px;">No rounds match the current filter</p>';
-        return;
-    }
+        const previousMeetings = getPreviousMeetings();
 
-    const previousMeetings = getPreviousMeetings();
+        // Check mini view preference
+        let prefs = {};
+        try { prefs = JSON.parse(localStorage.getItem('orion_draw_prefs') || '{}'); } catch (e) { /* ignore corrupt draw prefs */ }
+        const isMiniView = prefs['miniView'] || false;
 
-    // Check mini view preference
-    let prefs = {};
-    try { prefs = JSON.parse(localStorage.getItem('orion_draw_prefs') || '{}'); } catch(e) { /* ignore corrupt draw prefs */ }
-    const isMiniView = prefs['miniView'] || false;
+        // Update button text
+        const viewBtn = document.getElementById('draw-view-toggle');
+        if (viewBtn) viewBtn.textContent = isMiniView ? '📝 Edit Mode' : '📋 List Mode';
 
-    // Update button text
-    const viewBtn = document.getElementById('draw-view-toggle');
-    if (viewBtn) viewBtn.textContent = isMiniView ? '📝 Edit Mode' : '📋 List Mode';
+        const prelimRounds = filteredRounds.slice().reverse();
 
-    const prelimRounds = filteredRounds.slice().reverse();
+        let html = '';
 
-    let html = '';
-
-    // ── Judge banner ──────────────────────────────────────────────────────────
-    if (isJudge && myJudgeId) {
-        const myJudge = (state.judges || []).find(j => String(j.id) === myJudgeId);
-        html += `
+        // ── Judge banner ──────────────────────────────────────────────────────────
+        if (isJudge && myJudgeId) {
+            const myJudge = (state.judges || []).find(j => String(j.id) === myJudgeId);
+            html += `
         <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:14px 18px;margin-bottom:16px;display:flex;align-items:center;gap:12px">
             <span style="font-size:28px">⚖️</span>
             <div>
@@ -5322,22 +5333,22 @@ export function displayRounds() {
                 <div style="font-size:13px;color:#3b82f6">Showing only your assigned rooms. Submit ballots using the button in each room.</div>
             </div>
         </div>`;
-    }
+        }
 
-    // Display prelim rounds only while the tournament is still in prelim mode.
-    if (!hasOutroundDraw) {
-        prelimRounds.forEach(round => {
-            if (isMiniView) {
-                html += renderRoundMiniTable(round);
-            } else {
-                html += renderRoundCard(round, state.rounds.findIndex(r => r.id === round.id), previousMeetings);
-            }
-        });
-    }
+        // Display prelim rounds only while the tournament is still in prelim mode.
+        if (!hasOutroundDraw) {
+            prelimRounds.forEach(round => {
+                if (isMiniView) {
+                    html += renderRoundMiniTable(round);
+                } else {
+                    html += renderRoundCard(round, state.rounds.findIndex(r => r.id === round.id), previousMeetings);
+                }
+            });
+        }
 
-    // Display knockout rounds created in the Draw tab with the same card UI.
-    if (knockoutRounds.length > 0) {
-        html += `
+        // Display knockout rounds created in the Draw tab with the same card UI.
+        if (knockoutRounds.length > 0) {
+            html += `
         <div style="margin-top:18px">
             ${knockoutRounds.slice().reverse().map(round => (
                 isMiniView
@@ -5345,30 +5356,30 @@ export function displayRounds() {
                     : renderRoundCard(round, state.rounds.findIndex(r => r.id === round.id), previousMeetings)
             )).join('')}
         </div>`;
-    }
-
-    if (state.tournament?.active) html += renderActiveOutroundDraw(isMiniView);
-
-    // Render jump pills (all prelim rounds, newest first mirrors display order)
-    const pillsEl = document.getElementById('draw-jump-pills');
-    if (pillsEl) {
-        const allPrelim = (state.rounds || []).filter(r => r.type !== 'knockout');
-        if (!hasOutroundDraw && allPrelim.length > 1) {
-            pillsEl.innerHTML = allPrelim.slice().reverse().map(r => {
-                const done = (r.debates || []).every(d => d.entered) && (r.debates||[]).length > 0;
-                const clr  = done ? 'background:#d1fae5;border-color:#6ee7b7;color:#065f46'
-                                  : 'background:#fff;border-color:#e2e8f0;color:#334155';
-                return `<button class="draw-jump-pill" style="${clr}"
-                            onclick="document.getElementById('round-card-${r.id}')?.scrollIntoView({behavior:'smooth',block:'start'})">
-                            R${roundNumber(r)}${done?' ✓':''}
-                        </button>`;
-            }).join('');
-        } else {
-            pillsEl.innerHTML = '';
         }
-    }
 
-    list.innerHTML = html;
+        if (state.tournament?.active) html += renderActiveOutroundDraw(isMiniView);
+
+        // Render jump pills (all prelim rounds, newest first mirrors display order)
+        const pillsEl = document.getElementById('draw-jump-pills');
+        if (pillsEl) {
+            const allPrelim = (state.rounds || []).filter(r => r.type !== 'knockout');
+            if (!hasOutroundDraw && allPrelim.length > 1) {
+                pillsEl.innerHTML = allPrelim.slice().reverse().map(r => {
+                    const done = (r.debates || []).every(d => d.entered) && (r.debates || []).length > 0;
+                    const clr = done ? 'background:#d1fae5;border-color:#6ee7b7;color:#065f46'
+                        : 'background:#fff;border-color:#e2e8f0;color:#334155';
+                    return `<button class="draw-jump-pill" style="${clr}"
+                            onclick="document.getElementById('round-card-${r.id}')?.scrollIntoView({behavior:'smooth',block:'start'})">
+                            R${roundNumber(r)}${done ? ' ✓' : ''}
+                        </button>`;
+                }).join('');
+            } else {
+                pillsEl.innerHTML = '';
+            }
+        }
+
+        list.innerHTML = html;
     } catch (error) {
         console.error('[draw] displayRounds error:', error);
         list.innerHTML = `
@@ -5393,10 +5404,10 @@ export function renderActiveOutroundDraw(isListMode = false) {
     return `
     <div style="margin-top:18px">
         ${bracket.map((round, roundIdx) => (
-            isListMode
-                ? renderActiveOutroundMini(round, roundIdx, bp)
-                : renderActiveOutroundCard(round, roundIdx, currentRound, bp)
-        )).join('')}
+        isListMode
+            ? renderActiveOutroundMini(round, roundIdx, bp)
+            : renderActiveOutroundCard(round, roundIdx, currentRound, bp)
+    )).join('')}
     </div>`;
 }
 
@@ -5414,7 +5425,7 @@ function renderActiveOutroundCard(round, roundIdx, currentRound, bp) {
     <div id="round-card-ko-${roundIdx}" class="round-card-wrap">
         <div class="round-card-hdr" onclick="window._toggleRoundCard('ko-${roundIdx}')">
             <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;flex:1;min-width:0">
-                <span id="round-chevron-ko-${roundIdx}" class="round-chevron${isOpen?' open':''}">▶</span>
+                <span id="round-chevron-ko-${roundIdx}" class="round-chevron${isOpen ? ' open' : ''}">▶</span>
                 <strong style="font-size:16px;color:#1e293b">${escapeHTML(round.name || `Outround ${roundIdx + 1}`)}</strong>
                 <span style="background:#fee2e2;color:#991b1b;padding:2px 10px;border-radius:20px;font-size:11px;font-weight:700">KNOCKOUT</span>
             </div>
@@ -5423,7 +5434,7 @@ function renderActiveOutroundCard(round, roundIdx, currentRound, bp) {
             </div>
         </div>
         <div id="round-mini-ko-${roundIdx}" class="round-mini-summary hidden"></div>
-        <div id="round-body-ko-${roundIdx}" class="round-card-body${isOpen?'':' collapsed'}">
+        <div id="round-body-ko-${roundIdx}" class="round-card-body${isOpen ? '' : ' collapsed'}">
             <div style="display:grid;gap:14px">
                 ${pairings.map((pairing, pairingIdx) => renderActiveOutroundRoom(round, pairing, roundIdx, pairingIdx, roundIdx === currentRound, bp)).join('')}
             </div>
@@ -5441,7 +5452,7 @@ function renderActiveOutroundRoom(round, pairing, roundIdx, pairingIdx, isCurren
     const isLastRound = roundIdx === bracketLen - 1;
 
     return `
-    <div class="draw-room ${pairing.entered?'done':'pending-partial'}" style="border-left-color:${statusDot}">
+    <div class="draw-room ${pairing.entered ? 'done' : 'pending-partial'}" style="border-left-color:${statusDot}">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px">
             <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
                 <strong>${escapeHTML(pairing.room || `Room ${pairingIdx + 1}`)}</strong>
@@ -5482,10 +5493,10 @@ function renderOutroundBPCells(pairing, isInteractive, roundIdx, pairingIdx, isL
     return `
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:${isInteractive ? '6px' : '10px'};">
         ${positions.map(([key, label]) => {
-            const team = _getTeam(pairing[key]);
-            const seed = pairing[`${key}Seed`];
-            if (isInteractive && team) {
-                return `
+        const team = _getTeam(pairing[key]);
+        const seed = pairing[`${key}Seed`];
+        if (isInteractive && team) {
+            return `
                 <div id="inline-bp-card-${roundIdx}-${pairingIdx}-${key}"
                      data-ko-bp-toggle="true"
                      data-ko-round="${roundIdx}" data-ko-pairing="${pairingIdx}"
@@ -5494,13 +5505,13 @@ function renderOutroundBPCells(pairing, isInteractive, roundIdx, pairingIdx, isL
                     <div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">${label}${seed ? ` #${seed}` : ''}</div>
                     <div style="font-weight:700;color:#1e293b;font-size:13px;word-break:break-word;">${escapeHTML(team.name)}</div>
                 </div>`;
-            }
-            return `
+        }
+        return `
             <div style="padding:10px;background:#f8fafc;border-radius:8px;border:1.5px solid #e2e8f0;text-align:center">
                 <div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">${label}${seed ? ` #${seed}` : ''}</div>
                 <div style="font-weight:700;color:#1e293b;font-size:13px;word-break:break-word;">${team ? escapeHTML(team.name) : 'TBD'}</div>
             </div>`;
-        }).join('')}
+    }).join('')}
     </div>
     ${isInteractive ? `
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
@@ -5621,7 +5632,7 @@ function renderActiveOutroundMini(round, roundIdx, bp) {
     </div>`;
 }
 
-window._openOutroundResultModal = function(roundIdx, pairingIdx) {
+window._openOutroundResultModal = function (roundIdx, pairingIdx) {
     if (typeof window.enterKnockoutResult === 'function') {
         window.enterKnockoutResult(roundIdx, pairingIdx);
         return;
@@ -5634,11 +5645,11 @@ export function renderRoundCard(round, actualRoundIdx, previousMeetings) {
     _normalizeRoundPanels(round);
     const debates = round.debates || [];
     const entered = debates.filter(d => d.entered).length;
-    const total   = debates.length;
+    const total = debates.length;
     const isBlinded = round.blinded || false;
     const isNoReply = round.disableReply || false;
     const isAdmin = state.auth?.currentUser?.role === 'admin';
-    let _dp = {}; try { _dp = JSON.parse(localStorage.getItem('orion_draw_prefs') || '{}'); } catch(e) { /* ignore corrupt draw prefs */ }
+    let _dp = {}; try { _dp = JSON.parse(localStorage.getItem('orion_draw_prefs') || '{}'); } catch (e) { /* ignore corrupt draw prefs */ }
     const _displayMode = _dp['display'] || 'names';
     const allDone = entered === total && total > 0;
     const badgeStyle = allDone
@@ -5652,12 +5663,12 @@ export function renderRoundCard(round, actualRoundIdx, previousMeetings) {
     <div id="round-card-${round.id}" class="round-card-wrap">
         <div class="round-card-hdr" onclick="window._toggleRoundCard('${round.id}')">
             <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;flex:1;min-width:0">
-                <span id="round-chevron-${round.id}" class="round-chevron${isOpen?' open':''}">▶</span>
+                <span id="round-chevron-${round.id}" class="round-chevron${isOpen ? ' open' : ''}">▶</span>
                 <strong style="font-size:16px;color:#1e293b">Round ${round.round_number ?? actualRoundIdx + 1}</strong>
-                ${round.type==='knockout'?'<span style="background:#fee2e2;color:#991b1b;padding:2px 10px;border-radius:20px;font-size:11px;font-weight:700">🏆 KNOCKOUT</span>':''}
-                ${isBlinded?'<span style="background:#f1f5f9;color:#475569;padding:2px 10px;border-radius:20px;font-size:11px;font-weight:700">🔒 BLIND</span>':''}
-                ${isNoReply?'<span style="background:#fff7ed;color:#c2410c;padding:2px 10px;border-radius:20px;font-size:11px;font-weight:700">🚫 NO REPLY</span>':''}
-                <span style="font-size:13px;color:#64748b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:300px">${escapeHTML(round.motion||'')}</span>
+                ${round.type === 'knockout' ? '<span style="background:#fee2e2;color:#991b1b;padding:2px 10px;border-radius:20px;font-size:11px;font-weight:700">🏆 KNOCKOUT</span>' : ''}
+                ${isBlinded ? '<span style="background:#f1f5f9;color:#475569;padding:2px 10px;border-radius:20px;font-size:11px;font-weight:700">🔒 BLIND</span>' : ''}
+                ${isNoReply ? '<span style="background:#fff7ed;color:#c2410c;padding:2px 10px;border-radius:20px;font-size:11px;font-weight:700">🚫 NO REPLY</span>' : ''}
+                <span style="font-size:13px;color:#64748b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:300px">${escapeHTML(round.motion || '')}</span>
             </div>
             <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap" onclick="event.stopPropagation()">
                 <span style="${badgeStyle};padding:4px 12px;border-radius:20px;font-size:12px;font-weight:700">${entered}/${total} results</span>
@@ -5666,8 +5677,8 @@ export function renderRoundCard(round, actualRoundIdx, previousMeetings) {
                             title="Round settings">⚙️ Draw Settings</button>
                     <div id="round-settings-${round.id}" class="round-settings-menu" style="display:none">
                         <button class="draw-settings-item" onclick="window.allocateJudgesForRound(${actualRoundIdx});window._closeRoundSettings()">Re-allocate Judges</button>
-                        <button class="draw-settings-item" onclick="window.redrawRound(${actualRoundIdx})" ${entered>0?'disabled title="Results already entered"':''}>🔀 Redraw</button>
-                        <button class="draw-settings-item" onclick="window.addDebate(${actualRoundIdx},${total-1});window._closeRoundSettings()">Add Room</button>
+                        <button class="draw-settings-item" onclick="window.redrawRound(${actualRoundIdx})" ${entered > 0 ? 'disabled title="Results already entered"' : ''}>🔀 Redraw</button>
+                        <button class="draw-settings-item" onclick="window.addDebate(${actualRoundIdx},${total - 1});window._closeRoundSettings()">Add Room</button>
                         <button class="draw-settings-item" onclick="window._showRepeatMeetingsReport('${round.id}')">🔄 Repeat Meetings</button>
                         <button class="draw-settings-item" onclick="window._editRoundMotion('${round.id}');window._closeRoundSettings()">📝 Set Motion</button>
                         <button class="draw-settings-item" onclick="window.toggleTeamNamesDisplay();window._closeRoundSettings()">${_displayMode === 'codes' ? '👁 Show Names' : '🙈 Hide Names'}</button>
@@ -5683,34 +5694,34 @@ export function renderRoundCard(round, actualRoundIdx, previousMeetings) {
                 </tr></thead>
                 <tbody>
                 ${debates.map((debate, i) => {
-                    const room = round.rooms?.[i] || `Room ${i+1}`;
-                    let teamsHtml = '';
-                    if (debate.format === 'bp') {
-                        const og = (state.teams||[]).find(t=>t.id==debate.og);
-                        const oo = (state.teams||[]).find(t=>t.id==debate.oo);
-                        const cg = (state.teams||[]).find(t=>t.id==debate.cg);
-                        const co = (state.teams||[]).find(t=>t.id==debate.co);
-                        teamsHtml = `${escapeHTML(og?.name||'?')}/${escapeHTML(oo?.name||'?')} vs ${escapeHTML(cg?.name||'?')}/${escapeHTML(co?.name||'?')}`;
-                    } else if (debate.format === 'speech') {
-                        teamsHtml = `${(debate.roomSpeakers||[]).length} speakers`;
-                    } else {
-                        const gov = (state.teams||[]).find(t=>t.id==debate.gov);
-                        const opp = (state.teams||[]).find(t=>t.id==debate.opp);
-                        teamsHtml = `${escapeHTML(gov?.name||'TBD')} vs ${escapeHTML(opp?.name||'TBD')}`;
-                    }
-                    _normalizePanelRoles(debate);
-                    const panel = debate.panel || [];
-                    const chairEntry     = panel.find(p => p.role === 'chair');
-                    const wingEntries    = panel.filter(p => p.role !== 'chair' && p.role !== 'trainee');
-                    const traineeEntries = panel.filter(p => p.role === 'trainee');
-                    const chairJudge     = chairEntry ? (state.judges||[]).find(j=>j.id==chairEntry.id) : null;
-                    const wingNames      = wingEntries.map(p=>(state.judges||[]).find(j=>j.id==p.id)?.name||'').filter(Boolean);
-                    const traineeNames   = traineeEntries.map(p=>(state.judges||[]).find(j=>j.id==p.id)?.name||'').filter(Boolean);
-                    const status = debate.entered ? '✅' : panel.length ? '⏳' : '⚠️';
-                    const chairHtml = chairJudge
-                        ? `${escapeHTML(chairJudge.name)}<span class="rmt-c">(c)</span>`
-                        : `<span style="color:#94a3b8">—</span>`;
-                    return `<tr>
+        const room = round.rooms?.[i] || `Room ${i + 1}`;
+        let teamsHtml = '';
+        if (debate.format === 'bp') {
+            const og = (state.teams || []).find(t => t.id == debate.og);
+            const oo = (state.teams || []).find(t => t.id == debate.oo);
+            const cg = (state.teams || []).find(t => t.id == debate.cg);
+            const co = (state.teams || []).find(t => t.id == debate.co);
+            teamsHtml = `${escapeHTML(og?.name || '?')}/${escapeHTML(oo?.name || '?')} vs ${escapeHTML(cg?.name || '?')}/${escapeHTML(co?.name || '?')}`;
+        } else if (debate.format === 'speech') {
+            teamsHtml = `${(debate.roomSpeakers || []).length} speakers`;
+        } else {
+            const gov = (state.teams || []).find(t => t.id == debate.gov);
+            const opp = (state.teams || []).find(t => t.id == debate.opp);
+            teamsHtml = `${escapeHTML(gov?.name || 'TBD')} vs ${escapeHTML(opp?.name || 'TBD')}`;
+        }
+        _normalizePanelRoles(debate);
+        const panel = debate.panel || [];
+        const chairEntry = panel.find(p => p.role === 'chair');
+        const wingEntries = panel.filter(p => p.role !== 'chair' && p.role !== 'trainee');
+        const traineeEntries = panel.filter(p => p.role === 'trainee');
+        const chairJudge = chairEntry ? (state.judges || []).find(j => j.id == chairEntry.id) : null;
+        const wingNames = wingEntries.map(p => (state.judges || []).find(j => j.id == p.id)?.name || '').filter(Boolean);
+        const traineeNames = traineeEntries.map(p => (state.judges || []).find(j => j.id == p.id)?.name || '').filter(Boolean);
+        const status = debate.entered ? '✅' : panel.length ? '⏳' : '⚠️';
+        const chairHtml = chairJudge
+            ? `${escapeHTML(chairJudge.name)}<span class="rmt-c">(c)</span>`
+            : `<span style="color:#94a3b8">—</span>`;
+        return `<tr>
                         <td class="rmt-room">${escapeHTML(room)}</td>
                         <td class="rmt-teams">${teamsHtml}</td>
                         <td class="rmt-chair">${chairHtml}</td>
@@ -5718,11 +5729,11 @@ export function renderRoundCard(round, actualRoundIdx, previousMeetings) {
                         <td class="rmt-trainee">${traineeNames.length ? escapeHTML(traineeNames.join(', ')) : '<span style="color:#94a3b8">—</span>'}</td>
                         <td class="rmt-status">${status}</td>
                     </tr>`;
-                }).join('')}
+    }).join('')}
                 </tbody>
             </table>
         </div>
-        <div id="round-body-${round.id}" class="round-card-body${isOpen?'':' collapsed'}">
+        <div id="round-body-${round.id}" class="round-card-body${isOpen ? '' : ' collapsed'}">
             <div style="display:grid;gap:14px">
                 ${debates.map((debate, i) => renderDebateCard(round, debate, actualRoundIdx, i, previousMeetings)).join('')}
             </div>
@@ -5737,41 +5748,41 @@ function _roundNum(round) {
 function renderRoundMiniTable(round) {
     const debates = round.debates || [];
     const rooms = round.rooms || [];
-    
+
     // Get display preference (names or codes)
     let prefs = {};
-    try { prefs = JSON.parse(localStorage.getItem('orion_draw_prefs') || '{}'); } catch(e) { /* ignore corrupt draw prefs */ }
+    try { prefs = JSON.parse(localStorage.getItem('orion_draw_prefs') || '{}'); } catch (e) { /* ignore corrupt draw prefs */ }
     const displayMode = prefs['display'] || 'names';
-    
+
     const getDisplayName = (team) => {
         if (!team) return '?';
         return displayMode === 'codes' && team.code ? team.code : team.name;
     };
-    
+
     const rows = debates.map((debate, i) => {
-        const room = rooms[i] || `Room ${i+1}`;
+        const room = rooms[i] || `Room ${i + 1}`;
         let teamsHtml = '';
         if (debate.format === 'bp') {
-            const og = (state.teams||[]).find(t=>t.id==debate.og);
-            const oo = (state.teams||[]).find(t=>t.id==debate.oo);
-            const cg = (state.teams||[]).find(t=>t.id==debate.cg);
-            const co = (state.teams||[]).find(t=>t.id==debate.co);
+            const og = (state.teams || []).find(t => t.id == debate.og);
+            const oo = (state.teams || []).find(t => t.id == debate.oo);
+            const cg = (state.teams || []).find(t => t.id == debate.cg);
+            const co = (state.teams || []).find(t => t.id == debate.co);
             teamsHtml = `${escapeHTML(getDisplayName(og))}/${escapeHTML(getDisplayName(oo))} vs ${escapeHTML(getDisplayName(cg))}/${escapeHTML(getDisplayName(co))}`;
         } else if (debate.format === 'speech') {
-            teamsHtml = `${(debate.roomSpeakers||[]).length} speakers`;
+            teamsHtml = `${(debate.roomSpeakers || []).length} speakers`;
         } else {
-            const gov = (state.teams||[]).find(t=>t.id==debate.gov);
-            const opp = (state.teams||[]).find(t=>t.id==debate.opp);
+            const gov = (state.teams || []).find(t => t.id == debate.gov);
+            const opp = (state.teams || []).find(t => t.id == debate.opp);
             teamsHtml = `${escapeHTML(getDisplayName(gov))} vs ${escapeHTML(getDisplayName(opp))}`;
         }
         _normalizePanelRoles(debate);
         const panel = debate.panel || [];
-        const chairEntry     = panel.find(p => p.role === 'chair');
-        const wingEntries    = panel.filter(p => p.role !== 'chair' && p.role !== 'trainee');
+        const chairEntry = panel.find(p => p.role === 'chair');
+        const wingEntries = panel.filter(p => p.role !== 'chair' && p.role !== 'trainee');
         const traineeEntries = panel.filter(p => p.role === 'trainee');
-        const chairJudge     = chairEntry ? (state.judges||[]).find(j=>j.id==chairEntry.id) : null;
-        const wingNames      = wingEntries.map(p=>(state.judges||[]).find(j=>j.id==p.id)?.name||'').filter(Boolean);
-        const traineeNames   = traineeEntries.map(p=>(state.judges||[]).find(j=>j.id==p.id)?.name||'').filter(Boolean);
+        const chairJudge = chairEntry ? (state.judges || []).find(j => j.id == chairEntry.id) : null;
+        const wingNames = wingEntries.map(p => (state.judges || []).find(j => j.id == p.id)?.name || '').filter(Boolean);
+        const traineeNames = traineeEntries.map(p => (state.judges || []).find(j => j.id == p.id)?.name || '').filter(Boolean);
         const status = debate.entered ? '✅' : panel.length ? '⏳' : '⚠️';
         const chairHtml = chairJudge
             ? `${escapeHTML(chairJudge.name)}<span class="rmt-c">(c)</span>`
@@ -5790,9 +5801,9 @@ function renderRoundMiniTable(round) {
     <div style="margin-bottom:16px;">
         <div style="background:#f8fafc;padding:8px 12px;border-radius:6px 6px 0 0;border:1px solid #e2e8f0;border-bottom:none;">
             <strong style="font-size:14px;color:#1e293b;">Round ${_roundNum(round)}</strong>
-            ${round.type==='knockout'?'<span style="background:#fee2e2;color:#991b1b;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;margin-left:8px;">🏆 KO</span>':''}
-            ${round.blinded?'<span style="background:#f1f5f9;color:#475569;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;margin-left:8px;">🔒 Blind</span>':''}
-            <span style="font-size:12px;color:#64748b;margin-left:12px;">${debates.filter(d=>d.entered).length}/${debates.length} results</span>
+            ${round.type === 'knockout' ? '<span style="background:#fee2e2;color:#991b1b;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;margin-left:8px;">🏆 KO</span>' : ''}
+            ${round.blinded ? '<span style="background:#f1f5f9;color:#475569;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;margin-left:8px;">🔒 Blind</span>' : ''}
+            <span style="font-size:12px;color:#64748b;margin-left:12px;">${debates.filter(d => d.entered).length}/${debates.length} results</span>
         </div>
         <table class="round-mini-table" style="border-radius:0 0 6px 6px;border-top:none;">
             <thead><tr>
@@ -5803,8 +5814,8 @@ function renderRoundMiniTable(round) {
     </div>`;
 }
 
-window._toggleRoundCard = function(roundId) {
-    const body    = document.getElementById(`round-body-${roundId}`);
+window._toggleRoundCard = function (roundId) {
+    const body = document.getElementById(`round-body-${roundId}`);
     const chevron = document.getElementById(`round-chevron-${roundId}`);
     if (!body) return;
     body.classList.toggle('collapsed');
@@ -5814,28 +5825,28 @@ window._toggleRoundCard = function(roundId) {
 };
 
 // Toggle whether a given debate is marked as a repeat meeting
-window.toggleRepeatMeetingForDebate = function(roundId, debateArg) {
-  const rounds = state.rounds || [];
-  const r = rounds.find(ro => ro.id === roundId);
-  if (!r) return;
-  let d = null;
-  // debateArg may be an index (debate position on the round) or an actual debate id
-  if (typeof debateArg === 'number') {
-    d = (r.debates || [])[debateArg];
-  } else {
-    d = (r.debates || []).find(db => db.id === debateArg);
-  }
-  if (!d) return;
-  d.repeatMeeting = !d.repeatMeeting;
-  showNotification('Repeat meeting toggled', 'info');
-  // Re-render the draw to reflect the change
-  if (typeof displayRounds === 'function') displayRounds();
+window.toggleRepeatMeetingForDebate = function (roundId, debateArg) {
+    const rounds = state.rounds || [];
+    const r = rounds.find(ro => ro.id === roundId);
+    if (!r) return;
+    let d = null;
+    // debateArg may be an index (debate position on the round) or an actual debate id
+    if (typeof debateArg === 'number') {
+        d = (r.debates || [])[debateArg];
+    } else {
+        d = (r.debates || []).find(db => db.id === debateArg);
+    }
+    if (!d) return;
+    d.repeatMeeting = !d.repeatMeeting;
+    showNotification('Repeat meeting toggled', 'info');
+    // Re-render the draw to reflect the change
+    if (typeof displayRounds === 'function') displayRounds();
 };
 
 // Quick toggle for team name display (names vs codes) using existing prefs
-window.toggleTeamNamesDisplay = function() {
+window.toggleTeamNamesDisplay = function () {
     let savedPrefs = {};
-    try { savedPrefs = JSON.parse(localStorage.getItem('orion_draw_prefs') || '{}'); } catch(e) { /* ignore corrupt draw prefs */ }
+    try { savedPrefs = JSON.parse(localStorage.getItem('orion_draw_prefs') || '{}'); } catch (e) { /* ignore corrupt draw prefs */ }
     const current = savedPrefs['display'] || 'names';
     savedPrefs['display'] = current === 'names' ? 'codes' : 'names';
     localStorage.setItem('orion_draw_prefs', JSON.stringify(savedPrefs));
@@ -5843,7 +5854,7 @@ window.toggleTeamNamesDisplay = function() {
 };
 
 // Scan a round for repeat meetings (only counts prior rounds, not the current one)
-window._showRepeatMeetingsReport = function(roundId) {
+window._showRepeatMeetingsReport = function (roundId) {
     window._closeRoundSettings();
     const rounds = state.rounds || [];
     const round = rounds.find(r => r.id === roundId);
@@ -5921,11 +5932,11 @@ window._showRepeatMeetingsReport = function(roundId) {
     document.body.appendChild(overlay);
 };
 
-window.createRound          = createRound;
+window.createRound = createRound;
 window.renameSpeakerInBallots = renameSpeakerInBallots;
 
 // BP-specific DnD dragover (og/oo/cg/co positions, no gov/opp assumption)
-window.dndBPTeamDragOver = function(event, toRound, toDebate, toSide) {
+window.dndBPTeamDragOver = function (event, toRound, toDebate, toSide) {
     if (window._dnd?.type !== 'team') return;
     event.preventDefault();
     const zone = event.currentTarget;
@@ -5935,7 +5946,7 @@ window.dndBPTeamDragOver = function(event, toRound, toDebate, toSide) {
 };
 
 // Reallocate judges for any round (respects rating + availability)
-window.allocateJudgesForRound = function(roundIdx) {
+window.allocateJudgesForRound = function (roundIdx) {
     const round = state.rounds?.[roundIdx];
     if (!round) return;
     allocateJudgesToDebates(round.debates, round.type === 'knockout');
@@ -5945,7 +5956,7 @@ window.allocateJudgesForRound = function(roundIdx) {
 };
 
 // Set judge quality rating (1-10)
-window.setJudgeRating = function(judgeId, rating) {
+window.setJudgeRating = function (judgeId, rating) {
     const judge = (state.judges || []).find(j => String(j.id) === String(judgeId));
     if (!judge) return;
     judge.rating = Math.max(1, Math.min(10, parseInt(rating) || 5));
@@ -5954,7 +5965,7 @@ window.setJudgeRating = function(judgeId, rating) {
 };
 
 // Toggle judge availability for auto-allocation
-window.toggleJudgeAvailability = function(judgeId) {
+window.toggleJudgeAvailability = function (judgeId) {
     const judge = (state.judges || []).find(j => String(j.id) === String(judgeId));
     if (!judge) return;
     judge.available = judge.available === false ? true : false;
@@ -5967,9 +5978,9 @@ window.toggleJudgeAvailability = function(judgeId) {
     });
 };
 
-export const swapSides      = swapTeams;
+export const swapSides = swapTeams;
 export const openJudgeModal = showJudgeManagement;
-export const enterResults   = showEnterResults;
+export const enterResults = showEnterResults;
 
 // ─── ADD MISSING EXPORT for admin.js ──────────────────────────────────────────
 export { displayAdminRounds, showJudgeManagement };

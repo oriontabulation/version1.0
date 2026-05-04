@@ -743,12 +743,18 @@ async function init() {
         ]);
 
         if (!tournaments.length && _shouldAutoCreateTournamentForCurrentUser()) {
-            const tour = await api.createTournament('My Tournament').catch(() => null);
-            if (tour) tournaments.push(tour);
+            // Auto-creation disabled - user must manually create or restore tournaments
+            console.log('[main] No tournaments found. User must create one manually.');
+            // const tour = await api.createTournament('My Tournament').catch(() => null);
+            // if (tour) tournaments.push(tour);
         }
 
+        // NEVER auto-create default placeholder if Supabase returned empty
+        // This prevents replacing real tournaments with fake ones
         if (!tournaments.length) {
-            tournaments = [_defaultEmptyTournament()];
+            console.warn('[main] No tournaments found in Supabase. Check RLS policies.');
+            // Do NOT set default tournament - let user see empty state
+            tournaments = [];
         }
 
         if (shouldUseLocalTest) {

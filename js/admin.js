@@ -530,7 +530,6 @@ function _sectionTournaments() {
                         ` : ''}
                         <button class="adm-btn secondary xs" onclick="window.adminRenameTournament('${t.id}', '${escapeHTML(t.name).replace(/'/g, "\\'")}')">✏️ Rename</button>
                         <button class="adm-btn secondary xs" onclick="window.adminTournamentSettings('${t.id}', '${escapeHTML(t.name).replace(/'/g, "\\'")}')">⚙️ Settings</button>
-                        <button class="adm-btn danger xs" onclick="window.adminDeleteTournament('${t.id}')" ${isActive && tournaments.length > 1 ? 'disabled' : ''}>🗑️</button>
                     </div>
                 </div>`;
     }).join('')}
@@ -633,22 +632,9 @@ async function adminRenameTournament(id, currentName) {
 window.adminRenameTournament = adminRenameTournament;
 
 async function adminDeleteTournament(id) {
-    if (!confirm('Delete this tournament? This cannot be undone.')) return;
-    try {
-        await api.deleteTournament(id);
-        const currentId = String(state.activeTournamentId) === String(id) ? null : state.activeTournamentId;
-        const remaining = await _reloadTournamentCatalog(currentId, currentId ? {} : { teams: [], judges: [], rounds: [], publish: {} });
-        if (remaining.length > 0) {
-            await adminSwitchTournament(remaining[0].id, { skipConfirm: true });
-        } else {
-            localStorage.removeItem('orion_active_tournament_id');
-            hydrateState({ tournaments: [] });
-            adminSwitchSection('tournaments');
-        }
-        showNotification('Tournament deleted', 'success');
-    } catch (err) {
-        showNotification(`Delete failed: ${err.message}`, 'error');
-    }
+    // Tournament deletion disabled
+    showNotification('Tournament deletion is disabled', 'error');
+    return;
 }
 window.adminDeleteTournament = adminDeleteTournament;
 

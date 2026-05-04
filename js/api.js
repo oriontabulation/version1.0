@@ -82,10 +82,28 @@ export const api = {
 
     // ── Tournaments ───────────────────────────────────────────────────────
     async getTournaments() {
-        return _ok(await supabase.from('tournaments').select('*').is('deleted_at', null).order('created_at'), 'getTournaments');
+        // Try with deleted_at filter, fallback to without if column doesn't exist
+        try {
+            return _ok(await supabase.from('tournaments').select('*').is('deleted_at', null).order('created_at'), 'getTournaments');
+        } catch (e) {
+            if (e.message?.includes('deleted_at')) {
+                console.warn('[api] deleted_at column not found, skipping filter');
+                return _ok(await supabase.from('tournaments').select('*').order('created_at'), 'getTournaments');
+            }
+            throw e;
+        }
     },
     async getDeletedTournaments() {
-        return _ok(await supabase.from('tournaments').select('*').not('deleted_at', 'is', null).order('deleted_at', { ascending: false }), 'getDeletedTournaments');
+        // Column may not exist - return empty array
+        try {
+            return _ok(await supabase.from('tournaments').select('*').not('deleted_at', 'is', null).order('deleted_at', { ascending: false }), 'getDeletedTournaments');
+        } catch (e) {
+            if (e.message?.includes('deleted_at')) {
+                console.warn('[api] deleted_at column not found');
+                return [];
+            }
+            throw e;
+        }
     },
     async createTournament(name, format = 'standard') {
         const user = await api.getCurrentUser();
@@ -107,7 +125,11 @@ export const api = {
             .eq('id', id).select().single(), 'updateTournament');
     },
     async deleteTournament(id) {
-        _ok(await supabase.from('tournaments').update({ deleted_at: new Date().toISOString() }).eq('id', id), 'deleteTournament');
+        // Tournament deletion disabled - soft delete removed
+        console.warn('[api] Tournament deletion is disabled');
+        throw new Error('Tournament deletion is disabled. Contact administrator.');
+        // Original code commented out:
+        // _ok(await supabase.from('tournaments').update({ deleted_at: new Date().toISOString() }).eq('id', id), 'deleteTournament');
     },
     async restoreTournament(id) {
         return _ok(await supabase.from('tournaments').update({ deleted_at: null }).eq('id', id).select().single(), 'restoreTournament');
