@@ -1885,7 +1885,119 @@ export async function dndJudgeDrop(event, toRound, toDebate) {
     showNotification(`${judge?.name} moved → ${toRoomLabel}${conflict ? ' (conflict noted)' : ''}`, conflict ? 'warning' : 'success');
 }
 
-// ── TEAM drag handlers 
+// ── KNOCKOUT judge drag handlers ─────────────────────────────────────────────
+
+function _normalizeKoPanelRoles(pairing) {
+    if (!Array.isArray(pairing?.panel)) return;
+    pairing.panel.forEach((entry, i) => {
+        if (entry) entry.role = i === 0 ? 'chair' : 'wing';
+    });
+}
+
+function _refreshKoPanelZone(roundIdx, pairingIdx) {
+    const zone = document.getElementById(`ko-panel-zone-${roundIdx}-${pairingIdx}`);
+    if (!zone) return;
+    const pairing = state.tournament?.bracket?.[roundIdx]?.pairings?.[pairingIdx];
+    const canEdit = pairing && !pairing.entered;
+    const chipsHtml = renderOutroundPanelChips(pairing?.panel || [], roundIdx, pairingIdx, canEdit);
+    // Preserve the Panel label, replace only the chips
+    const label = zone.querySelector('strong');
+    // Remove all non-label children
+    Array.from(zone.childNodes).forEach(n => { if (n !== label) n.remove(); });
+    const tmp = document.createElement('div');
+    tmp.innerHTML = chipsHtml;
+    Array.from(tmp.childNodes).forEach(n => zone.appendChild(n));
+}
+
+export function dndKoJudgeDragStart(event, judgeId, fromRoundIdx, fromPairingIdx) {
+    window._dnd = { type: 'ko-judge', judgeId, fromRound: fromRoundIdx, fromDebate: fromPairingIdx };
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', judgeId);
+    event.currentTarget.classList.add('dragging');
+}
+
+export function dndKoJudgeDragOver(event, toRoundIdx, toPairingIdx) {
+    if (window._dnd?.type !== 'ko-judge') return;
+    event.preventDefault();
+    const zone = event.currentTarget;
+    zone.classList.remove('drag-over', 'drag-over-conflict', 'drag-over-promote');
+    const pairing = state.tournament?.bracket?.[toRoundIdx]?.pairings?.[toPairingIdx];
+    if (!pairing) return;
+    const alreadyHere = (pairing.panel || []).some(p => String(p.id) === String(window._dnd.judgeId));
+    zone.classList.add(alreadyHere ? 'drag-over-promote' : 'drag-over');
+    event.dataTransfer.dropEffect = 'move';
+}
+
+export function dndKoJudgeDrop(event, toRoundIdx, toPairingIdx) {
+    event.preventDefault();
+    event.currentTarget.classList.remove('drag-over', 'drag-over-conflict', 'drag-over-promote');
+    if (window._dnd?.type !== 'ko-judge') return;
+
+    const { judgeId, fromRound: fromRoundIdx, fromDebate: fromPairingIdx } = window._dnd;
+    if (!judgeId) return;
+
+    const toPairing = state.tournament?.bracket?.[toRoundIdx]?.pairings?.[toPairingIdx];
+    if (!toPairing) return;
+
+    const judge = (state.judges || []).find(j => String(j.id) === String(judgeId));
+
+    // Same room: promote to chair
+    if (fromRoundIdx === toRoundIdx && fromPairingIdx === toPairingIdx) {
+        const idx = (toPairing.panel || []).findIndex(p => String(p.id) === String(judgeId));
+        if (idx > 0) {
+            const [entry] = toPairing.panel.splice(idx, 1);
+            toPairing.panel.unshift(entry);
+            _normalizeKoPanelRoles(toPairing);
+            save();
+            _refreshKoPanelZone(toRoundIdx, toPairingIdx);
+            showNotification(`${judge?.name || 'Judge'} promoted to chair`, 'success');
+        }
+        return;
+    }
+
+    // Cross-room: move judge
+    const fromPairing = state.tournament?.bracket?.[fromRoundIdx]?.pairings?.[fromPairingIdx];
+    const toRoom = toPairing.room || `Room ${toPairingIdx + 1}`;
+    const fromRoom = fromPairing?.room || `Room ${fromPairingIdx + 1}`;
+    const removeMsg = fromPairing ? `\n\nThis removes them from ${fromRoom}.` : '';
+
+    if (!confirm(`Move ${judge?.name || judgeId} → ${toRoom}?${removeMsg}`)) return;
+
+    if (fromPairing) {
+        fromPairing.panel = (fromPairing.panel || []).filter(p => String(p.id) !== String(judgeId));
+        _normalizeKoPanelRoles(fromPairing);
+    }
+
+    if (!toPairing.panel) toPairing.panel = [];
+    if (!toPairing.panel.some(p => String(p.id) === String(judgeId))) {
+        toPairing.panel.push({ id: judgeId, role: toPairing.panel.length === 0 ? 'chair' : 'wing' });
+    }
+    _normalizeKoPanelRoles(toPairing);
+
+    save();
+    _refreshKoPanelZone(toRoundIdx, toPairingIdx);
+    if (fromPairing) _refreshKoPanelZone(fromRoundIdx, fromPairingIdx);
+    showNotification(`${judge?.name || 'Judge'} moved → ${toRoom}`, 'success');
+}
+
+export function toggleKoJudgeRole(roundIdx, pairingIdx, judgeId) {
+    const pairing = state.tournament?.bracket?.[roundIdx]?.pairings?.[pairingIdx];
+    if (!pairing?.panel?.length) return;
+    const idx = pairing.panel.findIndex(p => String(p.id) === String(judgeId));
+    if (idx === -1) return;
+    if (idx === 0 && pairing.panel.length > 1) {
+        const [entry] = pairing.panel.splice(0, 1);
+        pairing.panel.push(entry);
+    } else if (idx > 0) {
+        const [entry] = pairing.panel.splice(idx, 1);
+        pairing.panel.unshift(entry);
+    }
+    _normalizeKoPanelRoles(pairing);
+    save();
+    _refreshKoPanelZone(roundIdx, pairingIdx);
+}
+
+// ── TEAM drag handlers
 
 export function dndTeamDragStart(event, fromRound, fromDebate, fromSide) {
     window._dnd = { type: 'team', judgeId: null, fromRound, fromDebate, fromSide };
@@ -4812,6 +4924,10 @@ window.toggleJudgeRole      = toggleJudgeRole;
 window.dndJudgeDragStart    = dndJudgeDragStart;
 window.dndJudgeDragOver     = dndJudgeDragOver;
 window.dndJudgeDrop         = dndJudgeDrop;
+window.dndKoJudgeDragStart  = dndKoJudgeDragStart;
+window.dndKoJudgeDragOver   = dndKoJudgeDragOver;
+window.dndKoJudgeDrop       = dndKoJudgeDrop;
+window.toggleKoJudgeRole    = toggleKoJudgeRole;
 window.dndTeamDragStart     = dndTeamDragStart;
 window.dndTeamDragOver      = dndTeamDragOver;
 window.dndTeamDrop          = dndTeamDrop;
@@ -5315,23 +5431,31 @@ function renderActiveOutroundRoom(round, pairing, roundIdx, pairingIdx, isCurren
     const statusDot = pairing.entered ? '#10b981' : (pairing.panel?.length ? '#f59e0b' : '#ef4444');
     const statusLabel = pairing.entered ? 'Done' : isCurrent ? 'Current' : 'Pending';
     const canSubmit = canSubmitOutroundPairing(pairing);
+    const isInteractive = isCurrent && !pairing.entered && canSubmit;
+
+    const bracketLen = state.tournament?.bracket?.length ?? 0;
+    const isLastRound = roundIdx === bracketLen - 1;
 
     return `
     <div class="draw-room ${pairing.entered?'done':'pending-partial'}" style="border-left-color:${statusDot}">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px">
             <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-            <strong>${escapeHTML(pairing.room || `Room ${pairingIdx + 1}`)}</strong>
+                <strong>${escapeHTML(pairing.room || `Room ${pairingIdx + 1}`)}</strong>
                 <span style="color:${statusDot};font-size:12px;font-weight:600">${statusLabel}</span>
                 ${pairing.entered ? renderOutroundResultText(pairing, bp) : ''}
             </div>
-            <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
-                ${isCurrent && !pairing.entered && canSubmit ? `<button type="button" onpointerdown="event.preventDefault();event.stopPropagation();window._openOutroundResultModal(${roundIdx},${pairingIdx})" onclick="event.preventDefault();event.stopPropagation()" class="btn-primary" style="padding:4px 12px;font-size:12px">${bp ? 'Select Advancers' : 'Select Winner'}</button>` : ''}
-            </div>
         </div>
-        ${bp ? renderOutroundBPCells(pairing) : renderOutroundWSDCCells(pairing)}
-        <div class="dnd-judge-zone" style="background:#f8fafc;border-radius:6px;padding:6px 8px;display:flex;flex-wrap:wrap;align-items:center;gap:3px;min-height:34px;">
+        ${bp
+            ? renderOutroundBPCells(pairing, isInteractive, roundIdx, pairingIdx, isLastRound)
+            : renderOutroundWSDCCells(pairing, isInteractive, roundIdx, pairingIdx)}
+        <div id="ko-panel-zone-${roundIdx}-${pairingIdx}" class="dnd-judge-zone"
+             ${!pairing.entered && canSubmit ? `
+                ondragover="window.dndKoJudgeDragOver(event,${roundIdx},${pairingIdx})"
+                ondragleave="window.dndDragLeave(event)"
+                ondrop="window.dndKoJudgeDrop(event,${roundIdx},${pairingIdx})"` : ''}
+             style="background:#f8fafc;border-radius:6px;padding:6px 8px;display:flex;flex-wrap:wrap;align-items:center;gap:3px;min-height:34px;">
             <strong style="font-size:11px;font-weight:700;color:#64748b;margin-right:4px;text-transform:uppercase;letter-spacing:.04em;">Panel</strong>
-            ${renderOutroundPanelChips(pairing.panel || [])}
+            ${renderOutroundPanelChips(pairing.panel || [], roundIdx, pairingIdx, !pairing.entered && canSubmit)}
         </div>
     </div>`;
 }
@@ -5345,27 +5469,77 @@ function canSubmitOutroundPairing(pairing) {
     return (pairing?.panel || []).some(p => String(p.id || p.judge_id) === judgeId);
 }
 
-function renderOutroundBPCells(pairing) {
+function renderOutroundBPCells(pairing, isInteractive, roundIdx, pairingIdx, isLastRound) {
     const positions = [
         ['og', 'OG'], ['oo', 'OO'], ['cg', 'CG'], ['co', 'CO']
     ];
+    const maxPicks = isLastRound ? 1 : 2;
+
     return `
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:${isInteractive ? '6px' : '10px'};">
         ${positions.map(([key, label]) => {
             const team = _getTeam(pairing[key]);
             const seed = pairing[`${key}Seed`];
+            if (isInteractive && team) {
+                return `
+                <div id="inline-bp-card-${roundIdx}-${pairingIdx}-${key}"
+                     data-ko-bp-toggle="true"
+                     data-ko-round="${roundIdx}" data-ko-pairing="${pairingIdx}"
+                     data-ko-bp-pos="${key}" data-ko-bp-team="${escapeHTML(String(pairing[key]))}"
+                     style="padding:10px;background:#f8fafc;border-radius:8px;border:2px solid #e2e8f0;text-align:center;cursor:pointer">
+                    <div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">${label}${seed ? ` #${seed}` : ''}</div>
+                    <div style="font-weight:700;color:#1e293b;font-size:13px;word-break:break-word;">${escapeHTML(team.name)}</div>
+                </div>`;
+            }
             return `
             <div style="padding:10px;background:#f8fafc;border-radius:8px;border:1.5px solid #e2e8f0;text-align:center">
                 <div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">${label}${seed ? ` #${seed}` : ''}</div>
                 <div style="font-weight:700;color:#1e293b;font-size:13px;word-break:break-word;">${team ? escapeHTML(team.name) : 'TBD'}</div>
             </div>`;
         }).join('')}
-    </div>`;
+    </div>
+    ${isInteractive ? `
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+        <span id="inline-bp-counter-${roundIdx}-${pairingIdx}" style="font-size:12px;color:#64748b;flex:1;">
+            ${maxPicks === 1 ? 'Tap team to select winner' : 'Tap 2 teams to select advancers'}
+        </span>
+        <button id="inline-bp-confirm-${roundIdx}-${pairingIdx}"
+                onclick="window._koInlineBPConfirm(${roundIdx},${pairingIdx})"
+                style="display:none;padding:6px 18px;background:#22c55e;color:white;border:none;border-radius:6px;font-weight:700;cursor:pointer;font-size:12px;">
+            Confirm
+        </button>
+    </div>` : ''}`;
 }
 
-function renderOutroundWSDCCells(pairing) {
+function renderOutroundWSDCCells(pairing, isInteractive, roundIdx, pairingIdx) {
     const gov = _getTeam(pairing.gov);
     const opp = _getTeam(pairing.opp);
+
+    if (isInteractive && gov && opp) {
+        return `
+        <div style="display:grid;grid-template-columns:1fr auto 1fr;gap:12px;align-items:center;margin-bottom:10px">
+            <div data-ko-select-winner="${escapeHTML(String(pairing.gov))}"
+                 data-ko-round="${roundIdx}" data-ko-pairing="${pairingIdx}"
+                 style="text-align:center;padding:12px;background:#eff6ff;border-radius:8px;border:2px solid #bfdbfe;cursor:pointer;"
+                 onmouseenter="this.style.background='#dbeafe';this.style.borderColor='#3b82f6'"
+                 onmouseleave="this.style.background='#eff6ff';this.style.borderColor='#bfdbfe'">
+                <div style="font-size:10px;font-weight:700;color:#1d4ed8;margin-bottom:4px">GOV${pairing.govSeed ? ` #${pairing.govSeed}` : ''}</div>
+                <strong>${escapeHTML(gov.name)}</strong>
+                <div style="font-size:10px;color:#3b82f6;margin-top:4px;">Tap to select winner</div>
+            </div>
+            <div style="font-size:12px;font-weight:700;color:#94a3b8">VS</div>
+            <div data-ko-select-winner="${escapeHTML(String(pairing.opp))}"
+                 data-ko-round="${roundIdx}" data-ko-pairing="${pairingIdx}"
+                 style="text-align:center;padding:12px;background:#fdf2f8;border-radius:8px;border:2px solid #fbcfe8;cursor:pointer;"
+                 onmouseenter="this.style.background='#fce7f3';this.style.borderColor='#ec4899'"
+                 onmouseleave="this.style.background='#fdf2f8';this.style.borderColor='#fbcfe8'">
+                <div style="font-size:10px;font-weight:700;color:#be185d;margin-bottom:4px">OPP${pairing.oppSeed ? ` #${pairing.oppSeed}` : ''}</div>
+                <strong>${escapeHTML(opp.name)}</strong>
+                <div style="font-size:10px;color:#be185d;margin-top:4px;">Tap to select winner</div>
+            </div>
+        </div>`;
+    }
+
     return `
     <div style="display:grid;grid-template-columns:1fr auto 1fr;gap:12px;align-items:center;margin-bottom:10px">
         <div style="text-align:center;padding:12px;background:${pairing.winner === pairing.gov ? '#dcfce7' : '#eff6ff'};border-radius:8px;border:1px solid #bfdbfe">
@@ -5380,11 +5554,24 @@ function renderOutroundWSDCCells(pairing) {
     </div>`;
 }
 
-function renderOutroundPanelChips(panel) {
+function renderOutroundPanelChips(panel, roundIdx, pairingIdx, canEdit) {
     if (!panel.length) return '<span style="font-size:12px;color:#ef4444;font-style:italic;">No judges assigned</span>';
     return panel.map(p => {
         const judge = _getJudge(p.id);
-        return `<span class="dnd-judge-chip"><span class="chip-role ${p.role === 'chair' ? 'chair' : ''}">${escapeHTML(p.role || 'wing')}</span>${escapeHTML(judge?.name || p.id)}</span>`;
+        const isChair = p.role === 'chair';
+        const roleLabel = isChair ? 'chair' : 'wing';
+        const roleTitle = canEdit ? (isChair ? 'Chair — click to make wing' : 'Wing — click to make chair') : roleLabel;
+        return `<span class="dnd-judge-chip"
+            ${canEdit ? `draggable="true"
+                ondragstart="window.dndKoJudgeDragStart(event,'${escapeHTML(String(p.id))}',${roundIdx},${pairingIdx})"
+                ondragend="window.dndDragEnd(event)"` : ''}>
+            <span class="chip-role ${isChair ? 'chair' : ''}"
+                  title="${roleTitle}"
+                  ${canEdit ? `onclick="window.toggleKoJudgeRole(${roundIdx},${pairingIdx},'${escapeHTML(String(p.id))}')"` : ''}>
+                ${escapeHTML(roleLabel)}
+            </span>
+            ${escapeHTML(judge?.name || String(p.id))}
+        </span>`;
     }).join('');
 }
 

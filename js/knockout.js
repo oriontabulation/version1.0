@@ -1174,6 +1174,7 @@ function _enterBPResult(roundIndex, pairingIndex) {
         seed: pairing[`${pos.key}Seed`],
     })).filter(s => s.team);
 
+    console.log('[ko] BP slots:', slots.length, _BP_POSITIONS.map(p => ({ pos: p.key, id: pairing[p.key], team: _getTeam(pairing[p.key])?.name })));
     if (slots.length < 4) {
         showNotification('All 4 team positions must be filled before entering results', 'error');
         return;
@@ -1299,6 +1300,7 @@ function _enterWSDCResult(roundIndex, pairingIndex) {
     const gov = _getTeam(pairing.gov);
     const opp = _getTeam(pairing.opp);
 
+    console.log('[ko] WSDC enter:', { gov: pairing.gov, opp: pairing.opp, govTeam: gov?.name, oppTeam: opp?.name });
     if (!gov || !opp) { showNotification('Both teams must be set before entering a result', 'error'); return; }
     window._koWinnerSelection = null;
     window._koActiveResultArgs = { roundIndex, pairingIndex };
@@ -1383,13 +1385,44 @@ document.addEventListener('pointerdown', event => {
 }, true);
 
 document.addEventListener('click', event => {
+    // Inline WSDC team cell on draw card
+    const inlineWsdc = event.target.closest?.('[data-ko-select-winner]');
+    if (inlineWsdc) {
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation?.();
+        const teamId   = inlineWsdc.dataset.koSelectWinner;
+        const roundIdx = parseInt(inlineWsdc.dataset.koRound, 10);
+        const pairIdx  = parseInt(inlineWsdc.dataset.koPairing, 10);
+        console.log('[ko] inline-select-wsdc', { teamId, roundIdx, pairIdx });
+        window._koWinnerSelection = teamId;
+        window._koActiveResultArgs = { roundIndex: roundIdx, pairingIndex: pairIdx };
+        submitKnockoutResult(roundIdx, pairIdx);
+        return;
+    }
+
+    // Inline BP cell toggle on draw card
+    const inlineBp = event.target.closest?.('[data-ko-bp-toggle]');
+    if (inlineBp) {
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation?.();
+        const roundIdx = parseInt(inlineBp.dataset.koRound, 10);
+        const pairIdx  = parseInt(inlineBp.dataset.koPairing, 10);
+        const posKey   = inlineBp.dataset.koBpPos;
+        const teamId   = inlineBp.dataset.koBpTeam;
+        _koInlineBPToggle(roundIdx, pairIdx, posKey, teamId);
+        return;
+    }
+
     const submit = event.target.closest?.('[data-ko-submit-wsdc], [data-ko-submit-bp]');
     if (submit) {
         event.preventDefault();
         event.stopPropagation();
         event.stopImmediatePropagation?.();
         const active = window._koActiveResultArgs;
-        if (active) window.submitKnockoutResult(active.roundIndex, active.pairingIndex);
+        console.log('[ko] click-submit', { target: event.target.tagName, active, hasAttr: submit?.hasAttribute?.('data-ko-submit-wsdc') || submit?.hasAttribute?.('data-ko-submit-bp') });
+        if (active) submitKnockoutResult(active.roundIndex, active.pairingIndex);
         return;
     }
     const bpCard = event.target.closest?.('[data-bp-advancer-card]');
@@ -1424,6 +1457,56 @@ window._koSelectWSDCWinner = function (teamId) {
     const team = _getTeam(teamId);
     if (status) status.textContent = `${team?.name || 'Team'} selected.`;
 };
+
+const _koInlineBPSelections = {};
+
+function _koInlineBPToggle(roundIdx, pairingIdx, posKey, teamId) {
+    const key = `${roundIdx}:${pairingIdx}`;
+    if (!_koInlineBPSelections[key]) _koInlineBPSelections[key] = [];
+    const sel = _koInlineBPSelections[key];
+    const isLastRound = roundIdx === (state.tournament?.bracket?.length ?? 0) - 1;
+    const maxPicks = isLastRound ? 1 : 2;
+    teamId = String(teamId);
+
+    const card = document.getElementById(`inline-bp-card-${roundIdx}-${pairingIdx}-${posKey}`);
+    const idx = sel.indexOf(teamId);
+
+    if (idx !== -1) {
+        sel.splice(idx, 1);
+        if (card) { card.style.borderColor = '#e2e8f0'; card.style.background = '#f8fafc'; }
+    } else {
+        if (sel.length >= maxPicks) return;
+        sel.push(teamId);
+        if (card) {
+            card.style.borderColor = maxPicks === 1 ? '#f59e0b' : '#22c55e';
+            card.style.background = maxPicks === 1 ? '#fef9e7' : '#f0fdf4';
+        }
+    }
+
+    const counter = document.getElementById(`inline-bp-counter-${roundIdx}-${pairingIdx}`);
+    if (counter) {
+        counter.textContent = maxPicks === 1
+            ? (sel.length === 1 ? '1 winner selected — tap Confirm' : 'Tap team to select winner')
+            : `${sel.length} / 2 advancing selected${sel.length === 2 ? ' — tap Confirm' : ''}`;
+    }
+    const confirmBtn = document.getElementById(`inline-bp-confirm-${roundIdx}-${pairingIdx}`);
+    if (confirmBtn) confirmBtn.style.display = sel.length === maxPicks ? 'inline-block' : 'none';
+}
+
+window._koInlineBPConfirm = function(roundIdx, pairingIdx) {
+    const key = `${roundIdx}:${pairingIdx}`;
+    const sel = _koInlineBPSelections[key] || [];
+    const isLastRound = roundIdx === (state.tournament?.bracket?.length ?? 0) - 1;
+    const required = isLastRound ? 1 : 2;
+    if (sel.length !== required) return;
+
+    window._bpAdvancing = [...sel];
+    window._bpAdvancingMax = required;
+    window._koActiveResultArgs = { roundIndex: roundIdx, pairingIndex: pairingIdx };
+    delete _koInlineBPSelections[key];
+    submitKnockoutResult(roundIdx, pairingIdx);
+};
+
 function _refreshKnockoutDisplay() {
     renderKnockout();
     if (typeof window.displayRounds === 'function' && document.getElementById('rounds-list')) {
@@ -1451,6 +1534,8 @@ function submitKnockoutResult(roundIndex, pairingIndex) {
         return;
     }
 
+    const user2 = state.auth?.currentUser;
+    console.log('[ko] submit-called', { roundIndex, pairingIndex, pairingExists: !!pairing, submitKey, alreadySubmitting: window._koSubmitting, role: user2?.role });
     window._koSubmitting = submitKey;
     try {
         _syncTournamentProgress(state.tournament);
@@ -1715,6 +1800,7 @@ function _submitWSDCResult(roundIndex, pairingIndex) {
 function _showModalError(id, msg) {
     const el = document.getElementById(id);
     if (el) { el.style.display = 'block'; el.textContent = msg; }
+    else showNotification(msg, 'error');
 }
 
 function _forceUnlockPageScroll() {
