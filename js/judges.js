@@ -311,9 +311,13 @@ function _buildJudgeCard(judge, isAdmin) {
 async function addJudge() {
     if (!_isAdmin()) { showNotification('Admin access required', 'error'); return; }
 
-    const name = document.getElementById('judge-name')?.value.trim();
-    const email = document.getElementById('judge-email')?.value.trim();
-    const role = document.getElementById('judge-role')?.value || 'panellist';
+    const nameInput = document.getElementById('judge-name');
+    const emailInput = document.getElementById('judge-email');
+    const roleInput = document.getElementById('judge-role');
+    const sourceOverlay = nameInput?.closest('.modal-overlay');
+    const name = nameInput?.value.trim();
+    const email = emailInput?.value.trim();
+    const role = roleInput?.value || 'panellist';
     const tournament = _requireActiveTournament();
     const tournId = tournament?.id;
 
@@ -349,10 +353,15 @@ async function addJudge() {
         updatePublicCounts?.();
         showNotification(`Judge "${name}" added`, 'success');
 
-        document.getElementById('judge-name').value = '';
-        if (document.getElementById('judge-email')) document.getElementById('judge-email').value = '';
-        if (document.getElementById('judge-role')) document.getElementById('judge-role').value = 'panellist';
-        document.querySelectorAll('.judge-affil').forEach(cb => cb.checked = false);
+        if (sourceOverlay) {
+            sourceOverlay.remove();
+            document.body.classList.remove('modal-open', 'modal-scroll-unlocked');
+        } else {
+            if (nameInput) nameInput.value = '';
+            if (emailInput) emailInput.value = '';
+            if (roleInput) roleInput.value = 'panellist';
+            document.querySelectorAll('.judge-affil').forEach(cb => cb.checked = false);
+        }
     } catch (e) {
         showNotification(`Failed to add judge: ${e.message}`, 'error');
     }
@@ -380,12 +389,14 @@ function _ensureJudgeEditModal() {
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
     overlay.id = 'judge-edit-modal';
-    overlay.style.display = 'none';
     overlay.onclick = e => { if (e.target === overlay) _hideJudgeEditModal(); };
 
     const modal = document.createElement('div');
     modal.className = 'modal';
-    modal.style.maxWidth = '620px';
+    // patches.css forces display:block !important on .modal, so flex-column
+    // layouts are overridden. Use overflow-y:auto + max-height (not overridden)
+    // and position:sticky on the footer to keep Save/Cancel always visible.
+    modal.style.cssText = 'max-width:620px;overflow-y:auto;max-height:90vh;';
     modal.innerHTML = `
         <h2 class="u-mt-0" id="judge-edit-title">Edit Judge</h2>
         <div style="display:grid;grid-template-columns:1fr;gap:10px;margin-bottom:14px;">
@@ -406,18 +417,19 @@ function _ensureJudgeEditModal() {
                 </select>
             </label>
         </div>
-        <div style="margin-bottom:14px;">
+        <div style="margin-bottom:4px;">
             <label style="font-size:12px;font-weight:700;color:#64748b;display:block;margin-bottom:8px;">Conflict Affiliations</label>
             <input type="search" id="edit-judge-affil-search" placeholder="Search teams..." style="width:100%;padding:9px 10px;border-radius:8px;border:1px solid #e2e8f0;margin-bottom:8px;box-sizing:border-box;">
-            <div id="edit-judge-affil-list" style="max-height:220px;overflow:auto;padding:6px 10px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;"></div>
+            <div id="edit-judge-affil-list" style="max-height:200px;overflow:auto;padding:6px 10px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;"></div>
         </div>
-        <div style="display:flex;gap:10px;justify-content:flex-end;">
+        <div style="position:sticky;bottom:0;background:white;padding:14px 0 2px;border-top:1px solid #f1f5f9;margin-top:10px;display:flex;gap:10px;justify-content:flex-end;">
             <button class="btn btn-secondary" id="judge-edit-cancel" type="button">Cancel</button>
             <button class="btn btn-primary" id="judge-edit-save" type="button">Save</button>
         </div>`;
 
     overlay.appendChild(modal);
-    document.body.appendChild(overlay);
+    // Do NOT append to body here — CSS display:flex !important would make it
+    // visible immediately. showEditJudge appends only after fully populating.
     modal.querySelector('#judge-edit-cancel').addEventListener('click', _hideJudgeEditModal);
     modal.querySelector('#judge-edit-save').addEventListener('click', () => saveEditJudge(overlay.dataset.judgeId));
     modal.querySelector('#edit-judge-affil-search').addEventListener('input', e => _filterJudgeAffiliations(e.target.value));
@@ -465,7 +477,9 @@ function _filterJudgeAffiliations(query) {
 }
 
 function _hideJudgeEditModal() {
-    if (_judgeEditModal) _judgeEditModal.style.display = 'none';
+    document.getElementById('judge-edit-modal')?.remove();
+    _judgeEditModal = null;
+    document.body.classList.remove('modal-open', 'modal-scroll-unlocked');
 }
 
 function showEditJudge(judgeId) {
@@ -490,7 +504,11 @@ function showEditJudge(judgeId) {
         cb.checked = conflictIds.has(String(cb.value));
         cb.closest('.judge-edit-affil-row').style.display = 'flex';
     });
-    modal.style.display = 'flex';
+    // Append only after full population so CSS display:flex !important doesn't
+    // flash an empty modal while we're still filling in the fields.
+    if (!modal.isConnected) document.body.appendChild(modal);
+    document.body.classList.remove('modal-scroll-unlocked');
+    document.body.classList.add('modal-open');
     modal.querySelector('#edit-judge-name').focus();
     return;
 

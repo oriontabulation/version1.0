@@ -1077,7 +1077,7 @@ function _openBPSwapModal(roundIdx, pIdx) {
 
     const modal = document.createElement('div');
     modal.className = 'modal ko-result-modal';
-    modal.style.maxWidth = '480px';
+    modal.style.cssText = 'max-width:480px;overflow-y:auto;max-height:90vh;';
     modal.innerHTML = `
         <h2 style="margin-top:0;">⇄ Rearrange BP Positions</h2>
         <p style="color:#64748b;font-size:14px;">Reassign which team occupies each position.</p>
@@ -1097,7 +1097,7 @@ function _openBPSwapModal(roundIdx, pIdx) {
             </div>`).join('')}
         </div>
         <div id="swap-error" style="color:#dc2626;margin-bottom:10px;display:none;font-size:13px;"></div>
-        <div style="display:flex;gap:10px;">
+        <div style="position:sticky;bottom:0;background:white;padding:12px 0 2px;border-top:1px solid #f1f5f9;margin-top:8px;display:flex;gap:10px;">
             <button onclick="window.applyBPSwap(${roundIdx},${pIdx})" class="primary" style="flex:2;padding:12px;">✅ Apply</button>
             <button onclick="window.closeAllModals()" class="secondary" style="flex:1;padding:12px;">Cancel</button>
         </div>
@@ -1141,6 +1141,7 @@ function enterKnockoutResult(roundIndex, pairingIndex) {
     _syncTournamentProgress(state.tournament);
     const pairing = state.tournament?.bracket?.[roundIndex]?.pairings?.[pairingIndex];
     if (!pairing) return;
+    console.log('[ko] enter', { roundIndex, pairingIndex, currentRound: state.tournament?.currentRound, role: state.auth?.currentUser?.role, canSubmit: _canSubmitPairing(pairing) });
     if (!_canSubmitPairing(pairing)) {
         showNotification('You are not assigned to this room', 'error');
         return;
@@ -1173,6 +1174,7 @@ function _enterBPResult(roundIndex, pairingIndex) {
         seed: pairing[`${pos.key}Seed`],
     })).filter(s => s.team);
 
+    console.log('[ko] BP slots:', slots.length, _BP_POSITIONS.map(p => ({ pos: p.key, id: pairing[p.key], team: _getTeam(pairing[p.key])?.name })));
     if (slots.length < 4) {
         showNotification('All 4 team positions must be filled before entering results', 'error');
         return;
@@ -1193,7 +1195,7 @@ function _enterBPResult(roundIndex, pairingIndex) {
 
     const modal = document.createElement('div');
     modal.className = 'modal ko-result-modal';
-    modal.style.maxWidth = '520px';
+    modal.style.cssText = 'max-width:520px;overflow-y:auto;max-height:90vh;';
     modal.innerHTML = `
         <h2 style="margin-top:0;">${isLastRound ? '🏆 Grand Final' : '✏️ Enter Results'}</h2>
         <p style="color:#64748b;font-size:14px;">${escapeHTML(round.name)} — ${escapeHTML(pairing.room)}</p>
@@ -1221,13 +1223,14 @@ function _enterBPResult(roundIndex, pairingIndex) {
             ${isLastRound ? 'No winner selected' : '0 / 2 advancing selected'}
         </div>
         <div id="bp-error" style="color:#dc2626;margin-bottom:10px;display:none;font-size:13px;"></div>
-        <div style="display:flex;gap:10px;">
+        <div style="position:sticky;bottom:0;background:white;padding:12px 0 2px;border-top:1px solid #f1f5f9;margin-top:8px;display:flex;gap:10px;">
             <button type="button" data-ko-submit-bp onclick="event.preventDefault();event.stopPropagation();window.submitKnockoutResult(${roundIndex},${pairingIndex})" class="primary" style="flex:2;padding:12px;">Submit</button>
             <button type="button" onclick="event.preventDefault();event.stopPropagation();window._bpAdvancing=[];window.closeAllModals()" class="secondary" style="flex:1;padding:12px;">Cancel</button>
         </div>
     `;
     overlay.appendChild(modal);
     document.body.appendChild(overlay);
+    document.body.classList.remove('modal-scroll-unlocked');
     document.body.classList.add('modal-open');
 
     modal.querySelectorAll('[data-bp-advancer-card]').forEach(card => {
@@ -1297,6 +1300,7 @@ function _enterWSDCResult(roundIndex, pairingIndex) {
     const gov = _getTeam(pairing.gov);
     const opp = _getTeam(pairing.opp);
 
+    console.log('[ko] WSDC enter:', { gov: pairing.gov, opp: pairing.opp, govTeam: gov?.name, oppTeam: opp?.name });
     if (!gov || !opp) { showNotification('Both teams must be set before entering a result', 'error'); return; }
     window._koWinnerSelection = null;
     window._koActiveResultArgs = { roundIndex, pairingIndex };
@@ -1313,7 +1317,7 @@ function _enterWSDCResult(roundIndex, pairingIndex) {
 
     const modal = document.createElement('div');
     modal.className = 'modal ko-result-modal';
-    modal.style.maxWidth = '460px';
+    modal.style.cssText = 'max-width:460px;overflow-y:auto;max-height:90vh;';
     modal.innerHTML = `
         <h2 style="margin-top:0;">Select Winner</h2>
         <p style="color:#64748b;">${escapeHTML(round.name)} - ${escapeHTML(pairing.room)}</p>
@@ -1335,13 +1339,14 @@ function _enterWSDCResult(roundIndex, pairingIndex) {
         </div>
         <div id="ko-error" style="color:#dc2626;margin-bottom:10px;display:none;"></div>
         <div id="ko-status" style="color:#64748b;margin-bottom:10px;font-size:12px;min-height:16px;">Select a team to continue.</div>
-        <div style="display:flex;gap:10px;">
+        <div style="position:sticky;bottom:0;background:white;padding:12px 0 2px;border-top:1px solid #f1f5f9;margin-top:8px;display:flex;gap:10px;">
             <button type="button" data-ko-submit-wsdc onclick="event.preventDefault();event.stopPropagation();window.submitKnockoutResult(${roundIndex},${pairingIndex})" class="primary" style="flex:2;padding:12px;">Submit</button>
             <button type="button" onclick="window.closeAllModals()" class="secondary" style="flex:1;padding:12px;">Cancel</button>
         </div>
     `;
     overlay.appendChild(modal);
     document.body.appendChild(overlay);
+    document.body.classList.remove('modal-scroll-unlocked');
     document.body.classList.add('modal-open');
 
     modal.querySelectorAll('[data-wsdc-winner-card]').forEach(card => {
@@ -1380,13 +1385,44 @@ document.addEventListener('pointerdown', event => {
 }, true);
 
 document.addEventListener('click', event => {
+    // Inline WSDC team cell on draw card
+    const inlineWsdc = event.target.closest?.('[data-ko-select-winner]');
+    if (inlineWsdc) {
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation?.();
+        const teamId   = inlineWsdc.dataset.koSelectWinner;
+        const roundIdx = parseInt(inlineWsdc.dataset.koRound, 10);
+        const pairIdx  = parseInt(inlineWsdc.dataset.koPairing, 10);
+        console.log('[ko] inline-select-wsdc', { teamId, roundIdx, pairIdx });
+        window._koWinnerSelection = teamId;
+        window._koActiveResultArgs = { roundIndex: roundIdx, pairingIndex: pairIdx };
+        submitKnockoutResult(roundIdx, pairIdx);
+        return;
+    }
+
+    // Inline BP cell toggle on draw card
+    const inlineBp = event.target.closest?.('[data-ko-bp-toggle]');
+    if (inlineBp) {
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation?.();
+        const roundIdx = parseInt(inlineBp.dataset.koRound, 10);
+        const pairIdx  = parseInt(inlineBp.dataset.koPairing, 10);
+        const posKey   = inlineBp.dataset.koBpPos;
+        const teamId   = inlineBp.dataset.koBpTeam;
+        _koInlineBPToggle(roundIdx, pairIdx, posKey, teamId);
+        return;
+    }
+
     const submit = event.target.closest?.('[data-ko-submit-wsdc], [data-ko-submit-bp]');
     if (submit) {
         event.preventDefault();
         event.stopPropagation();
         event.stopImmediatePropagation?.();
         const active = window._koActiveResultArgs;
-        if (active) window.submitKnockoutResult(active.roundIndex, active.pairingIndex);
+        console.log('[ko] click-submit', { target: event.target.tagName, active, hasAttr: submit?.hasAttribute?.('data-ko-submit-wsdc') || submit?.hasAttribute?.('data-ko-submit-bp') });
+        if (active) submitKnockoutResult(active.roundIndex, active.pairingIndex);
         return;
     }
     const bpCard = event.target.closest?.('[data-bp-advancer-card]');
@@ -1421,6 +1457,56 @@ window._koSelectWSDCWinner = function (teamId) {
     const team = _getTeam(teamId);
     if (status) status.textContent = `${team?.name || 'Team'} selected.`;
 };
+
+const _koInlineBPSelections = {};
+
+function _koInlineBPToggle(roundIdx, pairingIdx, posKey, teamId) {
+    const key = `${roundIdx}:${pairingIdx}`;
+    if (!_koInlineBPSelections[key]) _koInlineBPSelections[key] = [];
+    const sel = _koInlineBPSelections[key];
+    const isLastRound = roundIdx === (state.tournament?.bracket?.length ?? 0) - 1;
+    const maxPicks = isLastRound ? 1 : 2;
+    teamId = String(teamId);
+
+    const card = document.getElementById(`inline-bp-card-${roundIdx}-${pairingIdx}-${posKey}`);
+    const idx = sel.indexOf(teamId);
+
+    if (idx !== -1) {
+        sel.splice(idx, 1);
+        if (card) { card.style.borderColor = '#e2e8f0'; card.style.background = '#f8fafc'; }
+    } else {
+        if (sel.length >= maxPicks) return;
+        sel.push(teamId);
+        if (card) {
+            card.style.borderColor = maxPicks === 1 ? '#f59e0b' : '#22c55e';
+            card.style.background = maxPicks === 1 ? '#fef9e7' : '#f0fdf4';
+        }
+    }
+
+    const counter = document.getElementById(`inline-bp-counter-${roundIdx}-${pairingIdx}`);
+    if (counter) {
+        counter.textContent = maxPicks === 1
+            ? (sel.length === 1 ? '1 winner selected — tap Confirm' : 'Tap team to select winner')
+            : `${sel.length} / 2 advancing selected${sel.length === 2 ? ' — tap Confirm' : ''}`;
+    }
+    const confirmBtn = document.getElementById(`inline-bp-confirm-${roundIdx}-${pairingIdx}`);
+    if (confirmBtn) confirmBtn.style.display = sel.length === maxPicks ? 'inline-block' : 'none';
+}
+
+window._koInlineBPConfirm = function(roundIdx, pairingIdx) {
+    const key = `${roundIdx}:${pairingIdx}`;
+    const sel = _koInlineBPSelections[key] || [];
+    const isLastRound = roundIdx === (state.tournament?.bracket?.length ?? 0) - 1;
+    const required = isLastRound ? 1 : 2;
+    if (sel.length !== required) return;
+
+    window._bpAdvancing = [...sel];
+    window._bpAdvancingMax = required;
+    window._koActiveResultArgs = { roundIndex: roundIdx, pairingIndex: pairingIdx };
+    delete _koInlineBPSelections[key];
+    submitKnockoutResult(roundIdx, pairingIdx);
+};
+
 function _refreshKnockoutDisplay() {
     renderKnockout();
     if (typeof window.displayRounds === 'function' && document.getElementById('rounds-list')) {
@@ -1448,9 +1534,13 @@ function submitKnockoutResult(roundIndex, pairingIndex) {
         return;
     }
 
+    const user2 = state.auth?.currentUser;
+    console.log('[ko] submit-called', { roundIndex, pairingIndex, pairingExists: !!pairing, submitKey, alreadySubmitting: window._koSubmitting, role: user2?.role });
     window._koSubmitting = submitKey;
     try {
         _syncTournamentProgress(state.tournament);
+        const user = state.auth?.currentUser;
+        console.log('[ko] submit', { roundIndex, pairingIndex, currentRound: state.tournament?.currentRound, role: user?.role, canSubmit: _canSubmitPairing(pairing) });
         if (!_canSubmitPairing(pairing)) {
             showSubmitError('You are not assigned to this room');
             return;
@@ -1710,10 +1800,11 @@ function _submitWSDCResult(roundIndex, pairingIndex) {
 function _showModalError(id, msg) {
     const el = document.getElementById(id);
     if (el) { el.style.display = 'block'; el.textContent = msg; }
+    else showNotification(msg, 'error');
 }
 
 function _forceUnlockPageScroll() {
-    document.body.classList.remove('modal-open');
+    document.body.classList.remove('modal-open', 'modal-scroll-unlocked');
     document.body.style.overflow = '';
     document.body.style.paddingRight = '';
     document.documentElement.style.overflow = '';

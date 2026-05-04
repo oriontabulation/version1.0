@@ -96,13 +96,14 @@ async function _applyProfileToState(supabaseUser) {
                 id: user.id,
                 username,
                 name: displayName,
+                email: user.email?.toLowerCase() || null,
                 status: 'active',
             }, { onConflict: 'id' });
         } catch (_) {
             // Profile creation is best-effort; minimal in-memory auth state is enough to proceed.
         }
         // Proceed with minimal state, then prompt to complete profile
-        state.auth.currentUser = { id: user.id, username, role, name: displayName, email: user.email, associatedId: null };
+        state.auth.currentUser = { id: user.id, username, role, baseRole: role, name: displayName, email: user.email, associatedId: null };
         state.auth.isAuthenticated = true;
         _resetActivity();
         // Show role-completion dialog for brand-new OAuth accounts
@@ -122,6 +123,7 @@ async function _applyProfileToState(supabaseUser) {
         id: profile.id,
         username: profile.username,
         role,
+        baseRole: role,
         name: profile.name,
         email: user.email,
         associatedId: profile.associated_id,
@@ -129,6 +131,13 @@ async function _applyProfileToState(supabaseUser) {
     state.auth.isAuthenticated = true;
     _resetActivity();
 
+    if (user.email) {
+        supabase.from('user_profiles')
+            .update({ email: user.email.toLowerCase() })
+            .eq('id', user.id)
+            .is('email', null)
+            .then(() => {});
+    }
     api.updateLastLogin(user.id).catch(() => { });
     return true;
 }
@@ -266,9 +275,8 @@ async function registerUser() {
             return;
         }
 
-        // Allowed self-registration roles — admin role CANNOT be self-assigned
-        const allowedSelfRoles = ['public', 'judge', 'team'];
-        const safeRole = allowedSelfRoles.includes(role) ? role : 'public';
+        // Observers and judges can self-register; speakers/teams are added by admins
+        const safeRole = ['public', 'judge'].includes(role) ? role : 'public';
 
         const { user } = await api.signUp(email, password, { name });
 
@@ -278,6 +286,7 @@ async function registerUser() {
                 id: user.id,
                 username: username.toLowerCase().trim(),
                 name: name,
+                email: email.toLowerCase().trim(),
                 associated_id: assocId || null,
                 status: 'active',
             });
@@ -543,21 +552,16 @@ function _showProfileCompletion(supabaseUser) {
         <div id="pcErr" style="background:#fef2f2;color:#dc2626;border-radius:8px;padding:10px;font-size:13px;margin-bottom:14px;display:none;"></div>
         <div style="margin-bottom:16px;">
             <label style="display:block;font-size:12px;font-weight:600;color:#374151;margin-bottom:8px;">I am joining as…</label>
-            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">
-                <label style="border:2px solid #e5e7eb;border-radius:10px;padding:12px 6px;text-align:center;cursor:pointer;">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+                <label style="border:2px solid #6366f1;background:#eef2ff;border-radius:10px;padding:12px 6px;text-align:center;cursor:pointer;">
+                    <input type="radio" name="pcRole" value="public" checked style="display:none;">
+                    <div style="font-size:22px;margin-bottom:4px;">👁️</div>
+                    <span style="font-size:11px;font-weight:700;color:#4f46e5;display:block;">Observer</span>
+                </label>
+                <label style="border:2px solid #e2e8f0;background:#f8fafc;border-radius:10px;padding:12px 6px;text-align:center;cursor:pointer;">
                     <input type="radio" name="pcRole" value="judge" style="display:none;">
                     <div style="font-size:22px;margin-bottom:4px;">⚖️</div>
                     <span style="font-size:11px;font-weight:700;color:#374151;display:block;">Judge</span>
-                </label>
-                <label style="border:2px solid #6366f1;background:#eef2ff;border-radius:10px;padding:12px 6px;text-align:center;cursor:pointer;">
-                    <input type="radio" name="pcRole" value="team" checked style="display:none;">
-                    <div style="font-size:22px;margin-bottom:4px;">🏫</div>
-                    <span style="font-size:11px;font-weight:700;color:#4f46e5;display:block;">Speaker</span>
-                </label>
-                <label style="border:2px solid #e5e7eb;border-radius:10px;padding:12px 6px;text-align:center;cursor:pointer;">
-                    <input type="radio" name="pcRole" value="public" style="display:none;">
-                    <div style="font-size:22px;margin-bottom:4px;">👁️</div>
-                    <span style="font-size:11px;font-weight:700;color:#374151;display:block;">Observer</span>
                 </label>
             </div>
         </div>
@@ -784,7 +788,7 @@ function showLoginModal() {
     .auth-oauth-link:hover{border-color:#f97316;background:#1a2332;}
     .auth-oauth-link span{font-size:12.5px;}
     .auth-err{background:#450a0a;color:#fca5a5;border:1px solid #7f1d1d;border-radius:8px;padding:10px 13px;font-size:13px;margin-bottom:16px;display:none;line-height:1.4;}
-    .role-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:16px;}
+    .role-cards{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:16px;}
     .role-card{border:1.5px solid #1e293b;border-radius:10px;padding:14px 8px 10px;text-align:center;cursor:pointer;transition:all .15s;background:#1e293b;}
     .role-card input{display:none;}
     .role-card-icon{font-size:24px;margin-bottom:6px;display:block;}
@@ -846,19 +850,14 @@ function showLoginModal() {
                 <p style="font-size:11.5px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:.02em;margin:0 0 10px;">I am joining as</p>
                 <div class="role-cards">
                     <label class="role-card">
+                        <input type="radio" name="regRole" value="public" checked>
+                        <span class="role-card-icon">👁️</span>
+                        <span class="role-card-label">Observer</span>
+                    </label>
+                    <label class="role-card">
                         <input type="radio" name="regRole" value="judge">
                         <span class="role-card-icon">⚖️</span>
                         <span class="role-card-label">Judge</span>
-                    </label>
-                    <label class="role-card">
-                        <input type="radio" name="regRole" value="team" checked>
-                        <span class="role-card-icon">🗣️</span>
-                        <span class="role-card-label">Speaker</span>                     
-                    </label>
-                    <label class="role-card">
-                        <input type="radio" name="regRole" value="public">
-                        <span class="role-card-icon">👁️</span>
-                        <span class="role-card-label">Observer</span>                      
                     </label>
                 </div>
             </div>

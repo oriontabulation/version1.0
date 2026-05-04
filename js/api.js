@@ -82,7 +82,28 @@ export const api = {
 
     // ── Tournaments ───────────────────────────────────────────────────────
     async getTournaments() {
-        return _ok(await supabase.from('tournaments').select('*').order('created_at'), 'getTournaments');
+        // Try with deleted_at filter, fallback to without if column doesn't exist
+        try {
+            return _ok(await supabase.from('tournaments').select('*').is('deleted_at', null).order('created_at'), 'getTournaments');
+        } catch (e) {
+            if (e.message?.includes('deleted_at')) {
+                console.warn('[api] deleted_at column not found, skipping filter');
+                return _ok(await supabase.from('tournaments').select('*').order('created_at'), 'getTournaments');
+            }
+            throw e;
+        }
+    },
+    async getDeletedTournaments() {
+        // Column may not exist - return empty array
+        try {
+            return _ok(await supabase.from('tournaments').select('*').not('deleted_at', 'is', null).order('deleted_at', { ascending: false }), 'getDeletedTournaments');
+        } catch (e) {
+            if (e.message?.includes('deleted_at')) {
+                console.warn('[api] deleted_at column not found');
+                return [];
+            }
+            throw e;
+        }
     },
     async createTournament(name, format = 'standard') {
         const user = await api.getCurrentUser();
@@ -104,6 +125,16 @@ export const api = {
             .eq('id', id).select().single(), 'updateTournament');
     },
     async deleteTournament(id) {
+        // Tournament deletion disabled - soft delete removed
+        console.warn('[api] Tournament deletion is disabled');
+        throw new Error('Tournament deletion is disabled. Contact administrator.');
+        // Original code commented out:
+        // _ok(await supabase.from('tournaments').update({ deleted_at: new Date().toISOString() }).eq('id', id), 'deleteTournament');
+    },
+    async restoreTournament(id) {
+        return _ok(await supabase.from('tournaments').update({ deleted_at: null }).eq('id', id).select().single(), 'restoreTournament');
+    },
+    async permanentlyDeleteTournament(id) {
         await supabase.from('rounds').delete().eq('tournament_id', id);
         await supabase.from('teams').delete().eq('tournament_id', id);
         await supabase.from('judges').delete().eq('tournament_id', id);
@@ -112,8 +143,120 @@ export const api = {
         await supabase.from('feedback').delete().eq('tournament_id', id);
         await supabase.from('categories').delete().eq('tournament_id', id);
         await supabase.from('tournament_publish').delete().eq('tournament_id', id);
-        _ok(await supabase.from('tournaments').delete().eq('id', id), 'deleteTournament');
+        _ok(await supabase.from('tournaments').delete().eq('id', id), 'permanentlyDeleteTournament');
     },
+    // ── Tournament admins ─────────────────────────────────────────────────
+    async getTournamentAdmins(tournamentId) {
+        const r = await supabase.from('tournament_admins')
+            .select('id, user_id, added_by, created_at')
+            .eq('tournament_id', tournamentId)
+            .order('created_at');
+        const admins = _ok(r, 'getTournamentAdmins');
+        if (!admins.length) return admins;
+        // user_profiles.id = auth user id — fetch separately since PostgREST
+        // can't infer the join through the auth.users FK
+        const ids = admins.map(a => a.user_id);
+        const pr = await supabase.from('user_profiles')
+            .select('id, name, email, status')
+            .in('id', ids);
+        const profileMap = Object.fromEntries(
+            _ok(pr, 'getTournamentAdminsProfiles').map(p => [p.id, p])
+        );
+        return admins.map(a => ({ ...a, user_profiles: profileMap[a.user_id] || null }));
+    },
+    async getMyTournamentAdminIds() {
+        const user = await api.getCurrentUser();
+        if (!user?.id) return [];
+        const r = await supabase.from('tournament_admins')
+            .select('tournament_id')
+            .eq('user_id', user.id);
+        return _ok(r, 'getMyTournamentAdminIds').map(row => row.tournament_id);
+    },
+    async addTournamentAdminByEmail(tournamentId, userEmail) {
+        const rpcResult = await supabase.rpc('add_tournament_admin_by_email', {
+            p_tournament_id: tournamentId,
+            p_email: userEmail
+        });
+        if (!rpcResult.error) return Array.isArray(rpcResult.data) ? rpcResult.data[0] : rpcResult.data;
+        const rpcMissing = ['42883', 'PGRST202'].includes(rpcResult.error.code)
+            || /function .*add_tournament_admin_by_email|could not find.*function/i.test(String(rpcResult.error.message || ''));
+        if (!rpcMissing) throw new Error(rpcResult.error.message || 'Failed to add tournament admin');
+
+        const functionResult = await supabase.functions.invoke('add-tournament-admin', {
+            body: { tournamentId, email: userEmail }
+        });
+        if (!functionResult.error && !functionResult.data?.error) return functionResult.data?.admin || functionResult.data;
+        const functionMessage = functionResult.data?.error || functionResult.error?.message;
+        const functionUnavailable = /not found|404|failed to fetch|failed to send|edge function|functions/i.test(String(functionMessage || ''));
+        if (!functionUnavailable) throw new Error(functionMessage || 'Failed to add tournament admin');
+
+        const caller = await api.getCurrentUser();
+        const email = userEmail.trim().toLowerCase();
+        const lookup = await supabase.from('user_profiles')
+            .select('id, name, email')
+            .ilike('email', email)
+            .single();
+        if (lookup.error || !lookup.data) {
+            throw new Error(
+                `Admin email lookup is not fully set up yet. Apply the latest Supabase migration ` +
+                `or deploy the add-tournament-admin Edge Function, then try "${userEmail}" again.`
+            );
+        }
+        const r = await supabase.from('tournament_admins').insert({
+            tournament_id: tournamentId,
+            user_id: lookup.data.id,
+            added_by: caller.id
+        }).select().single();
+        return _ok(r, 'addTournamentAdminByEmail');
+    },
+    async removeTournamentAdmin(entryId) {
+        _ok(await supabase.from('tournament_admins').delete().eq('id', entryId), 'removeTournamentAdmin');
+    },
+    async setTournamentAdminStatus(tournamentId, userId, status) {
+        const r = await supabase.rpc('set_tournament_admin_status', {
+            p_tournament_id: tournamentId,
+            p_user_id: userId,
+            p_status: status
+        });
+        return _ok(r, 'setTournamentAdminStatus');
+    },
+    async deleteTournamentAdminAccount(tournamentId, userId) {
+        const r = await supabase.rpc('delete_tournament_admin_account', {
+            p_tournament_id: tournamentId,
+            p_user_id: userId
+        });
+        return _ok(r, 'deleteTournamentAdminAccount');
+    },
+    // ── Tournament password lock ──────────────────────────────────────────
+    async setTournamentPassword(tournamentId, password) {
+        // Store null to remove the password lock
+        return _ok(await supabase.from('tournaments')
+            .update({ access_password: password || null })
+            .eq('id', tournamentId).select().single(), 'setTournamentPassword');
+    },
+    async verifyTournamentPassword(tournamentId, password) {
+        const r = await supabase.from('tournaments')
+            .select('access_password').eq('id', tournamentId).single();
+        if (r.error) return false;
+        const stored = r.data?.access_password;
+        if (!stored) return true; // no lock
+        return stored === password;
+    },
+    async revealTournamentPassword(tournamentId, adminLoginPassword) {
+        // Re-authenticate the current user to confirm identity before revealing
+        const { data: { user }, error: userErr } = await supabase.auth.getUser();
+        if (userErr || !user?.email) throw new Error('Not authenticated');
+        const { error: signInErr } = await supabase.auth.signInWithPassword({
+            email: user.email,
+            password: adminLoginPassword
+        });
+        if (signInErr) throw new Error('Incorrect password');
+        const r = await supabase.from('tournaments')
+            .select('access_password').eq('id', tournamentId).single();
+        _ok(r, 'revealTournamentPassword');
+        return r.data?.access_password || null;
+    },
+
     async getPublishState(tournamentId) {
         const r = await supabase.from('tournament_publish').select('*')
             .eq('tournament_id', tournamentId).single();
@@ -240,6 +383,11 @@ export const api = {
             }
         }
     },
+    async addSpeaker({ teamId, tournamentId, name, position }) {
+        return _ok(await supabase.from('speakers')
+            .insert({ team_id: teamId, tournament_id: tournamentId, name: name.trim(), position })
+            .select().single(), 'addSpeaker');
+    },
     async bulkCreateTeams(tournamentId, teamsData) {
         const { data: existing } = await supabase.from('teams').select('name').eq('tournament_id', tournamentId);
         const existingNames = new Set((existing || []).map(t => t.name.toLowerCase()));
@@ -257,27 +405,22 @@ export const api = {
             email: t.email?.trim() || null,
         }));
         const { error: teamsErr } = await supabase.from('teams').insert(teamRows);
-        if (teamsErr) return { imported: 0, skipped, errors: [{ name: 'batch', error: teamsErr.message }] };
+        if (teamsErr) {
+            console.error('[api] bulkCreateTeams insert failed:', teamsErr);
+            return { imported: 0, skipped, errors: [{ name: 'batch', error: teamsErr.message }] };
+        }
 
-        const speakerRows = [], categoryRows = [];
+        const speakerRows = [];
         teamRows.forEach((team, i) => {
             (toInsert[i].speakers || []).forEach((s, pos) => {
                 const name = (typeof s === 'string' ? s : s.name || '').trim();
                 if (name) speakerRows.push({ team_id: team.id, tournament_id: tournamentId, name, email: typeof s === 'string' ? null : (s.email || null), position: pos + 1 });
             });
-            (toInsert[i].categories || []).forEach(cid => categoryRows.push({ team_id: team.id, category_id: cid }));
         });
 
         const errors = [];
         const speakerError = await _insertSpeakersResilient(speakerRows, 'speakers');
         if (speakerError) errors.push({ name: 'speakers', error: speakerError });
-
-        if (categoryRows.length) {
-            const categoryInsert = await supabase.from('team_categories').insert(categoryRows);
-            if (categoryInsert.error) {
-                errors.push({ name: 'categories', error: categoryInsert.error.message });
-            }
-        }
 
         return { imported: teamRows.length, skipped, errors };
     },
@@ -548,18 +691,43 @@ export const api = {
             ), 'submitBallot.scores');
         }
 
-        const { error: fnErr } = await supabase.functions.invoke('update-team-stats',
+        // Stats update is best-effort — ballot row is already saved above
+        const { error: statsErr } = await supabase.functions.invoke('update-team-stats',
             { body: { debateId, tournamentId, ballotId: ballot.id } });
-        if (fnErr) console.error('[api:submitBallot] Stats fn error:', fnErr.message);
+        if (statsErr) console.warn('[api:submitBallot] Stats fn error:', statsErr.message);
 
         return ballot;
     },
     async replaceBallotAsAdmin({ debateId, tournamentId, winnerSide, govTotal, oppTotal, speakerScores = [] }) {
-        const { data, error } = await supabase.functions.invoke('admin-replace-ballot', {
-            body: { debateId, tournamentId, winnerSide, govTotal, oppTotal, speakerScores }
-        });
-        if (error || data?.error) throw new Error(error?.message || data.error);
-        return data;
+        const user = await api.getCurrentUser();
+        if (!user) throw new Error('Must be authenticated to submit a ballot');
+
+        // Delete existing scores then ballot rows for this debate before inserting the replacement
+        const { data: existing } = await supabase.from('ballots').select('id').eq('debate_id', debateId);
+        const existingIds = (existing || []).map(b => b.id);
+        if (existingIds.length) {
+            await supabase.from('ballot_speaker_scores').delete().in('ballot_id', existingIds);
+            _ok(await supabase.from('ballots').delete().eq('debate_id', debateId), 'replaceBallot.delete');
+        }
+
+        const ballot = _ok(await supabase.from('ballots').insert({
+            debate_id: debateId, tournament_id: tournamentId, submitted_by: user.id,
+            winner_side: winnerSide, gov_total: govTotal, opp_total: oppTotal
+        }).select().single(), 'replaceBallot.insert');
+
+        if (speakerScores.length > 0) {
+            _ok(await supabase.from('ballot_speaker_scores').insert(
+                speakerScores.map(s => ({ ballot_id: ballot.id, speaker_id: s.speakerId,
+                                          score: s.score, is_reply: s.isReply || false }))
+            ), 'replaceBallot.scores');
+        }
+
+        // Stats update is best-effort — ballot row is already saved above
+        const { error: statsErr } = await supabase.functions.invoke('update-team-stats',
+            { body: { debateId, tournamentId, ballotId: ballot.id } });
+        if (statsErr) console.warn('[api:replaceBallotAsAdmin] Stats fn error:', statsErr.message);
+
+        return ballot;
     },
     async getBallots(debateId) {
         return _ok(await supabase.from('ballots').select('*, ballot_speaker_scores(*)')

@@ -1942,6 +1942,23 @@ body.hide-judge-role-reg #registerForm .judge-role-field {
   border-radius: 8px 8px 0 0 !important;
   border-bottom: 1px solid #e2e8f0 !important;
   margin-bottom: 0 !important;
+  position: relative !important;
+  z-index: 2 !important;
+}
+
+.round-card-wrap {
+  overflow: visible !important;
+  position: relative !important;
+  z-index: 1;
+}
+
+.round-settings-wrap {
+  position: relative !important;
+  z-index: 20 !important;
+}
+
+.round-settings-menu {
+  z-index: 5000 !important;
 }
 
 /* Knockout bracket headers */

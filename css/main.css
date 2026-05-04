@@ -1692,6 +1692,15 @@ body.modal-open {
     overflow: hidden;
 }
 
+/* Escape pressed: scroll lock released, modal stays visible */
+body.modal-scroll-unlocked .modal-overlay {
+    pointer-events: none;  /* let scroll events reach the page */
+}
+body.modal-scroll-unlocked .modal {
+    pointer-events: all;   /* modal content still interactive */
+    box-shadow: 0 0 0 3px rgba(99,102,241,.55), 0 8px 48px rgba(0,0,0,.35);
+}
+
 .error-message {
     border-radius: 10px;
     font-size: 0.875rem;
@@ -3636,7 +3645,7 @@ footer {
   border: 1px solid #e2e8f0;
   border-radius: 8px;
   box-shadow: 0 8px 24px rgba(0,0,0,.12);
-  z-index: 200;
+  z-index: 5000;
   min-width: 180px;
   padding: 6px;
 }

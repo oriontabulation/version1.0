@@ -201,13 +201,16 @@ Object.defineProperty(state, 'tournaments', {
  * @param {Object}  options.publish       — tournament_publish row
  */
 export function hydrateState({ activeTournamentId, tournaments = [], teams = [], judges = [], rounds = [], publish = {} }) {
+    // Never auto-create default tournament - let user see empty state
     if (!tournaments.length) {
-        tournaments = [createDefaultTournament()];
-        activeTournamentId = DEFAULT_TOURNAMENT_ID;
+        console.warn('[state] No tournaments provided to hydrateState. User must create one.');
+        tournaments = [];
+        // Don't set a default active tournament
+        activeTournamentId = null;
         teams = [];
         judges = [];
         rounds = [];
-        publish = createDefaultPublishState();
+        publish = {};
     }
 
     // Build tournament map
@@ -386,12 +389,15 @@ export function patchDebate(roundId, debateId, patch) {
 
 // ── Tournament management ─────────────────────────────────────────────────────
 export function activeTournament() {
-    return _state.tournaments[_state.activeTournamentId] || _state.tournaments[DEFAULT_TOURNAMENT_ID] || createDefaultTournament();
+    if (!_state.activeTournamentId || !_state.tournaments[_state.activeTournamentId]) {
+        return null;
+    }
+    return _state.tournaments[_state.activeTournamentId];
 }
 
 export function switchTournamentCache(id, { teams = [], judges = [], rounds = [], publish = {} }) {
     if (!id || !_state.tournaments[id]) {
-        hydrateState({ tournaments: [] });
+        console.warn('[state] Cannot switch to non-existent tournament:', id);
         return;
     }
     _state.activeTournamentId = id;

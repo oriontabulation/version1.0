@@ -5,7 +5,8 @@
 //   + Tournament management 
 // ============================================
 
-import { state, activeTournament, switchTournamentCache, hydrateState, save, saveNow } from './state.js';
+import { state, activeTournament, switchTournamentCache, hydrateState, save, saveNow, DEFAULT_TOURNAMENT_ID } from './state.js';
+import { isUUID } from './id-system.js';
 import { api } from './api.js';
 import { showNotification, escapeHTML, closeAllModals } from './utils.js';
 import { updateTabsForRole, updateNavDropdowns } from './tab.js';
@@ -16,6 +17,17 @@ import { exportData, fullReset } from './file-manager.js';
 import { getLocalUsers, registerLocalUser, deleteLocalUser, updateLocalUserRole } from './local-auth.js';
 
 let _activeSection = 'overview';
+
+/**
+ * Returns true only when `id` is a real, non-placeholder tournament ID.
+ * The string '__orion_default_tournament__' is used as a local fallback when
+ * no Supabase tournaments exist; passing it to any DB API call causes a
+ * "invalid input syntax for type uuid" error.
+ * Also filters out 'test_tournament' and any non-UUID strings.
+ */
+function _isRealId(id) {
+    return Boolean(id && isUUID(id));
+}
 
 async function _reloadTournamentCatalog(activeTournamentId, activeData = {}) {
     const tournaments = await api.getTournaments().catch(() => []);
@@ -37,60 +49,60 @@ async function _reloadTournamentCatalog(activeTournamentId, activeData = {}) {
 
     function syncDrawerAuth() {
         var hLogout = document.getElementById('header-logout-btn');
-        var hName   = document.getElementById('header-user-name');
-        var dLogin  = document.getElementById('drawer-login-btn');
+        var hName = document.getElementById('header-user-name');
+        var dLogin = document.getElementById('drawer-login-btn');
         var dLogout = document.getElementById('drawer-logout-btn');
-        var dName   = document.getElementById('drawer-user-name');
-  
+        var dName = document.getElementById('drawer-user-name');
+
         if (!dLogin || !dLogout) return;
 
         // Logout button visible in header = user is logged in
         var loggedIn = hLogout && hLogout.style.display !== 'none';
 
-        if (dName)   dName.textContent    = (loggedIn && hName) ? hName.textContent : 'Guest';
-        dLogin.style.display  = loggedIn ? 'none' : '';
+        if (dName) dName.textContent = (loggedIn && hName) ? hName.textContent : 'Guest';
+        dLogin.style.display = loggedIn ? 'none' : '';
         dLogout.style.display = loggedIn ? '' : 'none';
 
-        
+
     }
 
     function wire() {
         var hamburger = document.getElementById('mobile-hamburger');
-        var drawer    = document.getElementById('mobile-nav-drawer');
-        var overlay   = document.getElementById('mobile-nav-overlay');
-        var closeBtn  = document.getElementById('mobile-nav-close');
+        var drawer = document.getElementById('mobile-nav-drawer');
+        var overlay = document.getElementById('mobile-nav-overlay');
+        var closeBtn = document.getElementById('mobile-nav-close');
 
         function openNav() {
-            if (drawer)  drawer.classList.add('is-open');
+            if (drawer) drawer.classList.add('is-open');
             if (overlay) overlay.classList.add('is-open');
             document.body.classList.add('mobile-nav-open');
             syncDrawerAuth(); // always sync state when drawer opens
         }
         function closeNav() {
-            if (drawer)  drawer.classList.remove('is-open');
+            if (drawer) drawer.classList.remove('is-open');
             if (overlay) overlay.classList.remove('is-open');
             document.body.classList.remove('mobile-nav-open');
         }
 
         if (hamburger) hamburger.addEventListener('click', openNav);
-        if (closeBtn)  closeBtn.addEventListener('click', closeNav);
-        if (overlay)   overlay.addEventListener('click', closeNav);
+        if (closeBtn) closeBtn.addEventListener('click', closeNav);
+        if (overlay) overlay.addEventListener('click', closeNav);
         if (drawer) {
-            drawer.querySelectorAll('[data-tab]').forEach(function(btn) {
+            drawer.querySelectorAll('[data-tab]').forEach(function (btn) {
                 btn.addEventListener('click', closeNav);
             });
         }
 
         // Auto-close drawer when the user scrolls the page
         // (ignore scroll events that originate inside the drawer itself)
-        window.addEventListener('scroll', function() {
+        window.addEventListener('scroll', function () {
             if (drawer && drawer.classList.contains('is-open')) {
                 closeNav();
             }
         }, { passive: true });
 
         // Also close on any touch-move outside the drawer (swipe-away)
-        document.addEventListener('touchmove', function(e) {
+        document.addEventListener('touchmove', function (e) {
             if (drawer && drawer.classList.contains('is-open') && !drawer.contains(e.target)) {
                 closeNav();
             }
@@ -106,7 +118,7 @@ async function _reloadTournamentCatalog(activeTournamentId, activeData = {}) {
         }
 
         syncDrawerAuth(); // initial sync on load
-        window.openMobileNav  = openNav;
+        window.openMobileNav = openNav;
         window.closeMobileNav = closeNav;
     }
 
@@ -168,8 +180,8 @@ function _refreshAdminRounds() {
     const roundsHtml = (state.rounds || []).slice().reverse().map(r => window.renderRoundMiniTable(r)).join('');
     const listBody = document.querySelector('.adm-rounds-list-body');
     if (listBody) {
-        listBody.innerHTML = (state.rounds || []).length === 0 
-            ? '<div class="adm-empty">No rounds yet. Create one from the left panel.</div>' 
+        listBody.innerHTML = (state.rounds || []).length === 0
+            ? '<div class="adm-empty">No rounds yet. Create one from the left panel.</div>'
             : roundsHtml;
     }
 }
@@ -183,25 +195,25 @@ function _fillRoundsSidebar() {
     const judges = state.judges || [];
 
     const ctrlCards = rounds.map((r, idx) => {
-        const done = (r.debates||[]).filter(d=>d.entered).length;
-        const tot  = (r.debates||[]).length;
-        const pct  = tot > 0 ? Math.round(done/tot*100) : 0;
+        const done = (r.debates || []).filter(d => d.entered).length;
+        const tot = (r.debates || []).length;
+        const pct = tot > 0 ? Math.round(done / tot * 100) : 0;
         return `<div class="adm-round-ctrl">
             <div class="adm-round-ctrl-head">
                 <div class="adm-row">
                     <strong class="adm-round-ctrl-title">Round ${r.round_number ?? (idx + 1)}</strong>
-                    ${r.type==='knockout'?'<span class="adm-badge red">KO</span>':''}
-                    ${r.blinded?'<span class="adm-badge grey">Blind</span>':''}
+                    ${r.type === 'knockout' ? '<span class="adm-badge red">KO</span>' : ''}
+                    ${r.blinded ? '<span class="adm-badge grey">Blind</span>' : ''}
                 </div>
                 <span class="adm-round-ctrl-pct">${pct}%</span>
             </div>
             <div class="adm-round-ctrl-progress"><div class="adm-round-ctrl-fill" style="width:${pct}%"></div></div>
-            <div class="adm-round-ctrl-motion">${r.motion?escapeHTML(r.motion.substring(0,45)):'No motion set'}</div>
+            <div class="adm-round-ctrl-motion">${r.motion ? escapeHTML(r.motion.substring(0, 45)) : 'No motion set'}</div>
             <div class="adm-row gap-sm">
-                ${r.type!=='knockout'?`<button class="adm-btn secondary xs" onclick="window.toggleBlindRound(${idx});window.refreshAdminRounds()">${r.blinded?'\u{1F441} Unblind':'\u{1F512} Blind'}</button>`:''}
+                ${r.type !== 'knockout' ? `<button class="adm-btn secondary xs" onclick="window.toggleBlindRound(${idx});window.refreshAdminRounds()">${r.blinded ? '\u{1F441} Unblind' : '\u{1F512} Blind'}</button>` : ''}
                 <button onclick="window.redrawRound(${idx});window.refreshAdminRounds()"
-                        ${done>0?'disabled title="Cannot redraw — results already entered"':'title="Shuffle pairings for this round"'}
-                        style="display:inline-flex;align-items:center;gap:4px;padding:5px 12px;font-size:12px;font-weight:700;border-radius:6px;border:none;cursor:${done>0?'not-allowed':'pointer'};background:${done>0?'#e2e8f0':'#f59e0b'};color:${done>0?'#94a3b8':'white'};opacity:${done>0?'0.55':'1'};box-shadow:${done>0?'none':'0 2px 5px rgba(245,158,11,0.35)'};">
+                        ${done > 0 ? 'disabled title="Cannot redraw — results already entered"' : 'title="Shuffle pairings for this round"'}
+                        style="display:inline-flex;align-items:center;gap:4px;padding:5px 12px;font-size:12px;font-weight:700;border-radius:6px;border:none;cursor:${done > 0 ? 'not-allowed' : 'pointer'};background:${done > 0 ? '#e2e8f0' : '#f59e0b'};color:${done > 0 ? '#94a3b8' : 'white'};opacity:${done > 0 ? '0.55' : '1'};box-shadow:${done > 0 ? 'none' : '0 2px 5px rgba(245,158,11,0.35)'};">
                     🔀 Redraw
                 </button>
                 <button class="adm-btn danger xs" onclick="window.adminDeleteRound(${r.id})">🗑</button>
@@ -232,7 +244,7 @@ function _fillRoundsSidebar() {
 function _updateMainHeaderForAdmin(show) {
     const user = state.auth.currentUser;
     const tour = activeTournament();
-    
+
     const adminInfo = document.getElementById('header-admin-info');
     const adminControls = document.getElementById('header-admin-controls');
     const tournamentName = document.getElementById('header-tournament-name');
@@ -240,14 +252,14 @@ function _updateMainHeaderForAdmin(show) {
     const themeContainer = document.getElementById('theme-picker-container');
     const headerSearch = document.getElementById('header-search');
     const globalSearch = document.getElementById('global-search');
-    
+
     // Check if we're actually in admin mode by checking if adm-body exists
     const inAdminMode = document.querySelector('.adm-body') !== null;
     document.body.classList.toggle('adm-mode', inAdminMode);
 
     // Use provided show value, or auto-detect based on admin mode
     const shouldShow = show !== undefined ? show : inAdminMode;
-    
+
     if (shouldShow && inAdminMode) {
         // Show admin info with tournament name + user
         if (adminInfo) {
@@ -314,10 +326,10 @@ function _buildStatStrip() {
     const s = _getStats();
     return `
     <div class="adm-stat-strip">
-        ${_chip('👥', s.teams.total,     'Teams',   s.teams.breaking  + ' breaking',  'blue')}
-        ${_chip('⚖️', s.judges.total,   'Judges',  s.judges.chair    + ' chairs',    'green')}
-        ${_chip('🎯', s.rounds.total,    'Rounds',  s.rounds.completed + ' complete', 'amber')}
-        ${_chip('🗳️', s.debates.entered, 'Ballots', s.debates.total   + ' rooms',    'purple')}
+        ${_chip('👥', s.teams.total, 'Teams', s.teams.breaking + ' breaking', 'blue')}
+        ${_chip('⚖️', s.judges.total, 'Judges', s.judges.chair + ' chairs', 'green')}
+        ${_chip('🎯', s.rounds.total, 'Rounds', s.rounds.completed + ' complete', 'amber')}
+        ${_chip('🗳️', s.debates.entered, 'Ballots', s.debates.total + ' rooms', 'purple')}
     </div>`;
 }
 
@@ -331,24 +343,24 @@ function _chip(icon, val, label, sub, color) {
 }
 
 const _SECTIONS = [
-    { id:'tournaments', icon:'🏟️', label:'Tournaments'      },
-    { id:'overview',    icon:'📊', label:'Overview'          },
-    { id:'rounds',      icon:'🎲', label:'Rounds & Draw'     },
-    { id:'ballots',     icon:'🗳️', label:'Ballot Override'   },
-    { id:'break',       icon:'🏆', label:'Break & Outrounds'  },
-    { id:'publish',     icon:'📡', label:'Publish Controls'  },
-    { id:'feedback',    icon:'💬', label:'Feedback'          },
-    { id:'urls',        icon:'🔗', label:'URLs & Access'     },
-    { id:'data',        icon:'💾', label:'Data & Export'     },
-    { id:'users',       icon:'👥', label:'Local Users'       },
-    { id:'sample',      icon:'🚀', label:'Test Data'         },
-    { id:'danger',      icon:'⚠️', label:'Danger Zone'       },
+    { id: 'tournaments', icon: '🏟️', label: 'Tournaments' },
+    { id: 'overview', icon: '📊', label: 'Overview' },
+    { id: 'rounds', icon: '🎲', label: 'Rounds & Draw' },
+    { id: 'ballots', icon: '🗳️', label: 'Ballot Override' },
+    { id: 'break', icon: '🏆', label: 'Break & Outrounds' },
+    { id: 'publish', icon: '📡', label: 'Publish Controls' },
+    { id: 'feedback', icon: '💬', label: 'Feedback' },
+    { id: 'urls', icon: '🔗', label: 'URLs & Access' },
+    { id: 'data', icon: '💾', label: 'Data & Export' },
+    { id: 'users', icon: '👥', label: 'Local Users' },
+    // DISABLED: { id:'sample', icon:'🚀', label:'Test Data' },      // to be implemented later
+    // DISABLED: { id:'danger', icon:'⚠️', label:'Danger Zone' },   // to be implemented later
 ];
 
 function _buildSidebar() {
-    const user    = state.auth?.currentUser;
+    const user = state.auth?.currentUser;
     const initial = (user?.name || 'A')[0].toUpperCase();
-    const name    = escapeHTML(user?.name || 'Admin');
+    const name = escapeHTML(user?.name || 'Admin');
 
     return `
     <div class="adm-sidebar-overlay" id="adm-sidebar-overlay" onclick="window.closeAdmSidebar()"></div>
@@ -365,7 +377,7 @@ function _buildSidebar() {
 
         <!-- Nav items -->
         ${_SECTIONS.map(s => `
-            <button class="adm-nav-item ${_activeSection===s.id?'active':''}"
+            <button class="adm-nav-item ${_activeSection === s.id ? 'active' : ''}"
                     data-section="${s.id}"
                     onclick="window.adminSwitchSection('${s.id}')">
                 <span class="adm-nav-icon">${s.icon}</span>
@@ -397,6 +409,7 @@ export function adminSwitchSection(id) {
     document.querySelectorAll('.adm-nav-item').forEach(el =>
         el.classList.toggle('active', el.getAttribute('data-section') === id));
     if (id === 'rounds') _refreshAdminRounds();
+    if (id === 'tournaments') _refreshTournamentSection();
     // Refresh main header tournament badge
     _updateMainHeaderForAdmin();
     // Close drawer on mobile after navigation
@@ -404,20 +417,20 @@ export function adminSwitchSection(id) {
 }
 
 function _buildSection(id) {
-    switch(id) {
+    switch (id) {
         case 'tournaments': return _sectionTournaments();
-        case 'feedback':    return _sectionFeedback();
-        case 'overview':    return _sectionOverview();
-        case 'rounds':      return _sectionRounds();
-        case 'ballots':     return _sectionBallots();
-        case 'break':       return _sectionBreak();
-        case 'publish':     return _sectionPublish();
-        case 'urls':        return _sectionURLs();
-        case 'data':        return _sectionData();
-        case 'users':      return _sectionUsers();
-        case 'sample':      return _sectionSample();
-        case 'danger':      return _sectionDanger();
-        default:            return _sectionOverview();
+        case 'feedback': return _sectionFeedback();
+        case 'overview': return _sectionOverview();
+        case 'rounds': return _sectionRounds();
+        case 'ballots': return _sectionBallots();
+        case 'break': return _sectionBreak();
+        case 'publish': return _sectionPublish();
+        case 'urls': return _sectionURLs();
+        case 'data': return _sectionData();
+        case 'users': return _sectionUsers();
+        // DISABLED: case 'sample': return _sectionSample();   // to be implemented later
+        // DISABLED: case 'danger': return _sectionDanger();   // to be implemented later
+        default: return _sectionOverview();
     }
 }
 
@@ -490,13 +503,13 @@ function _sectionTournaments() {
         ${tournaments.length === 0 ? `<div class="adm-empty">No tournaments yet.</div>` : `
         <div class="adm-col">
             ${tournaments.map((t) => {
-                const isActive = t.id === activeId;
-                const teamCount   = (t.teams   || []).length;
-                const judgeCount  = (t.judges  || []).length;
-                const roundCount  = (t.rounds  || []).length;
-                const ballotsDone = (t.rounds  || []).flatMap(r => r.debates||[]).filter(d => d.entered).length;
+        const isActive = t.id === activeId;
+        const teamCount = (t.teams || []).length;
+        const judgeCount = (t.judges || []).length;
+        const roundCount = (t.rounds || []).length;
+        const ballotsDone = (t.rounds || []).flatMap(r => r.debates || []).filter(d => d.entered).length;
 
-                return `
+        return `
                 <div class="adm-tour-row ${isActive ? 'is-active' : ''}">
                     <div class="adm-grow">
                         <div class="adm-tour-header">
@@ -515,13 +528,47 @@ function _sectionTournaments() {
                         ${!isActive ? `
                             <button class="adm-btn primary xs" onclick="window.adminSwitchTournament('${t.id}')">🎯 Switch</button>
                         ` : ''}
-                        <button class="adm-btn secondary xs" onclick="window.adminRenameTournament('${t.id}', '${escapeHTML(t.name).replace(/'/g,"\\'")}')">✏️ Rename</button>
-                        <button class="adm-btn danger xs" onclick="window.adminDeleteTournament('${t.id}')" ${isActive && tournaments.length > 1 ? 'disabled' : ''}>🗑️</button>
+                        <button class="adm-btn secondary xs" onclick="window.adminRenameTournament('${t.id}', '${escapeHTML(t.name).replace(/'/g, "\\'")}')">✏️ Rename</button>
+                        <button class="adm-btn secondary xs" onclick="window.adminTournamentSettings('${t.id}', '${escapeHTML(t.name).replace(/'/g, "\\'")}')">⚙️ Settings</button>
                     </div>
                 </div>`;
-            }).join('')}
+    }).join('')}
         </div>`}
     </div>`;
+}
+
+// Async refresh — fetches the latest tournament list from Supabase and re-renders.
+// IMPORTANT: only updates state if the API actually returns tournaments.
+// Never wipes state with an empty list (that would replace real data with the default placeholder).
+async function _refreshTournamentSection() {
+    try {
+        const body = document.getElementById('adm-body');
+        if (!body || _activeSection !== 'tournaments') return;
+
+        const freshList = await api.getTournaments().catch(err => {
+            console.warn('[admin] getTournaments failed during section refresh:', err.message);
+            return null; // null = error, don't touch state
+        });
+
+        // Only update state when we actually received data
+        if (freshList && freshList.length > 0) {
+            hydrateState({
+                activeTournamentId: state.activeTournamentId,
+                tournaments: freshList,
+                teams: state.teams || [],
+                judges: state.judges || [],
+                rounds: state.rounds || [],
+                publish: state.publish || {}
+            });
+        }
+        // Re-render only if user hasn't navigated away
+        if (_activeSection === 'tournaments') {
+            const el = document.getElementById('adm-body');
+            if (el) el.innerHTML = _buildSection('tournaments');
+        }
+    } catch (e) {
+        console.warn('[admin] _refreshTournamentSection failed:', e);
+    }
 }
 
 async function adminSwitchTournament(id, opts = {}) {
@@ -546,14 +593,15 @@ async function adminSwitchTournament(id, opts = {}) {
 
         localStorage.setItem('orion_active_tournament_id', id);
         await _reloadTournamentCatalog(id, { teams, judges, rounds, publish });
+        await window.applyActiveTournamentAccess?.(id);
         window._setupRealtimeSyncForTournament?.(id);
 
         // Debugging logs to help diagnose issues when switching tournaments
         console.debug('[admin] switched tournament', id, {
-          teams: teams?.length ?? 0,
-          judges: judges?.length ?? 0,
-          rounds: rounds?.length ?? 0,
-          publish: publish
+            teams: teams?.length ?? 0,
+            judges: judges?.length ?? 0,
+            rounds: rounds?.length ?? 0,
+            publish: publish
         });
 
         // Refresh the admin dashboard
@@ -566,6 +614,10 @@ async function adminSwitchTournament(id, opts = {}) {
 window.adminSwitchTournament = adminSwitchTournament;
 
 async function adminRenameTournament(id, currentName) {
+    if (!_isRealId(id)) {
+        showNotification('Cannot rename: no real tournament selected. Create a tournament first.', 'error');
+        return;
+    }
     const newName = prompt('Rename tournament:', currentName);
     if (!newName?.trim()) return;
     try {
@@ -580,24 +632,295 @@ async function adminRenameTournament(id, currentName) {
 window.adminRenameTournament = adminRenameTournament;
 
 async function adminDeleteTournament(id) {
-    if (!confirm('Delete this tournament? This cannot be undone.')) return;
-    try {
-        await api.deleteTournament(id);
-        const currentId = String(state.activeTournamentId) === String(id) ? null : state.activeTournamentId;
-        const remaining = await _reloadTournamentCatalog(currentId, currentId ? {} : { teams: [], judges: [], rounds: [], publish: {} });
-        if (remaining.length > 0) {
-            await adminSwitchTournament(remaining[0].id, { skipConfirm: true });
-        } else {
-            localStorage.removeItem('orion_active_tournament_id');
-            hydrateState({ tournaments: [] });
-            adminSwitchSection('tournaments');
-        }
-        showNotification('Tournament deleted', 'success');
-    } catch (err) {
-        showNotification(`Delete failed: ${err.message}`, 'error');
-    }
+    // Tournament deletion disabled
+    showNotification('Tournament deletion is disabled', 'error');
+    return;
 }
 window.adminDeleteTournament = adminDeleteTournament;
+
+// ── Tournament Settings (admins + password) ──────────────────────────────────
+async function adminTournamentSettings(tournId, tournName) {
+    // Must be authenticated admin
+    const user = state.auth?.currentUser;
+    if (!user || user.role !== 'admin') {
+        showNotification('Admin login required to access tournament settings', 'error');
+        return;
+    }
+
+    closeAllModals();
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.onclick = e => { if (e.target === overlay) closeAllModals(); };
+
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.id = 'tourn-settings-modal';
+    modal.style.cssText = 'max-width:540px;max-height:90vh;overflow-y:auto;';
+    modal.innerHTML = `
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+            <h2 style="margin:0;">⚙️ Tournament Settings</h2>
+            <button onclick="window.closeAllModals()" style="background:none;border:none;font-size:20px;cursor:pointer;color:#94a3b8;line-height:1;">×</button>
+        </div>
+        <p style="color:#64748b;font-size:13px;margin:0 0 24px;">${escapeHTML(tournName)}</p>
+
+        <!-- ── Admins ── -->
+        <div style="border:1.5px solid #e2e8f0;border-radius:12px;padding:18px;margin-bottom:18px;">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+                <span style="font-size:16px;">👤</span>
+                <h3 style="margin:0;font-size:14px;font-weight:700;color:#1e293b;">Tournament Admins</h3>
+            </div>
+            <p style="font-size:12px;color:#64748b;margin:0 0 14px;">
+                These registered users can fully manage this tournament. Suspend blocks login; delete removes the account.
+            </p>
+            <div id="ts-admins-list" style="margin-bottom:12px;min-height:36px;">
+                <span style="color:#94a3b8;font-size:13px;">Loading…</span>
+            </div>
+            <div style="display:flex;gap:8px;">
+                <input type="email" id="ts-admin-email" placeholder="admin@email.com"
+                       style="flex:1;padding:9px 12px;border:1.5px solid #e2e8f0;border-radius:8px;font-size:13px;"
+                       onkeydown="if(event.key==='Enter') window._tsAddAdmin('${tournId}')">
+                <button onclick="window._tsAddAdmin('${tournId}')"
+                        style="padding:9px 18px;background:#6366f1;color:white;border:none;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;white-space:nowrap;">
+                    ＋ Add Admin
+                </button>
+            </div>
+            <div id="ts-admin-err" style="color:#dc2626;font-size:12px;margin-top:8px;display:none;"></div>
+        </div>
+
+        <!-- ── Access Password ── -->
+        <div style="border:1.5px solid #e2e8f0;border-radius:12px;padding:18px;">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+                <span style="font-size:16px;">🔒</span>
+                <h3 style="margin:0;font-size:14px;font-weight:700;color:#1e293b;">Access Password</h3>
+            </div>
+            <p style="font-size:12px;color:#64748b;margin:0 0 14px;">
+                Visitors must enter this password to view the tournament's public pages. Leave blank to remove the lock.
+            </p>
+
+            <!-- View current password (requires re-auth) -->
+            <div id="ts-pw-reveal-section" style="background:#fafafa;border-radius:8px;padding:12px;margin-bottom:14px;">
+                <p style="font-size:12px;color:#374151;font-weight:600;margin:0 0 8px;">View current password</p>
+                <p style="font-size:11px;color:#64748b;margin:0 0 10px;">Enter your admin login password to reveal the current tournament access password.</p>
+                <div style="display:flex;gap:8px;">
+                    <input type="password" id="ts-reauth-pw" placeholder="Your login password"
+                           style="flex:1;padding:8px 12px;border:1.5px solid #e2e8f0;border-radius:8px;font-size:13px;"
+                           onkeydown="if(event.key==='Enter') window._tsRevealPassword('${tournId}')">
+                    <button onclick="window._tsRevealPassword('${tournId}')"
+                            style="padding:8px 14px;background:#f1f5f9;color:#374151;border:1.5px solid #e2e8f0;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;">
+                        Reveal
+                    </button>
+                </div>
+                <div id="ts-pw-revealed" style="margin-top:10px;display:none;">
+                    <span style="font-size:12px;color:#64748b;">Current password: </span>
+                    <code id="ts-pw-value" style="font-size:14px;font-weight:700;color:#1e293b;background:#e0f2fe;padding:3px 10px;border-radius:6px;"></code>
+                </div>
+                <div id="ts-reauth-err" style="color:#dc2626;font-size:12px;margin-top:8px;display:none;"></div>
+            </div>
+
+            <!-- Set new password -->
+            <p style="font-size:12px;color:#374151;font-weight:600;margin:0 0 8px;">Set new password</p>
+            <div style="display:flex;gap:8px;">
+                <div style="flex:1;position:relative;">
+                    <input type="password" id="ts-password" placeholder="New password (blank = remove lock)"
+                           style="width:100%;padding:9px 38px 9px 12px;border:1.5px solid #e2e8f0;border-radius:8px;font-size:13px;box-sizing:border-box;">
+                    <button type="button" id="ts-pw-toggle"
+                            onclick="window._tsToggleNewPw()"
+                            style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:15px;color:#94a3b8;padding:0;">
+                        👁
+                    </button>
+                </div>
+                <button onclick="window._tsSetPassword('${tournId}')"
+                        style="padding:9px 18px;background:#3b82f6;color:white;border:none;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;white-space:nowrap;">
+                    Save
+                </button>
+            </div>
+            <div id="ts-pw-err" style="color:#dc2626;font-size:12px;margin-top:8px;display:none;"></div>
+        </div>`;
+
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+    document.body.classList.remove('modal-scroll-unlocked');
+    document.body.classList.add('modal-open');
+
+    _tsRefreshAdminList(tournId);
+}
+
+let _tsRefreshAdminList = async function _tsRefreshAdminList(tournId) {
+    const list = document.getElementById('ts-admins-list');
+    if (!list) return;
+    try {
+        const admins = await api.getTournamentAdmins(tournId);
+        if (!admins.length) {
+            list.innerHTML = `<p style="color:#94a3b8;font-size:13px;margin:0;">No extra admins assigned.</p>`;
+            return;
+        }
+        list.innerHTML = admins.map(a => {
+            const name = a.user_profiles?.name || '';
+            const email = a.user_profiles?.email || '—';
+            return `
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 12px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;margin-bottom:6px;">
+                <div>
+                    <div style="font-size:13px;font-weight:600;color:#1e293b;">${escapeHTML(name || email)}</div>
+                    ${name ? `<div style="font-size:11px;color:#64748b;">${escapeHTML(email)}</div>` : ''}
+                </div>
+                <button onclick="window._tsRemoveAdmin('${a.id}','${tournId}')"
+                        style="padding:5px 12px;background:#fee2e2;color:#dc2626;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;">
+                    Remove
+                </button>
+            </div>`;
+        }).join('');
+    } catch (e) {
+        list.innerHTML = `<p style="color:#dc2626;font-size:13px;margin:0;">Failed to load admins: ${escapeHTML(e.message)}</p>`;
+    }
+};
+
+async function _tsRefreshAdminListExpanded(tournId) {
+    const list = document.getElementById('ts-admins-list');
+    if (!list) return;
+    try {
+        const admins = await api.getTournamentAdmins(tournId);
+        if (!admins.length) {
+            list.innerHTML = `<p style="color:#94a3b8;font-size:13px;margin:0;">No extra admins assigned.</p>`;
+            return;
+        }
+        list.innerHTML = admins.map(a => {
+            const name = a.user_profiles?.name || '';
+            const email = a.user_profiles?.email || '—';
+            const status = a.user_profiles?.status || 'active';
+            const isSuspended = status === 'suspended';
+            const isSelf = String(a.user_id) === String(state.auth?.currentUser?.id);
+            return `
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;margin-bottom:6px;">
+                <div>
+                    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                        <span style="font-size:13px;font-weight:600;color:#1e293b;">${escapeHTML(name || email)}</span>
+                        <span style="font-size:10px;font-weight:800;text-transform:uppercase;padding:2px 7px;border-radius:999px;background:${isSuspended ? '#fee2e2' : '#dcfce7'};color:${isSuspended ? '#991b1b' : '#166534'};">${escapeHTML(status)}</span>
+                    </div>
+                    ${name ? `<div style="font-size:11px;color:#64748b;">${escapeHTML(email)}</div>` : ''}
+                    ${isSelf ? `<div style="font-size:11px;color:#6366f1;margin-top:2px;">This is you</div>` : ''}
+                </div>
+                <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;">
+                    <button onclick="window._tsToggleAdminStatus('${tournId}','${a.user_id}','${isSuspended ? 'active' : 'suspended'}')"
+                            ${isSelf ? 'disabled title="You cannot suspend yourself"' : ''}
+                            style="padding:5px 10px;background:${isSuspended ? '#dcfce7' : '#fff7ed'};color:${isSuspended ? '#166534' : '#c2410c'};border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;opacity:${isSelf ? '.45' : '1'};">
+                        ${isSuspended ? 'Reactivate' : 'Suspend'}
+                    </button>
+                    <button onclick="window._tsRemoveAdmin('${a.id}','${tournId}')"
+                            style="padding:5px 10px;background:#f1f5f9;color:#475569;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;">
+                        Remove
+                    </button>
+                    <button onclick="window._tsDeleteAdminAccount('${tournId}','${a.user_id}')"
+                            ${isSelf ? 'disabled title="You cannot delete yourself"' : ''}
+                            style="padding:5px 10px;background:#fee2e2;color:#dc2626;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;opacity:${isSelf ? '.45' : '1'};">
+                        Delete
+                    </button>
+                </div>
+            </div>`;
+        }).join('');
+    } catch (e) {
+        list.innerHTML = `<p style="color:#dc2626;font-size:13px;margin:0;">Failed to load admins: ${escapeHTML(e.message)}</p>`;
+    }
+}
+
+_tsRefreshAdminList = _tsRefreshAdminListExpanded;
+
+window._tsAddAdmin = async function (tournId) {
+    const input = document.getElementById('ts-admin-email');
+    const errEl = document.getElementById('ts-admin-err');
+    const email = input?.value.trim();
+    if (!email) return;
+    errEl.style.display = 'none';
+    try {
+        await api.addTournamentAdminByEmail(tournId, email);
+        input.value = '';
+        await _tsRefreshAdminList(tournId);
+        showNotification('Admin added', 'success');
+    } catch (e) {
+        errEl.textContent = e.message;
+        errEl.style.display = 'block';
+    }
+};
+
+window._tsRemoveAdmin = async function (entryId, tournId) {
+    if (!confirm('Remove this admin from the tournament?')) return;
+    try {
+        await api.removeTournamentAdmin(entryId);
+        await _tsRefreshAdminList(tournId);
+        const canStillManage = await window.applyActiveTournamentAccess?.(tournId);
+        if (!canStillManage && String(state.activeTournamentId) === String(tournId)) {
+            closeAllModals();
+            window.switchTab?.('public');
+        }
+        showNotification('Admin removed', 'success');
+    } catch (e) {
+        showNotification(`Remove failed: ${e.message}`, 'error');
+    }
+};
+
+window._tsToggleAdminStatus = async function (tournId, userId, nextStatus) {
+    const verb = nextStatus === 'suspended' ? 'suspend' : 'reactivate';
+    if (!confirm(`Really ${verb} this admin account?`)) return;
+    try {
+        await api.setTournamentAdminStatus(tournId, userId, nextStatus);
+        await _tsRefreshAdminList(tournId);
+        showNotification(nextStatus === 'suspended' ? 'Admin suspended' : 'Admin reactivated', 'success');
+    } catch (e) {
+        showNotification(`Status update failed: ${e.message}`, 'error');
+    }
+};
+
+window._tsDeleteAdminAccount = async function (tournId, userId) {
+    if (!confirm('Delete this admin account permanently? This removes the user login, not just tournament access.')) return;
+    if (!confirm('Final confirmation: permanently delete this registered account?')) return;
+    try {
+        await api.deleteTournamentAdminAccount(tournId, userId);
+        await _tsRefreshAdminList(tournId);
+        showNotification('Admin account deleted', 'success');
+    } catch (e) {
+        showNotification(`Delete failed: ${e.message}`, 'error');
+    }
+};
+
+window._tsRevealPassword = async function (tournId) {
+    const loginPw = document.getElementById('ts-reauth-pw')?.value;
+    const errEl = document.getElementById('ts-reauth-err');
+    const revealEl = document.getElementById('ts-pw-revealed');
+    const valEl = document.getElementById('ts-pw-value');
+    errEl.style.display = 'none';
+    if (!loginPw) { errEl.textContent = 'Enter your login password first.'; errEl.style.display = 'block'; return; }
+    try {
+        const pw = await api.revealTournamentPassword(tournId, loginPw);
+        valEl.textContent = pw || '(no password set)';
+        document.getElementById('ts-reauth-pw').value = '';
+        revealEl.style.display = 'block';
+    } catch (e) {
+        errEl.textContent = e.message || 'Authentication failed';
+        errEl.style.display = 'block';
+    }
+};
+
+window._tsToggleNewPw = function () {
+    const inp = document.getElementById('ts-password');
+    if (!inp) return;
+    inp.type = inp.type === 'password' ? 'text' : 'password';
+};
+
+window._tsSetPassword = async function (tournId) {
+    const pw = document.getElementById('ts-password')?.value || '';
+    const errEl = document.getElementById('ts-pw-err');
+    errEl.style.display = 'none';
+    try {
+        await api.setTournamentPassword(tournId, pw.trim() || null);
+        document.getElementById('ts-password').value = '';
+        document.getElementById('ts-pw-revealed').style.display = 'none';
+        showNotification(pw.trim() ? 'Access password saved' : 'Password lock removed', 'success');
+    } catch (e) {
+        errEl.textContent = e.message;
+        errEl.style.display = 'block';
+    }
+};
+
+window.adminTournamentSettings = adminTournamentSettings;
 
 // Helper to get team name by ID
 function _getTeamName(teamId) {
@@ -613,23 +936,39 @@ function _sectionOverview() {
     const s = _getStats();
     const rounds = state.rounds || [];
     const currentRound = rounds.filter(r => r.debates?.length > 0).pop();
-    
+
+    // Get and sort tournaments for the overview list
+    let tournaments = [];
+    if (state.tournaments) {
+        if (Array.isArray(state.tournaments)) {
+            tournaments = [...state.tournaments];
+        } else {
+            tournaments = Object.entries(state.tournaments).map(([id, t]) => ({ ...t, id }));
+        }
+    }
+    const activeId = state.activeTournamentId;
+    tournaments.sort((a, b) => {
+        if (a.id === activeId) return -1;
+        if (b.id === activeId) return 1;
+        return (b.created_at || 0) - (a.created_at || 0) || b.id.localeCompare(a.id);
+    });
+
     let roomBallotsHtml = '';
     if (!currentRound) {
         roomBallotsHtml = `<div class="adm-empty">No rounds yet — go to Rounds &amp; Draw to create one.</div>`;
     } else {
         const debates = currentRound.debates || [];
         const rooms = currentRound.rooms || [];
-        
+
         const submitted = debates.filter(d => d.entered).length;
         const pending = debates.length - submitted;
-        
+
         let rows = debates.map((d, i) => {
             const roomName = rooms[i] || `Room ${i + 1}`;
             const isEntered = d.entered;
             const govTeam = _getTeamName(d.gov);
             const oppTeam = _getTeamName(d.opp);
-            
+
             return `<div class="adm-room-row">
                 <div class="adm-room-row-content">
                     <strong class="adm-room-row-name">${escapeHTML(roomName)}</strong>
@@ -638,7 +977,7 @@ function _sectionOverview() {
                 <span class="${isEntered ? 'adm-badge green' : 'adm-badge amber'}">${isEntered ? '✅ Submitted' : '⏳ Pending'}</span>
             </div>`;
         }).join('');
-        
+
         roomBallotsHtml = `
             <div class="adm-round-summary">
                 <strong>Round ${currentRound.round_number ?? (rounds.indexOf(currentRound) + 1)}</strong> — ${submitted} submitted, ${pending} pending
@@ -696,12 +1035,37 @@ function _sectionOverview() {
             </div>
         </div>
         <div class="adm-card">
+            <div class="adm-card-title">🏟️ Your Tournaments <span class="adm-card-count">${tournaments.length}</span></div>
+            ${tournaments.length === 0 ? `<div class="adm-empty">No tournaments yet. <button class="adm-btn primary xs" onclick="window.adminSwitchSection('tournaments')">Create one</button></div>` : `
+            <div class="adm-col">
+                ${tournaments.map(t => {
+                    const isActive = t.id === activeId;
+                    return `
+                        <div class="adm-tour-row ${isActive ? 'is-active' : ''}">
+                            <div class="adm-grow">
+                                <div class="adm-tour-header">
+                                    <strong class="adm-tour-name">${escapeHTML(t.name)}</strong>
+                                    ${isActive ? `<span class="adm-badge indigo adm-active-badge">● ACTIVE</span>` : ''}
+                                </div>
+                                <div class="adm-tour-meta">
+                                    <span class="adm-format-badge std">${t.format || 'std'}</span>
+                                </div>
+                            </div>
+                            <div class="adm-row gap-sm">
+                                ${!isActive ? `<button class="adm-btn primary xs" onclick="window.adminSwitchTournament('${t.id}')">🎯 Switch</button>` : ''}
+                                <button class="adm-btn secondary xs" onclick="window.adminSwitchSection('tournaments')">Manage</button>
+                            </div>
+                        </div>`;
+                }).join('')}
+            </div>`}
+        </div>
+        <div class="adm-card">
             <div class="adm-card-title">📈 Progress</div>
             ${_progressBar('Ballot Completion', s.debates.entered, s.debates.total, '#f97316')}
-            ${_progressBar('Rounds Completed',  s.rounds.completed, Math.max(s.rounds.total,1), '#3b82f6')}
-            ${_progressBar('Teams Breaking',    s.teams.breaking, Math.max(s.teams.total,1), '#8b5cf6')}
-            ${_progressBar('Team Feedback',      s.feedback.teamsWithFeedback, Math.max(s.teams.total,1), '#10b981')}
-            ${_progressBar('Judge Feedback',     s.feedback.judgesWithFeedback, Math.max(s.judges.total,1), '#6366f1')}
+            ${_progressBar('Rounds Completed', s.rounds.completed, Math.max(s.rounds.total, 1), '#3b82f6')}
+            ${_progressBar('Teams Breaking', s.teams.breaking, Math.max(s.teams.total, 1), '#8b5cf6')}
+            ${_progressBar('Team Feedback', s.feedback.teamsWithFeedback, Math.max(s.teams.total, 1), '#10b981')}
+            ${_progressBar('Judge Feedback', s.feedback.judgesWithFeedback, Math.max(s.judges.total, 1), '#6366f1')}
             <div class="adm-participants-section">
                 <div class="adm-participants-header">Participants</div>
                 ${_statRow('Teams', s.teams.total)}
@@ -724,7 +1088,7 @@ function _sectionOverview() {
 function _sectionRounds() {
     const rounds = state.rounds || [];
     const roundsHtml = rounds.slice().reverse().map(r => window.renderRoundMiniTable(r)).join('');
-    
+
     return `
     <div class="adm-section-head">
         <h2>🎲 Rounds &amp; Draw</h2>
@@ -754,19 +1118,19 @@ function _sectionBallots() {
         <p>Enter or override ballot results for any room. Normally judges submit via their portal link — use this as a bypass when needed.</p>
     </div>
     ${rounds.length === 0
-        ? `<div class="adm-card"><div class="adm-empty">No rounds yet.</div></div>`
-        : rounds.map(r => {
-            const rIdx  = allRounds.indexOf(r);
-            const done  = (r.debates||[]).filter(d=>d.entered).length;
-            const total = (r.debates||[]).length;
-            const pct   = total > 0 ? Math.round(done/total*100) : 0;
-            return `
+            ? `<div class="adm-card"><div class="adm-empty">No rounds yet.</div></div>`
+            : rounds.map(r => {
+                const rIdx = allRounds.indexOf(r);
+                const done = (r.debates || []).filter(d => d.entered).length;
+                const total = (r.debates || []).length;
+                const pct = total > 0 ? Math.round(done / total * 100) : 0;
+                return `
             <div class="adm-card">
                 <div class="adm-ballot-header">
                     <div class="adm-row gap-sm">
                         <span class="adm-strong">Round ${r.round_number ?? (rIdx + 1)}</span>
-                        ${r.type==='knockout'?'<span class="adm-badge red">KO</span>':''}
-                        ${r.blinded?'<span class="adm-badge grey">Blind</span>':''}
+                        ${r.type === 'knockout' ? '<span class="adm-badge red">KO</span>' : ''}
+                        ${r.blinded ? '<span class="adm-badge grey">Blind</span>' : ''}
                     </div>
                     <div class="adm-prog-row">
                         <div class="adm-bar-bg adm-bar-bg--fixed"><div class="adm-bar-fill" style="width:${pct}%"></div></div>
@@ -774,30 +1138,30 @@ function _sectionBallots() {
                     </div>
                 </div>
                 <div class="adm-room-grid">
-                ${(r.debates||[]).map((d,i) => {
-                    const gov  = (state.teams||[]).find(t=>t.id===d.gov);
-                    const opp  = (state.teams||[]).find(t=>t.id===d.opp);
-                    const room = r.rooms?.[i] || `Room ${String.fromCharCode(65+i)}`;
-                    const jnames = (d.panel||[]).map(p=>escapeHTML(p.name||'')).join(', ');
+                ${(r.debates || []).map((d, i) => {
+                    const gov = (state.teams || []).find(t => t.id === d.gov);
+                    const opp = (state.teams || []).find(t => t.id === d.opp);
+                    const room = r.rooms?.[i] || `Room ${String.fromCharCode(65 + i)}`;
+                    const jnames = (d.panel || []).map(p => escapeHTML(p.name || '')).join(', ');
                     return `
-                    <div class="adm-room-card ${d.entered?'done':''}">
+                    <div class="adm-room-card ${d.entered ? 'done' : ''}">
                         <div class="adm-room-top">
-                            <span class="adm-room-dot ${d.entered?'green':'amber'}"></span>
+                            <span class="adm-room-dot ${d.entered ? 'green' : 'amber'}"></span>
                             <strong>${escapeHTML(room)}</strong>
-                            <span class="adm-room-status">${d.entered?'✓ Done':'⏳ Pending'}</span>
+                            <span class="adm-room-status">${d.entered ? '✓ Done' : '⏳ Pending'}</span>
                         </div>
-                        <div class="adm-room-teams">${gov?escapeHTML(gov.name):'?'} <em>vs</em> ${opp?escapeHTML(opp.name):'?'}</div>
-                        ${jnames?`<div class="adm-room-judges">⚖️ ${jnames}</div>`:''}
-                        ${d.entered?`<div class="adm-room-scores">${d.govResults?.total?.toFixed(1)||'?'} — ${d.oppResults?.total?.toFixed(1)||'?'}</div>`:''}
+                        <div class="adm-room-teams">${gov ? escapeHTML(gov.name) : '?'} <em>vs</em> ${opp ? escapeHTML(opp.name) : '?'}</div>
+                        ${jnames ? `<div class="adm-room-judges">⚖️ ${jnames}</div>` : ''}
+                        ${d.entered ? `<div class="adm-room-scores">${d.govResults?.total?.toFixed(1) || '?'} — ${d.oppResults?.total?.toFixed(1) || '?'}</div>` : ''}
                         <button onclick="window.showEnterResults(${rIdx},${i})"
-                                class="adm-ballot-btn ${d.entered?'done':'pending'}">
+                                class="adm-ballot-btn ${d.entered ? 'done' : 'pending'}">
                             ${d.entered ? '✏️ Override Results' : '📝 Enter Results'}
                         </button>
                     </div>`;
                 }).join('')}
                 </div>
             </div>`;
-        }).join('')}`;
+            }).join('')}`;
 }
 
 // ============================================================================
@@ -808,43 +1172,43 @@ function _sectionBreak() {
     const winsLabel = isBP ? '1st/2nd' : 'Wins';
 
     // Category filter
-    const allCats    = (typeof window.getCategories === 'function') ? window.getCategories() : [];
+    const allCats = (typeof window.getCategories === 'function') ? window.getCategories() : [];
     const selectedCat = window._brkSelectedCat || '';
 
-    const allTeams   = [...(state.teams||[])].filter(t => {
+    const allTeams = [...(state.teams || [])].filter(t => {
         if (!selectedCat) return true;
         return (typeof window.teamMatchesCategory === 'function')
             ? window.teamMatchesCategory(t, selectedCat)
-            : (t.categories||[]).includes(selectedCat);
-    }).sort((a,b)=>((b.wins||0)-(a.wins||0))||((b.total||0)-(a.total||0)));
-    const breaking   = allTeams.filter(t=>_isCatBroke(t, selectedCat)).sort((a,b)=>(_catSeed(a,selectedCat)||99)-(_catSeed(b,selectedCat)||99));
-    const ineligible = allTeams.filter(t=>_isCatIneligible(t, selectedCat));
-    const totalRounds = (state.rounds||[]).filter(r=>r&&r.type==='prelim').length;
-    const blindedCount = (state.rounds||[]).filter(r=>r.blinded&&r.type==='prelim').length;
+            : (t.categories || []).includes(selectedCat);
+    }).sort((a, b) => ((b.wins || 0) - (a.wins || 0)) || ((b.total || 0) - (a.total || 0)));
+    const breaking = allTeams.filter(t => _isCatBroke(t, selectedCat)).sort((a, b) => (_catSeed(a, selectedCat) || 99) - (_catSeed(b, selectedCat) || 99));
+    const ineligible = allTeams.filter(t => _isCatIneligible(t, selectedCat));
+    const totalRounds = (state.rounds || []).filter(r => r && r.type === 'prelim').length;
+    const blindedCount = (state.rounds || []).filter(r => r.blinded && r.type === 'prelim').length;
 
     const catSelectorHtml = allCats.length === 0 ? '' : `
         <div class="adm-break-controls-stat" style="flex-direction:column;align-items:flex-start;min-width:140px;">
             <label class="adm-label adm-label--light" style="font-size:10px;margin-bottom:3px;">Category</label>
             <select class="adm-select adm-select--dark" onchange="window._brkSelectedCat=this.value;window.adminSwitchSection('break')">
-                <option value="" ${!selectedCat?'selected':''}>All Teams</option>
-                ${allCats.map(c=>`<option value="${c.id}" ${selectedCat===c.id?'selected':''}>${c.icon||''} ${escapeHTML(c.name)}</option>`).join('')}
+                <option value="" ${!selectedCat ? 'selected' : ''}>All Teams</option>
+                ${allCats.map(c => `<option value="${c.id}" ${selectedCat === c.id ? 'selected' : ''}>${c.icon || ''} ${escapeHTML(c.name)}</option>`).join('')}
             </select>
         </div>
         <div class="adm-break-controls-divider"></div>`;
 
     const teamRows = allTeams.map(t => {
-        const rp     = Object.keys(t.roundScores||{}).length;
-        const avg    = rp > 0 ? ((t.total||0)/rp).toFixed(1) : '—';
+        const rp = Object.keys(t.roundScores || {}).length;
+        const avg = rp > 0 ? ((t.total || 0) / rp).toFixed(1) : '—';
         const missed = totalRounds - rp;
         const inelig = _isCatIneligible(t, selectedCat);
-        const broke  = _isCatBroke(t, selectedCat);
-        const seed   = _catSeed(t, selectedCat);
+        const broke = _isCatBroke(t, selectedCat);
+        const seed = _catSeed(t, selectedCat);
         const reason = _catIneligReason(t, selectedCat);
         const rowClass = inelig ? 'adm-row--inelig' : (broke ? 'adm-row--breaking' : '');
         return `<tr class="${rowClass}" id="inelig-row-${t.id}">
             <td>
                 <label class="adm-center-label">
-                    <input type="checkbox" ${inelig?'checked':''}
+                    <input type="checkbox" ${inelig ? 'checked' : ''}
                            onchange="window.adminToggleIneligible('${t.id}', this.checked)"
                            class="adm-inelig-checkbox">
                 </label>
@@ -854,20 +1218,20 @@ function _sectionBreak() {
                     <strong>${escapeHTML(t.name)}</strong>
                     ${broke ? `<span class="adm-badge green">Seed ${seed}</span>` : ''}
                     ${missed > 0 ? `<span class="adm-badge amber">⚠️ ${missed} missed</span>` : ''}
-                    ${(t.categories||[]).map(cid=>{const cat=allCats.find(c=>c.id===cid);return cat?`<span class="adm-badge" style="background:${cat.color}22;color:${cat.color};border:1px solid ${cat.color}44">${cat.icon||''} ${escapeHTML(cat.name)}</span>`:''}).join('')}
+                    ${(t.categories || []).map(cid => { const cat = allCats.find(c => c.id === cid); return cat ? `<span class="adm-badge" style="background:${cat.color}22;color:${cat.color};border:1px solid ${cat.color}44">${cat.icon || ''} ${escapeHTML(cat.name)}</span>` : '' }).join('')}
                 </div>
             </td>
-            <td><code class="adm-code">${escapeHTML(t.code||'')} </code></td>
-            <td class="adm-td-wins">${t.wins||0}</td>
-            <td>${(t.total||0).toFixed(1)}</td>
+            <td><code class="adm-code">${escapeHTML(t.code || '')} </code></td>
+            <td class="adm-td-wins">${t.wins || 0}</td>
+            <td>${(t.total || 0).toFixed(1)}</td>
             <td class="adm-td-avg">${avg}</td>
             <td id="inelig-reason-cell-${t.id}">
                 ${inelig
-                    ? `<input type="text" value="${escapeHTML(reason)}"
+                ? `<input type="text" value="${escapeHTML(reason)}"
                               placeholder="Reason (optional)…"
                               onchange="window.adminSetIneligibleReason('${t.id}', this.value)"
                               class="adm-inelig-input">`
-                    : `<span class="adm-muted-sm">—</span>`}
+                : `<span class="adm-muted-sm">—</span>`}
             </td>
         </tr>`;
     }).join('');
@@ -877,28 +1241,28 @@ function _sectionBreak() {
         : `<div class="adm-table-wrap"><table class="adm-table">
             <thead><tr><th>Seed</th><th>Team</th><th>Code</th><th>${winsLabel}</th><th>Points</th><th>Avg</th></tr></thead>
             <tbody>${breaking.map(t => {
-                const rp = Object.keys(t.roundScores||{}).length;
-                return `<tr>
+            const rp = Object.keys(t.roundScores || {}).length;
+            return `<tr>
                     <td><span class="adm-badge green">${_catSeed(t, selectedCat)}</span></td>
                     <td><strong>${escapeHTML(t.name)}</strong></td>
-                    <td><code class="adm-code">${escapeHTML(t.code||'')} </code></td>
-                    <td class="adm-td-wins">${t.wins||0}</td>
-                    <td>${(t.total||0).toFixed(1)}</td>
-                    <td class="adm-td-avg">${rp>0?((t.total||0)/rp).toFixed(1):'—'}</td>
+                    <td><code class="adm-code">${escapeHTML(t.code || '')} </code></td>
+                    <td class="adm-td-wins">${t.wins || 0}</td>
+                    <td>${(t.total || 0).toFixed(1)}</td>
+                    <td class="adm-td-avg">${rp > 0 ? ((t.total || 0) / rp).toFixed(1) : '—'}</td>
                 </tr>`;
-            }).join('')}</tbody>
+        }).join('')}</tbody>
         </table></div>`;
 
     const ineligCount = ineligible.length;
     const catLabel = selectedCat
-        ? (allCats.find(c=>c.id===selectedCat)?.name || selectedCat)
+        ? (allCats.find(c => c.id === selectedCat)?.name || selectedCat)
         : 'All Teams';
 
     return `
     <div class="adm-section-head">
         <h2>🏆 Break &amp; Outrounds</h2>
         <p>Generate Breaks, preview and confirm the break. You can toggle eligibility manually to include/exclude teams as needed.
-        ${blindedCount>0?`<span class="adm-blinded-badge">⚠️ ${blindedCount} round${blindedCount!==1?'s':''} blinded</span>`:''}
+        ${blindedCount > 0 ? `<span class="adm-blinded-badge">⚠️ ${blindedCount} round${blindedCount !== 1 ? 's' : ''} blinded</span>` : ''}
         </p>
     </div>
 
@@ -1044,14 +1408,14 @@ function _sectionBreak() {
         </div>
         <div id="brk-pane-inelig" class="adm-brk-pane" style="display:none">
             ${ineligible.length === 0
-                ? `<div class="adm-empty">No teams marked ineligible. Tick 🚫 in the All Teams tab to exclude a team.</div>`
-                : `<div class="adm-table-wrap"><table class="adm-table">
+            ? `<div class="adm-empty">No teams marked ineligible. Tick 🚫 in the All Teams tab to exclude a team.</div>`
+            : `<div class="adm-table-wrap"><table class="adm-table">
                     <thead><tr><th>Team</th><th>${winsLabel}</th><th>Points</th><th>Reason</th><th></th></tr></thead>
-                    <tbody>${ineligible.map(t=>`<tr>
+                    <tbody>${ineligible.map(t => `<tr>
                         <td><strong>${escapeHTML(t.name)}</strong></td>
-                        <td class="adm-td-wins">${t.wins||0}</td>
-                        <td>${(t.total||0).toFixed(1)}</td>
-                        <td class="adm-td-avg">${escapeHTML(_catIneligReason(t, selectedCat)||'—')}</td>
+                        <td class="adm-td-wins">${t.wins || 0}</td>
+                        <td>${(t.total || 0).toFixed(1)}</td>
+                        <td class="adm-td-avg">${escapeHTML(_catIneligReason(t, selectedCat) || '—')}</td>
                         <td><button class="adm-btn secondary xs" onclick="window.adminToggleIneligible('${t.id}',false);window.adminSwitchSection('break')">Remove</button></td>
                     </tr>`).join('')}</tbody>
                 </table></div>`}
@@ -1067,13 +1431,13 @@ function _sectionBreak() {
 function _sectionPublish() {
     const pub = state.publish || {};
     const tabs = [
-        { id:'draw',      icon:'🎲', label:'Draw',      desc:'Show round pairings publicly' },
-        { id:'standings', icon:'📊', label:'Standings',  desc:'Show team win/loss table' },
-        { id:'speakers',  icon:'🗣️', label:'Speakers',   desc:'Show speaker score rankings' },
-        { id:'break',     icon:'🏆', label:'Break',      desc:'Show breaking teams list' },
-        { id:'knockout',  icon:'⚔️', label:'Outrounds',   desc:'Show knockout bracket' },
-        { id:'motions',   icon:'📜', label:'Motions',    desc:'Show all round motions' },
-        { id:'results',   icon:'✅', label:'Results',    desc:'Show debate result scores' },
+        { id: 'draw', icon: '🎲', label: 'Draw', desc: 'Show round pairings publicly' },
+        { id: 'standings', icon: '📊', label: 'Standings', desc: 'Show team win/loss table' },
+        { id: 'speakers', icon: '🗣️', label: 'Speakers', desc: 'Show speaker score rankings' },
+        { id: 'break', icon: '🏆', label: 'Break', desc: 'Show breaking teams list' },
+        { id: 'knockout', icon: '⚔️', label: 'Outrounds', desc: 'Show knockout bracket' },
+        { id: 'motions', icon: '📜', label: 'Motions', desc: 'Show all round motions' },
+        { id: 'results', icon: '✅', label: 'Results', desc: 'Show debate result scores' },
     ];
     const rounds = state.rounds || [];
 
@@ -1097,8 +1461,8 @@ function _sectionPublish() {
                     </div>
                 </div>
                 <div class="adm-pub-right">
-                    <span class="adm-pub-state ${pub[t.id]?'on':'off'}">${pub[t.id]?'Live':'Hidden'}</span>
-                    <button class="adm-toggle ${pub[t.id]?'on':''}" onclick="window.adminTogglePublish('${t.id}')">
+                    <span class="adm-pub-state ${pub[t.id] ? 'on' : 'off'}">${pub[t.id] ? 'Live' : 'Hidden'}</span>
+                    <button class="adm-toggle ${pub[t.id] ? 'on' : ''}" onclick="window.adminTogglePublish('${t.id}')">
                         <span class="adm-toggle-knob"></span>
                     </button>
                 </div>
@@ -1116,26 +1480,26 @@ function _sectionPublish() {
             ? `<div class="adm-empty">No rounds yet.</div>`
             : `<div class="adm-col">
                 ${rounds.map((r, idx) => {
-                    const done = (r.debates||[]).filter(d=>d.entered).length;
-                    const tot  = (r.debates||[]).length;
-                    return `
+                const done = (r.debates || []).filter(d => d.entered).length;
+                const tot = (r.debates || []).length;
+                return `
                     <div class="adm-pub-row">
                         <div class="adm-pub-info">
-                            <span class="adm-pub-icon">${r.type==='knockout'?'🏆':'🎲'}</span>
+                            <span class="adm-pub-icon">${r.type === 'knockout' ? '🏆' : '🎲'}</span>
                             <div>
-                                <div class="adm-pub-label">Round ${r.round_number ?? (idx + 1)}${r.motion ? ': '+escapeHTML(r.motion.substring(0,40))+'…' : ''}</div>
-                                <div class="adm-pub-desc">${done}/${tot} ballots submitted · ${r.type||'prelim'}</div>
+                                <div class="adm-pub-label">Round ${r.round_number ?? (idx + 1)}${r.motion ? ': ' + escapeHTML(r.motion.substring(0, 40)) + '…' : ''}</div>
+                                <div class="adm-pub-desc">${done}/${tot} ballots submitted · ${r.type || 'prelim'}</div>
                             </div>
                         </div>
                         <div class="adm-pub-right">
-                            <span class="adm-pub-state ${r.blinded?'off':'on'}">${r.blinded?'Blinded':'Visible'}</span>
+                            <span class="adm-pub-state ${r.blinded ? 'off' : 'on'}">${r.blinded ? 'Blinded' : 'Visible'}</span>
                             ${r.type !== 'knockout' ? `
-                            <button class="adm-toggle ${r.blinded?'':' on'}" onclick="window.toggleBlindRound(${idx});window.adminSwitchSection('publish')">
+                            <button class="adm-toggle ${r.blinded ? '' : ' on'}" onclick="window.toggleBlindRound(${idx});window.adminSwitchSection('publish')">
                                 <span class="adm-toggle-knob"></span>
                             </button>` : '<span class="adm-ko-label">KO — always visible</span>'}
                         </div>
                     </div>`;
-                }).join('')}
+            }).join('')}
             </div>`}
     </div>`;
 }
@@ -1159,39 +1523,39 @@ async function _loadURLsData() {
     const tournId = state.activeTournamentId;
     const el = document.getElementById('adm-urls-body');
     if (!el) return;
-    const safe = async (fn) => { try { return await fn(); } catch(_) { return []; } };
+    const safe = async (fn) => { try { return await fn(); } catch (_) { return []; } };
     const [jTokens, tTokens] = await Promise.all([
-        tournId ? safe(() => api.getJudgeTokenStatus(tournId)) : [],
-        tournId ? safe(() => api.getTeamTokenStatus(tournId))  : [],
+        _isRealId(tournId) ? safe(() => api.getJudgeTokenStatus(tournId)) : [],
+        _isRealId(tournId) ? safe(() => api.getTeamTokenStatus(tournId)) : [],
     ]);
     if (!document.getElementById('adm-urls-body')) return;
     el.innerHTML = _buildURLsBody(jTokens || [], tTokens || []);
 }
 
 function _buildURLsBody(jTokens, tTokens) {
-    const base   = window.location.origin + window.location.pathname;
+    const base = window.location.origin + window.location.pathname;
     const portalBase = `${window.location.origin}/portal.html`;
-    const jMap   = Object.fromEntries((jTokens).map(t => [t.judge_id, t]));
-    const tMap   = Object.fromEntries((tTokens).map(t => [t.team_id,  t]));
+    const jMap = Object.fromEntries((jTokens).map(t => [t.judge_id, t]));
+    const tMap = Object.fromEntries((tTokens).map(t => [t.team_id, t]));
     const judges = state.judges || [];
-    const teams  = state.teams  || [];
+    const teams = state.teams || [];
     const jCount = Object.keys(jMap).length;
     const tCount = Object.keys(tMap).length;
 
     function judgeRow(j) {
-        const tok   = jMap[j.id];
-        const url   = tok ? `${base}?judge=${tok.token}` : null;
-        const safeUrl  = url  ? url.replace(/'/g, '%27')  : '';
+        const tok = jMap[j.id];
+        const url = tok ? `${base}?judge=${tok.token}` : null;
+        const safeUrl = url ? url.replace(/'/g, '%27') : '';
         const safeName = escapeHTML(j.name);
         const safeEmail = escapeHTML(j.email || '');
-        const used  = tok?.last_used_at ? new Date(tok.last_used_at).toLocaleDateString() : null;
+        const used = tok?.last_used_at ? new Date(tok.last_used_at).toLocaleDateString() : null;
         return `
         <div class="url-row ${tok ? 'url-row--active' : ''}">
             <span class="url-status-dot ${tok ? 'url-status-dot--on' : 'url-status-dot--off'}"></span>
             <div class="url-row-info">
                 <span class="url-row-name">${safeName}</span>
                 ${safeEmail ? `<span class="url-row-email">${safeEmail}</span>` : '<span class="url-row-email url-row-email--missing">no email — link not protected</span>'}
-                ${used      ? `<span class="url-row-meta">Last used ${used}</span>` : ''}
+                ${used ? `<span class="url-row-meta">Last used ${used}</span>` : ''}
             </div>
             <div class="url-row-actions">
                 ${!tok ? `
@@ -1207,19 +1571,19 @@ function _buildURLsBody(jTokens, tTokens) {
     }
 
     function teamRow(t) {
-        const tok   = tMap[t.id];
-        const url   = tok ? `${portalBase}?team=${tok.token}` : null;
-        const safeUrl  = url  ? url.replace(/'/g, '%27')  : '';
+        const tok = tMap[t.id];
+        const url = tok ? `${portalBase}?team=${tok.token}` : null;
+        const safeUrl = url ? url.replace(/'/g, '%27') : '';
         const safeName = escapeHTML(t.name);
         const safeEmail = escapeHTML(t.email || '');
-        const used  = tok?.last_used_at ? new Date(tok.last_used_at).toLocaleDateString() : null;
+        const used = tok?.last_used_at ? new Date(tok.last_used_at).toLocaleDateString() : null;
         return `
         <div class="url-row ${tok ? 'url-row--active' : ''}">
             <span class="url-status-dot ${tok ? 'url-status-dot--on' : 'url-status-dot--off'}"></span>
             <div class="url-row-info">
                 <span class="url-row-name">${safeName}</span>
                 ${safeEmail ? `<span class="url-row-email">${safeEmail}</span>` : '<span class="url-row-email url-row-email--missing">no email — link not protected</span>'}
-                ${used      ? `<span class="url-row-meta">Last used ${used}</span>` : ''}
+                ${used ? `<span class="url-row-meta">Last used ${used}</span>` : ''}
             </div>
             <div class="url-row-actions">
                 ${!tok ? `
@@ -1312,30 +1676,30 @@ function _buildURLsBody(jTokens, tTokens) {
 // ── Admin URL CRUD window functions ───────────────────────────────────────────
 async function _adminGenJudgeURL(judgeId) {
     const tournId = state.activeTournamentId;
-    if (!tournId) { showNotification('No active tournament', 'error'); return; }
+    if (!_isRealId(tournId)) { showNotification('No active tournament', 'error'); return; }
     try {
         const { url } = await api.generateJudgeToken(judgeId, tournId);
         showNotification('URL generated — copy it from the list', 'success');
         _loadURLsData();
         // Auto-copy for convenience
-        navigator.clipboard?.writeText(url).catch(() => {});
+        navigator.clipboard?.writeText(url).catch(() => { });
     } catch (e) { showNotification(`Failed to generate: ${e.message}`, 'error'); }
 }
 
 async function _adminGenTeamURL(teamId) {
     const tournId = state.activeTournamentId;
-    if (!tournId) { showNotification('No active tournament', 'error'); return; }
+    if (!_isRealId(tournId)) { showNotification('No active tournament', 'error'); return; }
     try {
         const { url } = await api.generateTeamToken(teamId, tournId);
         showNotification('URL generated — copy it from the list', 'success');
         _loadURLsData();
-        navigator.clipboard?.writeText(url).catch(() => {});
+        navigator.clipboard?.writeText(url).catch(() => { });
     } catch (e) { showNotification(`Failed to generate: ${e.message}`, 'error'); }
 }
 
 async function _adminRevokeJudgeURL(judgeId) {
     const tournId = state.activeTournamentId;
-    if (!tournId) return;
+    if (!_isRealId(tournId)) return;
     if (!confirm('Revoke this judge\'s access link?')) return;
     try {
         await api.revokeJudgeToken(judgeId, tournId);
@@ -1346,7 +1710,7 @@ async function _adminRevokeJudgeURL(judgeId) {
 
 async function _adminRevokeTeamURL(teamId) {
     const tournId = state.activeTournamentId;
-    if (!tournId) return;
+    if (!_isRealId(tournId)) return;
     if (!confirm('Revoke this team\'s access link?')) return;
     try {
         await api.revokeTeamToken(teamId, tournId);
@@ -1374,7 +1738,7 @@ function _adminSendURL(url, email, type, name) {
 
 async function _adminGenAllJudgeURLs() {
     const tournId = state.activeTournamentId;
-    if (!tournId) { showNotification('No active tournament', 'error'); return; }
+    if (!_isRealId(tournId)) { showNotification('No active tournament', 'error'); return; }
     const judges = state.judges || [];
     if (!judges.length) { showNotification('No judges added yet', 'error'); return; }
     let count = 0, failed = 0;
@@ -1389,7 +1753,7 @@ async function _adminGenAllJudgeURLs() {
 
 async function _adminGenAllTeamURLs() {
     const tournId = state.activeTournamentId;
-    if (!tournId) { showNotification('No active tournament', 'error'); return; }
+    if (!_isRealId(tournId)) { showNotification('No active tournament', 'error'); return; }
     const teams = state.teams || [];
     if (!teams.length) { showNotification('No teams added yet', 'error'); return; }
     let count = 0, failed = 0;
@@ -1404,25 +1768,25 @@ async function _adminGenAllTeamURLs() {
 
 async function _adminBulkSendURLs(type) {
     const tournId = state.activeTournamentId;
-    if (!tournId) return;
+    if (!_isRealId(tournId)) return;
     try {
         let tokens, entities;
         if (type === 'judges') {
-            tokens   = await api.getJudgeTokenStatus(tournId);
+            tokens = await api.getJudgeTokenStatus(tournId);
             entities = state.judges || [];
         } else {
-            tokens   = await api.getTeamTokenStatus(tournId);
+            tokens = await api.getTeamTokenStatus(tournId);
             entities = state.teams || [];
         }
         const base = window.location.origin + window.location.pathname;
         const param = type === 'judges' ? 'judge' : 'team';
         const idKey = type === 'judges' ? 'judge_id' : 'team_id';
-        const map   = Object.fromEntries((tokens || []).map(t => [t[idKey], t]));
+        const map = Object.fromEntries((tokens || []).map(t => [t[idKey], t]));
         let sent = 0;
         for (const entity of entities) {
             const tok = map[entity.id];
             if (!tok || !entity.email) continue;
-            const url  = `${base}?${param}=${tok.token}`;
+            const url = `${base}?${param}=${tok.token}`;
             const name = entity.name || '';
             _adminSendURL(url, entity.email, param, name);
             sent++;
@@ -1435,7 +1799,7 @@ async function _adminBulkSendURLs(type) {
 
 async function _adminRevokeAllURLs() {
     const tournId = state.activeTournamentId;
-    if (!tournId) return;
+    if (!_isRealId(tournId)) return;
     if (!confirm('Revoke ALL judge and team access links? They will need to be regenerated.')) return;
     try {
         await Promise.all([api.revokeAllTokens(tournId), api.revokeAllTeamTokens(tournId)]);
@@ -1446,7 +1810,7 @@ async function _adminRevokeAllURLs() {
 
 async function _adminRevokeAllJudgeURLs() {
     const tournId = state.activeTournamentId;
-    if (!tournId) return;
+    if (!_isRealId(tournId)) return;
     if (!confirm('Revoke all judge access links?')) return;
     try {
         await api.revokeAllTokens(tournId);
@@ -1457,7 +1821,7 @@ async function _adminRevokeAllJudgeURLs() {
 
 async function _adminRevokeAllTeamURLs() {
     const tournId = state.activeTournamentId;
-    if (!tournId) return;
+    if (!_isRealId(tournId)) return;
     if (!confirm('Revoke all team access links?')) return;
     try {
         await api.revokeAllTeamTokens(tournId);
@@ -1467,7 +1831,8 @@ async function _adminRevokeAllTeamURLs() {
 }
 
 // ============================================================================
-// SECTION: TEST DATA
+// SECTION: TEST DATA — DISABLED (to be implemented later)
+// Navigation entry and switch case are commented out; this function is dead code.
 // ============================================================================
 function _sectionSample() {
     return `
@@ -1590,10 +1955,10 @@ function _sectionUsers() {
             <td>
                 <select class="adm-select" style="width:auto;padding:4px 8px;font-size:12px"
                         onchange="window.adminUpdateLocalUserRole('${escapeHTML(u.username)}', this.value)">
-                    <option value="public" ${u.role==='public'?'selected':''}>Public</option>
-                    <option value="judge" ${u.role==='judge'?'selected':''}>Judge</option>
-                    <option value="team" ${u.role==='team'?'selected':''}>Speaker</option>
-                    <option value="admin" ${u.role==='admin'?'selected':''}>Admin</option>
+                    <option value="public" ${u.role === 'public' ? 'selected' : ''}>Public</option>
+                    <option value="judge" ${u.role === 'judge' ? 'selected' : ''}>Judge</option>
+                    <option value="team" ${u.role === 'team' ? 'selected' : ''}>Speaker</option>
+                    <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>Admin</option>
                 </select>
             </td>
             <td>${u.createdAt ? new Date(u.createdAt).toLocaleDateString() : '-'}</td>
@@ -1654,7 +2019,7 @@ function _sectionUsers() {
     </div>`;
 }
 
-window.adminCreateLocalUser = async function() {
+window.adminCreateLocalUser = async function () {
     const username = document.getElementById('adm-local-username')?.value.trim();
     const name = document.getElementById('adm-local-name')?.value.trim();
     const password = document.getElementById('adm-local-password')?.value;
@@ -1678,7 +2043,7 @@ window.adminCreateLocalUser = async function() {
     }
 };
 
-window.adminDeleteLocalUser = async function(username) {
+window.adminDeleteLocalUser = async function (username) {
     if (!confirm(`Delete user ${username}?`)) return;
     try {
         await deleteLocalUser(username);
@@ -1689,7 +2054,7 @@ window.adminDeleteLocalUser = async function(username) {
     }
 };
 
-window.adminUpdateLocalUserRole = async function(username, role) {
+window.adminUpdateLocalUserRole = async function (username, role) {
     try {
         await updateLocalUserRole(username, role);
         showNotification('Role updated', 'success');
@@ -1699,7 +2064,8 @@ window.adminUpdateLocalUserRole = async function(username, role) {
 };
 
 // ============================================================================
-// SECTION: DANGER ZONE
+// SECTION: DANGER ZONE — DISABLED (to be implemented later)
+// Navigation entry and switch case are commented out; this function is dead code.
 // ============================================================================
 function _sectionDanger() {
     return `
@@ -1711,7 +2077,7 @@ function _sectionDanger() {
         <div class="adm-danger-item">
             <div class="adm-danger-info">
                 <strong>↺ Reset Draw Only</strong>
-                <p>Clears all rounds, debates, and results for <em>${escapeHTML(activeTournament()?.name||'current tournament')}</em>. Resets team/speaker stats. <strong>Teams and judges are preserved.</strong></p>
+                <p>Clears all rounds, debates, and results for <em>${escapeHTML(activeTournament()?.name || 'current tournament')}</em>. Resets team/speaker stats. <strong>Teams and judges are preserved.</strong></p>
             </div>
             <button class="adm-btn warning" onclick="window.showResetConfirmation()">Reset Draw</button>
         </div>
@@ -1736,7 +2102,7 @@ function _sectionDanger() {
 // HELPERS
 // ============================================================================
 function _progressBar(label, val, max, color) {
-    const pct = max > 0 ? Math.min(100, Math.round(val/max*100)) : 0;
+    const pct = max > 0 ? Math.min(100, Math.round(val / max * 100)) : 0;
     return `<div class="adm-prog-item">
         <div class="adm-prog-hd"><span>${label}</span><span>${val}/${max}</span></div>
         <div class="adm-bar-bg"><div class="adm-bar-fill" style="width:${pct}%;background:${color}"></div></div>
@@ -1751,29 +2117,29 @@ function _statRow(label, value) {
 }
 
 function _getStats() {
-    const teams      = state.teams  || [];
-    const judges     = state.judges || [];
-    const rounds     = state.rounds || [];
+    const teams = state.teams || [];
+    const judges = state.judges || [];
+    const rounds = state.rounds || [];
     const allDebates = rounds.flatMap(r => r.debates || []);
-    const feedback   = state.feedback || [];
+    const feedback = state.feedback || [];
     const teamsWithFeedback = new Set(feedback.filter(f => f.teamId).map(f => f.teamId)).size;
     const judgesWithFeedback = new Set(feedback.filter(f => f.judgeId).map(f => f.judgeId)).size;
-    
+
     return {
-        teams:   { total: teams.length,   breaking: teams.filter(t=>t.broke).length },
-        judges:  { 
-            total: judges.length,  
-            chair: judges.filter(j=>j.role==='chair').length,
-            panellist: judges.filter(j=>j.role==='panellist').length,
-            trainee: judges.filter(j=>j.role==='trainee').length
+        teams: { total: teams.length, breaking: teams.filter(t => t.broke).length },
+        judges: {
+            total: judges.length,
+            chair: judges.filter(j => j.role === 'chair').length,
+            panellist: judges.filter(j => j.role === 'panellist').length,
+            trainee: judges.filter(j => j.role === 'trainee').length
         },
-        feedback: { 
+        feedback: {
             total: feedback.length,
             teamsWithFeedback,
             judgesWithFeedback
         },
-        rounds:  { total: rounds.length,  completed: rounds.filter(r=>(r.debates||[]).every(d=>d.entered)&&r.debates?.length>0).length },
-        debates: { total: allDebates.length, entered: allDebates.filter(d=>d.entered).length },
+        rounds: { total: rounds.length, completed: rounds.filter(r => (r.debates || []).every(d => d.entered) && r.debates?.length > 0).length },
+        debates: { total: allDebates.length, entered: allDebates.filter(d => d.entered).length },
     };
 }
 
@@ -1782,21 +2148,21 @@ function _getStats() {
 // ============================================================================
 
 export function adminCreateRound() {
-    const motion       = document.getElementById('adm-motion')?.value.trim()    || 'Debate Round';
-    const method       = document.getElementById('adm-pair-method')?.value      || 'random';
-    const sideMethod   = document.getElementById('adm-side-method')?.value      || 'random';
+    const motion = document.getElementById('adm-motion')?.value.trim() || 'Debate Round';
+    const method = document.getElementById('adm-pair-method')?.value || 'random';
+    const sideMethod = document.getElementById('adm-side-method')?.value || 'random';
     const autoAllocate = document.getElementById('adm-auto-allocate')?.checked ?? true;
-    const blind        = document.getElementById('adm-blind-round')?.checked    ?? false;
+    const blind = document.getElementById('adm-blind-round')?.checked ?? false;
 
     const fn = window.createRound;
-    if (typeof fn !== 'function') { showNotification('createRound not available — is draw.js loaded?','error'); return; }
+    if (typeof fn !== 'function') { showNotification('createRound not available — is draw.js loaded?', 'error'); return; }
     fn({ motion, method, sideMethod, autoAllocate, blind });
     _refreshAdminRounds();
 }
 
 // Toggle a team's ineligibility manually — saves immediately
 export function adminToggleIneligible(teamId, isIneligible) {
-    const team = (state.teams||[]).find(t => String(t.id) === String(teamId));
+    const team = (state.teams || []).find(t => String(t.id) === String(teamId));
     if (!team) return;
     const catId = window._brkSelectedCat || '';
 
@@ -1836,7 +2202,7 @@ export function adminToggleIneligible(teamId, isIneligible) {
 
 // Update the reason string for a manually ineligible team
 export function adminSetIneligibleReason(teamId, reason) {
-    const team = (state.teams||[]).find(t => String(t.id) === String(teamId));
+    const team = (state.teams || []).find(t => String(t.id) === String(teamId));
     if (!team) return;
     const catId = window._brkSelectedCat || '';
     if (catId) {
@@ -1874,29 +2240,29 @@ function _catIneligReason(t, catId) {
 // Pure compute — uses per-category or global ineligible flags
 function _computeBreak(size) {
     const catId = window._brkSelectedCat || '';
-    const eligible = (state.teams||[])
+    const eligible = (state.teams || [])
         .filter(t => !_isCatIneligible(t, catId))
         .filter(t => {
             if (!catId) return true;
             return (typeof window.teamMatchesCategory === 'function')
                 ? window.teamMatchesCategory(t, catId)
-                : (t.categories||[]).includes(catId);
+                : (t.categories || []).includes(catId);
         })
-        .sort((a,b) => ((b.wins||0)-(a.wins||0)) || ((b.total||0)-(a.total||0)));
+        .sort((a, b) => ((b.wins || 0) - (a.wins || 0)) || ((b.total || 0) - (a.total || 0)));
 
     const cutoff = Math.min(size, eligible.length);
     return {
-        breaking:  eligible.slice(0, cutoff).map((t,i) => ({...t, _previewSeed: i+1})),
-        bubble:    eligible.slice(cutoff, cutoff+3),
-        ineligible:(state.teams||[])
+        breaking: eligible.slice(0, cutoff).map((t, i) => ({ ...t, _previewSeed: i + 1 })),
+        bubble: eligible.slice(cutoff, cutoff + 3),
+        ineligible: (state.teams || [])
             .filter(t => {
                 if (!_isCatIneligible(t, catId)) return false;
                 if (!catId) return true;
                 return (typeof window.teamMatchesCategory === 'function')
                     ? window.teamMatchesCategory(t, catId)
-                    : (t.categories||[]).includes(catId);
+                    : (t.categories || []).includes(catId);
             })
-            .sort((a,b) => ((b.wins||0)-(a.wins||0))||((b.total||0)-(a.total||0)))
+            .sort((a, b) => ((b.wins || 0) - (a.wins || 0)) || ((b.total || 0) - (a.total || 0)))
     };
 }
 
@@ -1910,15 +2276,15 @@ export function adminPreviewBreak() {
 
     const { breaking, bubble, ineligible } = _computeBreak(totalSize);
 
-    const row = (t, seed, badgeClass='green', note='') => {
-        const rp = Object.keys(t.roundScores||{}).length;
-        const avg = rp > 0 ? ((t.total||0)/rp).toFixed(1) : '—';
+    const row = (t, seed, badgeClass = 'green', note = '') => {
+        const rp = Object.keys(t.roundScores || {}).length;
+        const avg = rp > 0 ? ((t.total || 0) / rp).toFixed(1) : '—';
         return `<tr>
             <td><span class="adm-badge ${badgeClass}">${seed}${note}</span></td>
             <td><strong>${escapeHTML(t.name)}</strong></td>
-            <td><code class="adm-code">${escapeHTML(t.code||'')}</code></td>
-            <td class="adm-td-wins">${t.wins||0}</td>
-            <td>${(t.total||0).toFixed(1)}</td>
+            <td><code class="adm-code">${escapeHTML(t.code || '')}</code></td>
+            <td class="adm-td-wins">${t.wins || 0}</td>
+            <td>${(t.total || 0).toFixed(1)}</td>
             <td class="adm-td-avg">${avg}</td>
         </tr>`;
     };
@@ -1927,33 +2293,33 @@ export function adminPreviewBreak() {
 
     let bodyHtml;
     if (isPartial) {
-        const byeTeams  = breaking.slice(0, seededCount);
+        const byeTeams = breaking.slice(0, seededCount);
         const playTeams = breaking.slice(seededCount, totalSize);
         bodyHtml = `
-            ${byeTeams.map((t,i) => row(t, i+1, 'green', ' 🏅')).join('')}
+            ${byeTeams.map((t, i) => row(t, i + 1, 'green', ' 🏅')).join('')}
             <tr class="adm-brk-bubble-row"><td colspan="6">— Preliminary Elimination Round (${playTeams.length} teams play) —</td></tr>
-            ${playTeams.map((t,i) => row(t, seededCount+i+1, 'amber')).join('')}`;
+            ${playTeams.map((t, i) => row(t, seededCount + i + 1, 'amber')).join('')}`;
     } else {
-        bodyHtml = breaking.map((t,i) => row(t, i+1)).join('');
+        bodyHtml = breaking.map((t, i) => row(t, i + 1)).join('');
     }
 
     let html = `
         ${isPartial ? `<div style="padding:8px 12px;background:#fef9e7;border-radius:6px;margin-bottom:10px;font-size:12px;color:#92400e;">
-            <strong>Partial Break:</strong> top ${seededCount} get byes (🏅), seeds ${seededCount+1}–${totalSize} play the Preliminary Elimination Round.
+            <strong>Partial Break:</strong> top ${seededCount} get byes (🏅), seeds ${seededCount + 1}–${totalSize} play the Preliminary Elimination Round.
         </div>` : ''}
         <div class="adm-table-wrap"><table class="adm-table">
             <thead><tr><th>Seed</th><th>Team</th><th>Code</th><th>${winsLabel}</th><th>Points</th><th>Avg</th></tr></thead>
             <tbody>
                 ${bodyHtml}
-                ${!isPartial && bubble.length ? `<tr class="adm-brk-bubble-row"><td colspan="6">— Bubble (next ${bubble.length}) —</td></tr>${bubble.map((t,i)=>row(t,breaking.length+i+1,'grey')).join('')}` : ''}
+                ${!isPartial && bubble.length ? `<tr class="adm-brk-bubble-row"><td colspan="6">— Bubble (next ${bubble.length}) —</td></tr>${bubble.map((t, i) => row(t, breaking.length + i + 1, 'grey')).join('')}` : ''}
             </tbody>
         </table></div>`;
 
     if (ineligible.length) {
         html += `<div class="adm-inelig-block">
             <div class="adm-inelig-block-title">🚫 ${ineligible.length} manually excluded</div>
-            ${ineligible.map(t=>`<div class="adm-inelig-block-row">
-                <strong>${escapeHTML(t.name)}</strong>${_catIneligReason(t,catId)?` — ${escapeHTML(_catIneligReason(t,catId))}` :''}
+            ${ineligible.map(t => `<div class="adm-inelig-block-row">
+                <strong>${escapeHTML(t.name)}</strong>${_catIneligReason(t, catId) ? ` — ${escapeHTML(_catIneligReason(t, catId))}` : ''}
             </div>`).join('')}
         </div>`;
     }
@@ -1979,15 +2345,15 @@ export function adminConfirmBreak() {
     if (!_validateAdminBreakConfig(config, bp)) return;
 
     // Compute eligible list before resetting (eligibility uses breakIneligible, not broke)
-    const eligible = (state.teams||[])
+    const eligible = (state.teams || [])
         .filter(t => !_isCatIneligible(t, catId))
         .filter(t => {
             if (!catId) return true;
             return (typeof window.teamMatchesCategory === 'function')
                 ? window.teamMatchesCategory(t, catId)
-                : (t.categories||[]).includes(catId);
+                : (t.categories || []).includes(catId);
         })
-        .sort((a,b) => ((b.wins||0)-(a.wins||0)) || ((b.total||0)-(a.total||0)));
+        .sort((a, b) => ((b.wins || 0) - (a.wins || 0)) || ((b.total || 0) - (a.total || 0)));
 
     if (eligible.length < totalSize) {
         showNotification(`Only ${eligible.length} eligible teams. Cannot break ${totalSize}.`, 'error');
@@ -1995,13 +2361,13 @@ export function adminConfirmBreak() {
     }
 
     // All validations passed — now safe to reset
-    (state.teams||[]).forEach(t => {
+    (state.teams || []).forEach(t => {
         if (!catId) {
             t.broke = false; t.seed = null; t.reserved = false;
         } else {
             const matches = (typeof window.teamMatchesCategory === 'function')
                 ? window.teamMatchesCategory(t, catId)
-                : (t.categories||[]).includes(catId);
+                : (t.categories || []).includes(catId);
             if (matches) {
                 if (!t.categoryBreaks) t.categoryBreaks = {};
                 t.categoryBreaks[catId] = { broke: false, seed: null, reserved: false };
@@ -2047,7 +2413,7 @@ export function adminConfirmBreak() {
 
     save();
 
-    const ineligCount = (state.teams||[]).filter(t => _isCatIneligible(t, catId)).length;
+    const ineligCount = (state.teams || []).filter(t => _isCatIneligible(t, catId)).length;
     const catLabel = catId
         ? ((typeof window.getCategoryById === 'function' ? window.getCategoryById(catId) : null)?.name || catId)
         : '';
@@ -2090,7 +2456,7 @@ function _readAdminBreakConfig() {
         totalSize = parseInt(document.getElementById('adm-break-total')?.value || '0', 10);
         isPartial = document.getElementById('adm-break-type')?.value === 'partial';
         if (isPartial) {
-            seededCount  = parseInt(document.getElementById('adm-break-seeded')?.value  || '0', 10) || 0;
+            seededCount = parseInt(document.getElementById('adm-break-seeded')?.value || '0', 10) || 0;
             playoffCount = parseInt(document.getElementById('adm-break-playoff')?.value || '0', 10) || 0;
         }
     }
@@ -2148,7 +2514,7 @@ function _isStandardAdminBreakSize(total, bp) {
     return total >= minFull && (total & (total - 1)) === 0 && total % perRoom === 0;
 }
 
-window._admBreakOptionChange = function() {
+window._admBreakOptionChange = function () {
     const selected = document.getElementById('adm-break-size')?.value || 'custom';
     const customWrap = document.getElementById('adm-custom-break-inputs');
     const partialWrap = document.getElementById('adm-partial-inputs');
@@ -2178,7 +2544,7 @@ window._admBreakOptionChange = function() {
     window._admPartialSummary();
 };
 
-window._admBreakTotalChange = function() {
+window._admBreakTotalChange = function () {
     const selector = document.getElementById('adm-break-size');
     if (selector && selector.value !== 'custom') selector.value = 'custom';
 
@@ -2201,7 +2567,7 @@ window._admBreakTotalChange = function() {
     window._admPartialSummary();
 };
 
-window._admBreakTypeChange = function() {
+window._admBreakTypeChange = function () {
     const selected = document.getElementById('adm-break-size')?.value || 'custom';
     const isPartial = selected.startsWith('partial:') ||
         (selected === 'custom' && document.getElementById('adm-break-type')?.value === 'partial');
@@ -2224,20 +2590,20 @@ window._admBreakTypeChange = function() {
     if (isPartial) window._admPartialSummary();
 };
 
-window._admPartialSummary = function() {
-    const total   = parseInt(document.getElementById('adm-break-total')?.value   || '0', 10);
-    const seeded  = parseInt(document.getElementById('adm-break-seeded')?.value  || '',  10);
-    const playoff = parseInt(document.getElementById('adm-break-playoff')?.value || '',  10);
+window._admPartialSummary = function () {
+    const total = parseInt(document.getElementById('adm-break-total')?.value || '0', 10);
+    const seeded = parseInt(document.getElementById('adm-break-seeded')?.value || '', 10);
+    const playoff = parseInt(document.getElementById('adm-break-playoff')?.value || '', 10);
     const el = document.getElementById('adm-partial-summary');
     if (!el) return;
     if (!total || isNaN(seeded) || isNaN(playoff)) { el.textContent = ''; return; }
     const sum = seeded + playoff;
-    const ok  = sum === total;
+    const ok = sum === total;
     el.textContent = ok ? `✓ ${sum} = ${total}` : `⚠️ ${sum} ≠ ${total}`;
     el.style.color = ok ? '#4ade80' : '#f87171';
 };
 
-window._admAutoSuggestPartial = function() {
+window._admAutoSuggestPartial = function () {
     const selector = document.getElementById('adm-break-size');
     if (selector) selector.value = 'custom';
     window._admBreakOptionChange();
@@ -2248,9 +2614,9 @@ window._admAutoSuggestPartial = function() {
     const bp = activeTournament()?.format === 'bp';
     const config = suggestPartialConfig(total, bp);
     if (!config) { showNotification(`No valid partial config for ${total} teams`, 'error'); return; }
-    const seededEl  = document.getElementById('adm-break-seeded');
+    const seededEl = document.getElementById('adm-break-seeded');
     const playoffEl = document.getElementById('adm-break-playoff');
-    if (seededEl)  seededEl.value  = config.reserved;
+    if (seededEl) seededEl.value = config.reserved;
     if (playoffEl) playoffEl.value = config.breaking;
     window._admBreakTypeChange();
     window._admPartialSummary();
@@ -2280,7 +2646,7 @@ export async function adminTogglePublish(tabId) {
 export async function adminPublishAll() {
     if (!state?.publish) return;
     const tid = state.activeTournamentId;
-    ['draw','standings','speakers','break','knockout','motions','results'].forEach(t => state.publish[t] = true);
+    ['draw', 'standings', 'speakers', 'break', 'knockout', 'motions', 'results'].forEach(t => state.publish[t] = true);
     adminSwitchSection('publish');
     updateTabsForRole();
     updateNavDropdowns();
@@ -2319,10 +2685,10 @@ function adminDeleteRound(id) {
                 state.rounds = freshRounds;
             }
         } else {
-            state.rounds = (state.rounds||[]).filter(r => String(r.id) !== String(id));
+            state.rounds = (state.rounds || []).filter(r => String(r.id) !== String(id));
         }
         saveNow();
-        showNotification(`Round ${label} deleted`,'info');
+        showNotification(`Round ${label} deleted`, 'info');
         _refreshAdminRounds();
     }).catch(err => {
         showNotification(`Delete failed: ${err.message}`, 'error');
@@ -2332,7 +2698,7 @@ function adminDeleteRound(id) {
 // ── Tournament action handlers ──────────────────────────
 
 async function adminCreateTournamentWithOpt(autoSwitch) {
-    const name   = document.getElementById('new-tournament-name')?.value.trim();
+    const name = document.getElementById('new-tournament-name')?.value.trim();
     const format = document.getElementById('new-tournament-format')?.value || 'standard';
     if (!name) { showNotification('Please enter a tournament name', 'error'); return; }
 
@@ -2342,19 +2708,55 @@ async function adminCreateTournamentWithOpt(autoSwitch) {
             ? { speech: true, speakers: true }
             : {};
         localStorage.setItem('orion_active_tournament_id', t.id);
-        await _reloadTournamentCatalog(autoSwitch ? t.id : state.activeTournamentId || t.id, {
+
+        // ── STEP 1: Inject the new tournament directly into state so it is
+        //   immediately visible regardless of whether the catalog refetch below
+        //   succeeds or not.  This is the guaranteed path.
+        const existingTournaments = Object.values(state.tournaments || {}).filter(
+            x => x && x.id && !x.isLocalDefault
+        );
+        // If the new tournament isn't in the list yet, push it in
+        const alreadyPresent = existingTournaments.some(x => String(x.id) === String(t.id));
+        if (!alreadyPresent) existingTournaments.push({ ...t });
+
+        hydrateState({
+            activeTournamentId: autoSwitch ? t.id : (state.activeTournamentId || t.id),
+            tournaments: existingTournaments.length ? existingTournaments : [t],
             teams: autoSwitch ? [] : (state.teams || []),
             judges: autoSwitch ? [] : (state.judges || []),
             rounds: autoSwitch ? [] : (state.rounds || []),
             publish: autoSwitch ? emptyPublish : (state.publish || {})
         });
 
+        // ── STEP 2: Background refetch to pick up any other changes from the
+        //   server (other admins, etc.).  Failures here are non-critical.
+        api.getTournaments().then(freshList => {
+            if (freshList && freshList.length) {
+                const currentActiveId = autoSwitch ? t.id : (state.activeTournamentId || t.id);
+                hydrateState({
+                    activeTournamentId: currentActiveId,
+                    tournaments: freshList,
+                    teams: state.teams || [],
+                    judges: state.judges || [],
+                    rounds: state.rounds || [],
+                    publish: state.publish || {}
+                });
+                // Re-render if still on tournaments section
+                if (_activeSection === 'tournaments') {
+                    const body = document.getElementById('adm-body');
+                    if (body) body.innerHTML = _buildSection('tournaments');
+                }
+            }
+        }).catch(err => {
+            console.warn('[admin] Background tournament catalog refresh failed:', err.message);
+        });
+
         if (autoSwitch) {
-            switchTournamentCache(t.id, { teams: [], judges: [], rounds: [], publish: emptyPublish });
             window._setupRealtimeSyncForTournament?.(t.id);
         }
 
-        document.getElementById('new-tournament-name').value = '';
+        const nameInput = document.getElementById('new-tournament-name');
+        if (nameInput) nameInput.value = '';
         adminSwitchSection('tournaments');
         showNotification(`Tournament "${t.name}" created`, 'success');
     } catch (err) {
@@ -2367,7 +2769,7 @@ async function adminCreateTournamentWithOpt(autoSwitch) {
 function showResetConfirmation() {
     closeAllModals();
     const overlay = document.createElement('div'); overlay.className = 'modal-overlay';
-    overlay.onclick = e => { if(e.target===overlay) closeAllModals(); };
+    overlay.onclick = e => { if (e.target === overlay) closeAllModals(); };
     const modal = document.createElement('div'); modal.className = 'modal modal--center';
     modal.innerHTML = `<div class="adm-modal-icon">⚠️</div>
         <h3 class="adm-modal-danger-title">Reset Tournament?</h3>
@@ -2382,7 +2784,7 @@ function showResetConfirmation() {
 function adminConfirmFullWipe() {
     closeAllModals();
     const overlay = document.createElement('div'); overlay.className = 'modal-overlay';
-    overlay.onclick = e => { if(e.target===overlay) closeAllModals(); };
+    overlay.onclick = e => { if (e.target === overlay) closeAllModals(); };
     const modal = document.createElement('div'); modal.className = 'modal modal--center';
     modal.innerHTML = `<div class="adm-modal-icon">💣</div>
         <h3 class="adm-modal-danger-title">Full Wipe?</h3>
@@ -2429,56 +2831,56 @@ async function fullTournamentWipe() {
 // ============================================================================
 export function initAdminDashboard() {
     window._brkSelectedCat = window._brkSelectedCat ?? '';
-    window.renderAdminDashboard      = renderAdminDashboard;
-    window.adminSwitchSection        = adminSwitchSection;
-    window.adminCreateRound          = adminCreateRound;
-    window.refreshAdminRounds        = _refreshAdminRounds;
-    window.displayAdminRounds        = displayAdminRounds;
-    window.adminCalculateBreak       = adminCalculateBreak;
-    window.adminPreviewBreak         = adminPreviewBreak;
-    window.adminConfirmBreak         = adminConfirmBreak;
-    window.adminToggleIneligible     = adminToggleIneligible;
-    window.adminSetIneligibleReason  = adminSetIneligibleReason;
-    window.adminTogglePublish        = adminTogglePublish;
-    window.adminPublishAll           = adminPublishAll;
-    window.adminHideAll              = adminHideAll;
-    window.adminDeleteRound          = adminDeleteRound;
-    window.adminConfirmFullWipe      = adminConfirmFullWipe;
-    window.adminResetURLs             = adminResetURLs;
-    window._adminGenJudgeURL         = _adminGenJudgeURL;
-    window._adminGenTeamURL          = _adminGenTeamURL;
-    window._adminRevokeJudgeURL      = _adminRevokeJudgeURL;
-    window._adminRevokeTeamURL       = _adminRevokeTeamURL;
-    window._adminCopyURL             = _adminCopyURL;
-    window._adminSendURL             = _adminSendURL;
-    window._adminGenAllJudgeURLs     = _adminGenAllJudgeURLs;
-    window._adminGenAllTeamURLs      = _adminGenAllTeamURLs;
-    window._adminBulkSendURLs        = _adminBulkSendURLs;
-    window._adminRevokeAllURLs       = _adminRevokeAllURLs;
-    window._adminRevokeAllJudgeURLs  = _adminRevokeAllJudgeURLs;
-    window._adminRevokeAllTeamURLs   = _adminRevokeAllTeamURLs;
-    window.showResetConfirmation     = showResetConfirmation;
-    window.exportData                = exportData;
-    window.resetTournamentDrawOnly   = resetTournamentDrawOnly;
-    window.fullTournamentWipe        = fullTournamentWipe;
+    window.renderAdminDashboard = renderAdminDashboard;
+    window.adminSwitchSection = adminSwitchSection;
+    window.adminCreateRound = adminCreateRound;
+    window.refreshAdminRounds = _refreshAdminRounds;
+    window.displayAdminRounds = displayAdminRounds;
+    window.adminCalculateBreak = adminCalculateBreak;
+    window.adminPreviewBreak = adminPreviewBreak;
+    window.adminConfirmBreak = adminConfirmBreak;
+    window.adminToggleIneligible = adminToggleIneligible;
+    window.adminSetIneligibleReason = adminSetIneligibleReason;
+    window.adminTogglePublish = adminTogglePublish;
+    window.adminPublishAll = adminPublishAll;
+    window.adminHideAll = adminHideAll;
+    window.adminDeleteRound = adminDeleteRound;
+    window.adminConfirmFullWipe = adminConfirmFullWipe;
+    window.adminResetURLs = adminResetURLs;
+    window._adminGenJudgeURL = _adminGenJudgeURL;
+    window._adminGenTeamURL = _adminGenTeamURL;
+    window._adminRevokeJudgeURL = _adminRevokeJudgeURL;
+    window._adminRevokeTeamURL = _adminRevokeTeamURL;
+    window._adminCopyURL = _adminCopyURL;
+    window._adminSendURL = _adminSendURL;
+    window._adminGenAllJudgeURLs = _adminGenAllJudgeURLs;
+    window._adminGenAllTeamURLs = _adminGenAllTeamURLs;
+    window._adminBulkSendURLs = _adminBulkSendURLs;
+    window._adminRevokeAllURLs = _adminRevokeAllURLs;
+    window._adminRevokeAllJudgeURLs = _adminRevokeAllJudgeURLs;
+    window._adminRevokeAllTeamURLs = _adminRevokeAllTeamURLs;
+    window.showResetConfirmation = showResetConfirmation;
+    window.exportData = exportData;
+    window.resetTournamentDrawOnly = resetTournamentDrawOnly;
+    window.fullTournamentWipe = fullTournamentWipe;
 
     // Hamburger sidebar toggle — mobile only
-    window.toggleAdmSidebar = function() {
-        const sidebar  = document.getElementById('adm-sidebar');
-        const overlay  = document.getElementById('adm-sidebar-overlay');
+    window.toggleAdmSidebar = function () {
+        const sidebar = document.getElementById('adm-sidebar');
+        const overlay = document.getElementById('adm-sidebar-overlay');
         if (!sidebar) return;
         const nowOpen = sidebar.classList.toggle('adm-sidebar--open');
         overlay?.classList.toggle('adm-sidebar--open', nowOpen);
         document.body.style.overflow = nowOpen ? 'hidden' : '';
     };
-    window.closeAdmSidebar = function() {
+    window.closeAdmSidebar = function () {
         document.getElementById('adm-sidebar')?.classList.remove('adm-sidebar--open');
         document.getElementById('adm-sidebar-overlay')?.classList.remove('adm-sidebar--open');
         document.body.style.overflow = '';
     };
 
     // Settings dropdown toggle
-    window.toggleAdmTopSettings = function(e) {
+    window.toggleAdmTopSettings = function (e) {
         e.stopPropagation();
         const dropdown = document.getElementById('adm-top-settings-dropdown');
         const btn = document.getElementById('adm-top-settings-btn');
@@ -2492,7 +2894,7 @@ export function initAdminDashboard() {
 
         // Position relative to button using fixed coords (bypasses all overflow:hidden ancestors)
         const rect = btn.getBoundingClientRect();
-        dropdown.style.top  = (rect.bottom + 6) + 'px';
+        dropdown.style.top = (rect.bottom + 6) + 'px';
         dropdown.style.right = (window.innerWidth - rect.right) + 'px';
         dropdown.style.left = '';
 
@@ -2503,13 +2905,13 @@ export function initAdminDashboard() {
     };
 
     // Format hint switcher — updates description card under the create-tournament form
-    window._admShowFormatHint = function(format) {
+    window._admShowFormatHint = function (format) {
         const el = document.getElementById('adm-format-hint');
         if (!el) return;
         const hints = {
             standard: { cls: 'adm-format-hint--standard', icon: '🏛️', html: '<strong>WSDC / Standard</strong> — Teams compete head-to-head each round. Standings track wins, total speaker points, and averages per team.' },
-            bp:       { cls: 'adm-format-hint--bp',       icon: '⚖️', html: '<strong>British Parliamentary</strong> — Four teams per room ranked 1st–4th. Standings use points (3/2/1/0) per round.' },
-            speech:   { cls: 'adm-format-hint--speech',   icon: '🎤', html: '<strong>Speech Tournament</strong> — Tracks <em>individual speaker scores</em> per round rather than team wins. Perfect for public speaking competitions and oratory events. The public <strong>Speech tab</strong> shows a live per-speaker leaderboard with round-by-round scores and optional category sub-tabs.' }
+            bp: { cls: 'adm-format-hint--bp', icon: '⚖️', html: '<strong>British Parliamentary</strong> — Four teams per room ranked 1st–4th. Standings use points (3/2/1/0) per round.' },
+            speech: { cls: 'adm-format-hint--speech', icon: '🎤', html: '<strong>Speech Tournament</strong> — Tracks <em>individual speaker scores</em> per round rather than team wins. Perfect for public speaking competitions and oratory events. The public <strong>Speech tab</strong> shows a live per-speaker leaderboard with round-by-round scores and optional category sub-tabs.' }
         };
         const h = hints[format] || hints.standard;
         el.className = 'adm-format-hint ' + h.cls;
@@ -2517,20 +2919,20 @@ export function initAdminDashboard() {
     };
 
     // Draw selector memory helper
-    window._admSaveDrawPref = function(key, value) {
+    window._admSaveDrawPref = function (key, value) {
         try {
             const prefs = JSON.parse(localStorage.getItem('orion_draw_prefs') || '{}');
             prefs[key] = value;
             localStorage.setItem('orion_draw_prefs', JSON.stringify(prefs));
-        } catch(e) { /* ignore storage errors for preference persistence */ }
+        } catch (e) { /* ignore storage errors for preference persistence */ }
     };
 
     /**
      * isTabVisible(tabId)
      * Central tab-visibility check used by the main app's nav and tab renderers.
          */
-    window.isTabVisible = function(tabId) {
-        const role    = state.auth?.currentUser?.role;
+    window.isTabVisible = function (tabId) {
+        const role = state.auth?.currentUser?.role;
         const isAdmin = role === 'admin';
         // Admin always has access regardless of publish state
         if (isAdmin) return true;
@@ -2540,17 +2942,18 @@ export function initAdminDashboard() {
     };
 
     // Tournament management
-    window.adminCreateTournament         = () => adminCreateTournamentWithOpt(true);
+    window.adminCreateTournament = () => adminCreateTournamentWithOpt(true);
     window.adminCreateTournamentNoSwitch = () => adminCreateTournamentWithOpt(false);
-    window.adminSwitchTournament         = adminSwitchTournament;
-    window.adminRenameTournament         = adminRenameTournament;
-    window.adminDeleteTournament         = adminDeleteTournament;
+    window.adminSwitchTournament = adminSwitchTournament;
+    window.adminRenameTournament = adminRenameTournament;
+    window.adminDeleteTournament = adminDeleteTournament;
+    window.adminTournamentSettings = adminTournamentSettings;
 
     // Break section tab switcher 
-    window._brkTab = function(tab) {
-        ['all','breaking','inelig'].forEach(function(id) {
+    window._brkTab = function (tab) {
+        ['all', 'breaking', 'inelig'].forEach(function (id) {
             const pane = document.getElementById('brk-pane-' + id);
-            const btn  = document.getElementById('brk-tab-' + id);
+            const btn = document.getElementById('brk-tab-' + id);
             if (!pane || !btn) return;
             const active = id === tab;
             pane.style.display = active ? 'block' : 'none';

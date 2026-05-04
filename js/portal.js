@@ -41,10 +41,18 @@ export async function checkUrlForJudgeToken() {
         return true;
     }
 
+    _cleanUrl();
+
+    // Already authenticated via Supabase — skip the email gate entirely and
+    // go straight to the portal rendered from their auth session.
+    if (state.auth?.isAuthenticated && state.auth?.currentUser?.role) {
+        window.switchTab?.('portal');
+        return true;
+    }
+
     // Check if we already have a verified session for this exact token
     const session = _loadSession();
     if (session && session.token === token && session.type === type) {
-        _cleanUrl();
         if (type === 'judge') {
             await _resumeJudgeSession(token, session.id);
         } else {
@@ -53,12 +61,32 @@ export async function checkUrlForJudgeToken() {
         return true;
     }
 
-    // No session — show email gate
-    _cleanUrl();
-    window.switchTab?.('portal');
-    const container = document.getElementById('portal-container');
-    if (container) _renderEmailGate(container, type, token);
+    // No session and not authenticated — show email gate.
+    // Bypass switchTab's auth guard (which would destroy portal-container by
+    // rendering a locked-page overlay) by showing the tab directly.
+    _showPortalTabWithGate(type, token);
     return true;
+}
+
+function _showPortalTabWithGate(type, token) {
+    document.querySelectorAll('.tab-content').forEach(t => {
+        t.classList.remove('active');
+        t.style.display = 'none';
+    });
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+
+    const portalTab = document.getElementById('portal');
+    if (!portalTab) return;
+    portalTab.classList.add('active');
+    portalTab.style.display = 'block';
+
+    // portal-container may have been clobbered by a prior _renderLockedPage call
+    let container = document.getElementById('portal-container');
+    if (!container) {
+        portalTab.innerHTML = '<div id="portal-container"></div>';
+        container = document.getElementById('portal-container');
+    }
+    _renderEmailGate(container, type, token);
 }
 
 function _cleanUrl() {
